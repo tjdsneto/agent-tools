@@ -120,10 +120,24 @@ def cursor_window_projects() -> set[str]:
     """Folder names of the Cursor windows that are open. Empty when Cursor is closed."""
     names: set[str] = set()
     for title in _cursor_window_titles():
-        project = title.split(" — ")[-1].strip()
-        if project and project not in {"Item-0", "Focus Proxy"}:
+        project = _window_project_name(title)
+        if project:
             names.add(project)
     return names
+
+
+def _window_project_name(title: str) -> str:
+    """Leaf shown after the em dash in a Cursor window title.
+
+    Multi-root windows are titled ``… — <name> (Workspace)``. Strip that
+    suffix so it matches the workspace folder / .code-workspace parent name.
+    """
+    project = title.split(" — ")[-1].strip()
+    if not project or project in {"Item-0", "Focus Proxy"}:
+        return ""
+    if project.endswith(" (Workspace)"):
+        project = project[: -len(" (Workspace)")].strip()
+    return project
 
 
 def _cursor_window_titles() -> list[str]:
@@ -278,10 +292,18 @@ def _workspace_directory(path: Path) -> str:
         return ""
     if not isinstance(meta, dict):
         return ""
-    raw = meta.get("folder") or ""
+    raw = meta.get("folder") or meta.get("workspace") or ""
     if not isinstance(raw, str) or not raw:
         return ""
-    return unquote(urlparse(raw).path)
+    location = unquote(urlparse(raw).path)
+    if not location:
+        return ""
+    # Multi-root: workspace.json points at a .code-workspace file. Use its
+    # parent directory as the window's project root (matches the title leaf).
+    if location.endswith(".code-workspace"):
+        parent = Path(location).parent
+        return str(parent) if str(parent) not in {"", "."} else ""
+    return location
 
 
 def _workspace_folder_name(path: Path) -> str:

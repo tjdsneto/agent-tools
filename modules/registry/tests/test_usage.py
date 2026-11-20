@@ -189,6 +189,62 @@ def test_open_cursor_ids_are_the_selected_chats_of_open_windows(tmp_path, monkey
     assert open_cursor_session_ids(root) == {"chat-open"}
 
 
+def test_open_cursor_chats_match_multi_root_code_workspace(tmp_path, monkeypatch):
+    """Cursor titles multi-root windows as '<name> (Workspace)' and stores a
+    workspace.json `workspace` URI to the .code-workspace file — not `folder`.
+    """
+    import sqlite3
+
+    from agent_registry.usage import open_cursor_chats
+
+    monkeypatch.setattr(
+        "agent_registry.usage.cursor_window_projects",
+        lambda: {"obra-manager"},  # normalized; raw title ends with " (Workspace)"
+    )
+    root = tmp_path / "workspaceStorage"
+    ws = root / "multi"
+    ws.mkdir(parents=True)
+    code_ws = tmp_path / "obra-manager" / "obra-manager.code-workspace"
+    code_ws.parent.mkdir(parents=True)
+    code_ws.write_text(
+        json.dumps({"folders": [{"path": "obra-records"}, {"path": "obra-saas"}]}),
+        encoding="utf-8",
+    )
+    (ws / "workspace.json").write_text(
+        json.dumps({"workspace": code_ws.as_uri()}),
+        encoding="utf-8",
+    )
+    con = sqlite3.connect(ws / "state.vscdb")
+    con.execute("CREATE TABLE ItemTable (key TEXT, value TEXT)")
+    con.execute(
+        "INSERT INTO ItemTable VALUES (?, ?)",
+        (
+            "composer.composerData",
+            json.dumps({"selectedComposerIds": ["chat-multi"]}),
+        ),
+    )
+    con.commit()
+    con.close()
+
+    found = open_cursor_chats(root)
+    assert found == {"chat-multi": str(code_ws.parent)}
+
+
+def test_cursor_window_projects_strip_workspace_suffix(monkeypatch):
+    from agent_registry.usage import cursor_window_projects
+
+    monkeypatch.setattr(
+        "agent_registry.usage._cursor_window_titles",
+        lambda: [
+            "notes.md — obra-manager (Workspace)",
+            "README — agent-tools",
+            "Focus Proxy",
+            "Item-0",
+        ],
+    )
+    assert cursor_window_projects() == {"obra-manager", "agent-tools"}
+
+
 def test_live_marks_an_open_cursor_chat(tmp_registry, monkeypatch):
     from agent_registry import ops
 
