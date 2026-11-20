@@ -145,7 +145,16 @@ def test_board_actions_in_script(tmp_registry):
         assert "function processOpen" in script
         assert "cursor_open" in script
         assert "function dotStatus" in script
-        assert "No process open" in script
+        # Vocabulary: no old lifecycle words in the served board
+        for banned in (">Live<", ">Stopped<", ">Running<", "No process open"):
+            assert banned not in home and banned not in script
+        assert ">Open<" in home or ">Open<" in script
+        assert ">Closed<" in home or ">Closed<" in script
+        assert "All Open" in home or "All Open" in script
+        # Navigation hooks
+        assert "All Open" in script or 'navRow("all-open"' in script or "all-open" in script
+        assert "Other worktrees" in script
+        assert "group-by" in home.lower() or "groupby" in script.lower() or "LS_GROUP" in script
         # Usage rendered only when present.
         assert "if (sess.tokens)" in script
         assert "input_tokens" in script and "output_tokens" in script
