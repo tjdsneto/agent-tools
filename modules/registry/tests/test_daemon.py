@@ -344,6 +344,7 @@ def test_kill_signals_only_that_pid(tmp_registry, monkeypatch):
         "agent_registry.usage.sample_process",
         lambda pid: {"cpu_percent": 1.0, "memory_bytes": 1} if pid == 4242 else None,
     )
+    monkeypatch.setattr("agent_registry.usage.open_cursor_chats", lambda: {})
     httpd = serve_in_thread("127.0.0.1", 0)
     try:
         post(httpd.server_address[1], "ensure", {
@@ -378,6 +379,7 @@ def test_kill_dead_pid_does_not_signal(tmp_registry, monkeypatch):
     signaled = []
     monkeypatch.setattr("agent_registry.daemon.os.kill", lambda pid, sig: signaled.append((pid, sig)))
     monkeypatch.setattr("agent_registry.usage.sample_process", lambda pid: None)
+    monkeypatch.setattr("agent_registry.usage.open_cursor_chats", lambda: {})
     httpd = serve_in_thread("127.0.0.1", 0)
     port = httpd.server_address[1]
     try:
@@ -403,6 +405,7 @@ def test_kill_process_gone_does_not_unregister(tmp_registry, monkeypatch):
         "agent_registry.usage.sample_process",
         lambda pid: {"cpu_percent": 1.0, "memory_bytes": 1},
     )
+    monkeypatch.setattr("agent_registry.usage.open_cursor_chats", lambda: {})
     httpd = serve_in_thread("127.0.0.1", 0)
     port = httpd.server_address[1]
     try:
@@ -448,5 +451,30 @@ def test_send_session_wakes_and_rejects_empty(tmp_registry, monkeypatch):
         empty = post(port, "send_session", {"session_id": "s", "message": ""})
         assert empty["exit_code"] == 1
         assert arrived == calls_before_empty
+    finally:
+        stop_server(httpd)
+
+
+def test_open_workspace_opens_session_directory(tmp_registry, tmp_path, monkeypatch):
+    from agent_registry import ops
+
+    workspace = tmp_path / "proj"
+    workspace.mkdir()
+    opened = {}
+
+    def fake_open(path):
+        opened["path"] = str(path)
+        return True
+
+    monkeypatch.setattr("agent_registry.daemon._open_path_in_cursor", fake_open)
+    ops.register(agent_type="cursor", session_id="c1", directory=str(workspace))
+    httpd = serve_in_thread("127.0.0.1", 0)
+    port = httpd.server_address[1]
+    try:
+        ok = post(port, "open_workspace", {"session_id": "c1"})
+        assert ok["exit_code"] == 0
+        assert opened["path"] == str(workspace.resolve())
+        missing = post(port, "open_workspace", {"session_id": "nope"})
+        assert missing["exit_code"] == 2
     finally:
         stop_server(httpd)

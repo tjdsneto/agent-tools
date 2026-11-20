@@ -4,7 +4,9 @@ import errno
 import http.client
 import json
 import os
+import shutil
 import signal
+import subprocess
 import threading
 import traceback
 import urllib.error
@@ -388,7 +390,60 @@ def _prepare_command(op: str, params: Any):
             return code, result, None
 
         return run
+    if op == "open_workspace":
+        session_id = _require_str(params, "session_id")
+
+        def run() -> tuple[int, Any, str | None]:
+            session = _session_by_id(session_id)
+            if session is None:
+                return EXIT_NOT_FOUND, None, "session not found"
+            directory = (session.directory or "").strip()
+            if not directory:
+                return EXIT_USAGE, None, "directory missing"
+            path = Path(directory).expanduser()
+            try:
+                path = path.resolve()
+            except OSError:
+                return EXIT_USAGE, None, "directory missing"
+            if not path.exists():
+                return EXIT_USAGE, None, "directory missing"
+            try:
+                opened = _open_path_in_cursor(path)
+            except OSError as e:
+                return EXIT_IO, None, str(e)
+            if not opened:
+                return EXIT_USAGE, None, "could not open workspace"
+            return EXIT_OK, {"ok": True, "session_id": session_id, "directory": str(path)}, None
+
+        return run
     return None
+
+
+def _open_path_in_cursor(path: Path) -> bool:
+    """Open a folder/file in Cursor (workspace-only; does not select a chat)."""
+    target = str(path)
+    cursor = shutil.which("cursor")
+    if cursor:
+        proc = subprocess.run(
+            [cursor, "-r", target],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=20,
+        )
+        if proc.returncode == 0:
+            return True
+    app = Path("/Applications/Cursor.app")
+    if app.is_dir():
+        proc = subprocess.run(
+            ["open", "-a", "Cursor", target],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=20,
+        )
+        return proc.returncode == 0
+    return False
 
 
 def dispatch(op: str, params: dict) -> tuple[int, Any, str | None]:
@@ -424,6 +479,7 @@ class DaemonHandler(DashboardHandler):
         views = self._sync_cursor_titles(views)
         views = self._sync_claude_titles(views)
         open_ids = set(open_chats)
+        interrupt_budget = 40
         for name in ("active", "stale", "attention"):
             for view in views[name]:
                 usage.attach_usage(view)
@@ -432,6 +488,18 @@ class DaemonHandler(DashboardHandler):
                     and view.get("session_id") in open_ids
                 ):
                     view["cursor_open"] = True
+                if (
+                    interrupt_budget > 0
+                    and view.get("agent_type") == "claude"
+                    and view.get("session_id")
+                ):
+                    interrupt_budget -= 1
+                    try:
+                        reason = usage.claude_interrupt_reason(view["session_id"])
+                    except Exception:
+                        reason = None
+                    if reason:
+                        view["interrupt_reason"] = reason
         self._json(views)
 
     def _cursor_views(self, views: dict[str, list]) -> list[dict]:

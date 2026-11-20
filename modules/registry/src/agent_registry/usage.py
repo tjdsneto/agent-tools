@@ -76,6 +76,104 @@ def claude_tokens(
     return _cached("claude", session_id, lambda: _sum_claude(session_id, root))
 
 
+_TOKEN_LIMIT_MARKERS = (
+    "prompt_too_long",
+    "prompt is too long",
+    "context_length",
+    "maximum context",
+    "token limit",
+    "too many tokens",
+)
+_RATE_LIMIT_ERRORS = frozenset({"rate_limit", "rate_limit_error"})
+
+
+def claude_interrupt_reason(
+    session_id: str, projects_root: Path | None = None
+) -> str | None:
+    """Latest Claude interrupt class from the session jsonl, if any.
+
+    Returns ``rate_limit`` or ``token_limit`` when the newest API error / system
+    notice matches. Used by the board to offer Resume.
+    """
+    if projects_root is not None:
+        return _claude_interrupt_from_root(session_id, Path(projects_root))
+    root = Path.home() / ".claude" / "projects"
+
+    def load() -> dict[str, Any] | None:
+        reason = _claude_interrupt_from_root(session_id, root)
+        return {"reason": reason} if reason else None
+
+    wrapped = _cached("claude-interrupt", session_id, load)
+    if not isinstance(wrapped, dict):
+        return None
+    reason = wrapped.get("reason")
+    return reason if isinstance(reason, str) and reason else None
+
+
+def _claude_interrupt_from_root(session_id: str, root: Path) -> str | None:
+    paths = _claude_files(root, session_id)
+    if not paths:
+        return None
+    paths.sort(key=lambda p: p.stat().st_mtime if p.exists() else 0, reverse=True)
+    for path in paths:
+        reason = _interrupt_from_claude_jsonl(path)
+        if reason:
+            return reason
+    return None
+
+
+def _interrupt_from_claude_jsonl(path: Path) -> str | None:
+    """Newest matching interrupt walking the jsonl from the end."""
+    try:
+        for raw in _reversed_lines(path):
+            obj = _parse_json_object(raw)
+            if obj is None:
+                continue
+            reason = _interrupt_reason_from_event(obj)
+            if reason:
+                return reason
+    except OSError:
+        return None
+    return None
+
+
+def _interrupt_reason_from_event(obj: dict[str, Any]) -> str | None:
+    err = obj.get("error")
+    if isinstance(err, str) and err.lower() in _RATE_LIMIT_ERRORS:
+        return "rate_limit"
+    if obj.get("isApiErrorMessage") and isinstance(err, str):
+        low = err.lower()
+        if "rate" in low and "limit" in low:
+            return "rate_limit"
+    blob_parts: list[str] = []
+    if isinstance(err, str):
+        blob_parts.append(err)
+    details = obj.get("errorDetails")
+    if isinstance(details, str):
+        blob_parts.append(details)
+    message = obj.get("message")
+    if isinstance(message, dict):
+        content = message.get("content")
+        if isinstance(content, str):
+            blob_parts.append(content)
+        elif isinstance(content, list):
+            for part in content:
+                if isinstance(part, dict) and isinstance(part.get("text"), str):
+                    blob_parts.append(part["text"])
+    if isinstance(obj.get("content"), str):
+        blob_parts.append(obj["content"])
+    blob = " ".join(blob_parts).lower()
+    if not blob:
+        return None
+    if any(marker in blob for marker in _TOKEN_LIMIT_MARKERS):
+        return "token_limit"
+    if "hit your" in blob and "limit" in blob:
+        return "rate_limit"
+    if "rate limit" in blob or "usage limit" in blob:
+        return "rate_limit"
+    return None
+
+
 def claude_session_title(
     session_id: str, projects_root: Path | None = None
 ) -> str | None:

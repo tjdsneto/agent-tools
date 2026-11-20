@@ -245,6 +245,65 @@ def test_cursor_window_projects_strip_workspace_suffix(monkeypatch):
     assert cursor_window_projects() == {"obra-manager", "agent-tools"}
 
 
+def test_claude_interrupt_reason_detects_rate_limit(tmp_path):
+    from agent_registry.usage import claude_interrupt_reason
+
+    projects = tmp_path / "projects" / "demo"
+    projects.mkdir(parents=True)
+    sid = "claude-limit-1"
+    (projects / f"{sid}.jsonl").write_text(
+        "\n".join(
+            [
+                json.dumps({"type": "user", "message": {"role": "user", "content": "hi"}}),
+                json.dumps(
+                    {
+                        "type": "assistant",
+                        "isApiErrorMessage": True,
+                        "error": "rate_limit",
+                        "apiErrorStatus": 429,
+                        "message": {
+                            "role": "assistant",
+                            "content": [
+                                {
+                                    "type": "text",
+                                    "text": "You've hit your 5-hour limit · resets soon",
+                                }
+                            ],
+                        },
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    assert claude_interrupt_reason(sid, projects_root=tmp_path / "projects") == "rate_limit"
+
+
+def test_claude_interrupt_reason_detects_token_limit(tmp_path):
+    from agent_registry.usage import claude_interrupt_reason
+
+    projects = tmp_path / "projects" / "demo"
+    projects.mkdir(parents=True)
+    sid = "claude-limit-2"
+    (projects / f"{sid}.jsonl").write_text(
+        json.dumps(
+            {
+                "type": "assistant",
+                "isApiErrorMessage": True,
+                "error": "invalid_request_error",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "Prompt is too long"}],
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    assert claude_interrupt_reason(sid, projects_root=tmp_path / "projects") == "token_limit"
+
+
 def test_claude_session_title_prefers_custom_over_ai(tmp_path):
     from agent_registry.usage import claude_session_title
 

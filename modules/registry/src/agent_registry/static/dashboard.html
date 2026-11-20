@@ -526,6 +526,75 @@
     .act-btn:hover { background: var(--surface-2); color: var(--text); }
     .act-btn:disabled { opacity: 0.5; cursor: default; }
     .act-btn.kill:hover { color: var(--danger); border-color: var(--danger); }
+    .act-btn.resume {
+      border-color: var(--warn);
+      color: var(--warn);
+    }
+    .act-btn.resume:hover {
+      background: var(--surface-2);
+      color: var(--text);
+    }
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.45);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 60;
+      padding: 24px;
+    }
+    .modal-backdrop.hidden { display: none !important; }
+    .modal {
+      width: min(480px, 100%);
+      background: var(--surface);
+      border: 1px solid var(--line-strong);
+      border-radius: 10px;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+      padding: 16px;
+    }
+    .modal h3 {
+      margin: 0 0 6px;
+      font-size: 15px;
+      font-weight: 600;
+    }
+    .modal .hint {
+      margin: 0 0 12px;
+      font-size: 12px;
+      color: var(--text-2);
+    }
+    .modal textarea {
+      width: 100%;
+      min-height: 110px;
+      resize: vertical;
+      border: 1px solid var(--line-strong);
+      border-radius: 6px;
+      background: var(--bg);
+      color: var(--text);
+      font: inherit;
+      padding: 10px;
+    }
+    .modal-actions {
+      margin-top: 12px;
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+    .modal-actions button {
+      padding: 6px 12px;
+      border-radius: 6px;
+      border: 1px solid var(--line-strong);
+      background: var(--surface-2);
+      color: var(--text);
+      font: inherit;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .modal-actions .primary {
+      background: var(--info);
+      border-color: var(--info);
+      color: #fff;
+    }
     .toast {
       position: fixed;
       bottom: 20px;
@@ -624,6 +693,18 @@
         <section id="panel-open" role="tabpanel" aria-labelledby="tab-open"></section>
         <section id="panel-closed" class="hidden" role="tabpanel" aria-labelledby="tab-closed"></section>
         <section id="panel-archive" class="hidden" role="tabpanel" aria-labelledby="tab-archive"></section>
+      </div>
+    </div>
+  </div>
+  <div id="send-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true"
+       aria-labelledby="send-modal-title">
+    <div class="modal">
+      <h3 id="send-modal-title">Send message</h3>
+      <p class="hint" id="send-modal-hint"></p>
+      <textarea id="send-modal-text" placeholder="Message to send to this session"></textarea>
+      <div class="modal-actions">
+        <button type="button" id="send-modal-cancel">Cancel</button>
+        <button type="button" class="primary" id="send-modal-submit">Send</button>
       </div>
     </div>
   </div>
@@ -833,6 +914,7 @@
     });
     const body = await res.json();
     if (body.exit_code === 0) {
+      if (op === "open_workspace") flashToast("Opened in Cursor");
       poll();
     } else {
       flashToast(body.error || ("failed: " + op));
@@ -860,12 +942,40 @@
   function sendBtn(sess) {
     const type = String(sess.agent_type || "").toLowerCase();
     if (!ENGINE_ICONS[type]) return "";
-    return actionBtn("Send", "send_session", sess);
+    return actionBtn("Send Message", "send_session", sess);
+  }
+
+  function openBtn(sess) {
+    if (!sess.session_id || !sess.directory) return "";
+    return actionBtn("Open", "open_workspace", sess);
+  }
+
+  function resumeDefaultMessage(reason) {
+    if (reason === "token_limit") {
+      return "Continue — previous turn hit the context/token limit. Summarize if needed and proceed.";
+    }
+    if (reason === "rate_limit") {
+      return "Continue when ready — the previous turn hit a usage limit.";
+    }
+    return "Continue from where we left off.";
+  }
+
+  function resumeBtnAction(sess) {
+    if (!sess.interrupt_reason) return "";
+    return actionBtn("Resume", "resume_session", sess, "resume");
   }
 
   function actionsHtml(sess) {
     if (!sess.session_id) return "";
-    return '<div class="actions">' + archiveBtn(sess) + killBtn(sess) + sendBtn(sess) + "</div>";
+    return (
+      '<div class="actions">' +
+        openBtn(sess) +
+        archiveBtn(sess) +
+        killBtn(sess) +
+        resumeBtnAction(sess) +
+        sendBtn(sess) +
+      "</div>"
+    );
   }
 
   function findLiveSession(sid) {
@@ -873,14 +983,51 @@
     return all.find(function (s) { return s.session_id === sid; }) || null;
   }
 
+  const sendModal = document.getElementById("send-modal");
+  const sendModalHint = document.getElementById("send-modal-hint");
+  const sendModalText = document.getElementById("send-modal-text");
+  const sendModalTitle = document.getElementById("send-modal-title");
+  let sendModalSid = null;
+
+  function closeSendModal() {
+    sendModal.classList.add("hidden");
+    sendModalSid = null;
+    sendModalText.value = "";
+  }
+
+  function openSendModal(sess, opts) {
+    opts = opts || {};
+    sendModalSid = sess.session_id;
+    const label = (sess.title && String(sess.title).trim())
+      || basename(sess.directory)
+      || sess.session_id;
+    sendModalTitle.textContent = opts.resume ? "Resume session" : "Send message";
+    sendModalHint.textContent = opts.resume
+      ? ("Resume " + label + (sess.interrupt_reason ? " (" + sess.interrupt_reason.replace(/_/g, " ") + ")" : ""))
+      : ("Message for " + label);
+    sendModalText.value = opts.prefill || "";
+    sendModal.classList.remove("hidden");
+    sendModalText.focus();
+    sendModalText.select();
+  }
+
   function runAction(btn) {
     const sess = findLiveSession(btn.getAttribute("data-sid"));
     const act = btn.getAttribute("data-act");
     if (!sess || !sess.session_id) return;
     if (act === "send_session") {
-      const message = prompt("Message to send to this session:");
-      if (!message || !message.trim()) return;
-      postCommand("send_session", { session_id: sess.session_id, message: message });
+      openSendModal(sess, {});
+      return;
+    }
+    if (act === "resume_session") {
+      openSendModal(sess, {
+        resume: true,
+        prefill: resumeDefaultMessage(sess.interrupt_reason),
+      });
+      return;
+    }
+    if (act === "open_workspace") {
+      postCommand("open_workspace", { session_id: sess.session_id });
       return;
     }
     if (act === "kill_session") {
@@ -896,8 +1043,9 @@
     parts.push('<span class="status-word">' + esc(opts.statusLabel || sess.status || "") + "</span>");
     if (opts.reason) {
       parts.unshift("<span>" + esc(opts.reason) + "</span>");
-    } else if (sess.agent_type) {
-      parts.unshift("<span>" + esc(sess.agent_type) + "</span>");
+    }
+    if (sess.interrupt_reason) {
+      parts.push('<span class="mono">' + esc(String(sess.interrupt_reason).replace(/_/g, " ")) + "</span>");
     }
     if (sess.model) {
       parts.push('<span class="mono">' + esc(sess.model) + "</span>");
@@ -1662,6 +1810,23 @@
     if (!act) return;
     ev.preventDefault();
     runAction(act);
+  });
+
+  document.getElementById("send-modal-cancel").addEventListener("click", closeSendModal);
+  document.getElementById("send-modal-submit").addEventListener("click", function () {
+    const message = (sendModalText.value || "").trim();
+    if (!sendModalSid || !message) return;
+    const sid = sendModalSid;
+    closeSendModal();
+    postCommand("send_session", { session_id: sid, message: message });
+  });
+  sendModal.addEventListener("click", function (ev) {
+    if (ev.target === sendModal) closeSendModal();
+  });
+  document.addEventListener("keydown", function (ev) {
+    if (ev.key === "Escape" && !sendModal.classList.contains("hidden")) {
+      closeSendModal();
+    }
   });
 
   document.body.addEventListener("click", function (ev) {
