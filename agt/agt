@@ -38,7 +38,8 @@ case "$cmd" in
       report) exec "$ROOT/modules/sessions/session-report" "$@" ;;
       active) exec "$ROOT/modules/sessions/active-sessions" "$@" ;;
       rename) exec "$ROOT/modules/sessions/rename-session" "$@" ;;
-      *) die "sessions: need report|active|rename" ;;
+      list) exec "$ROOT/modules/sessions/list-sessions" "$@" ;;
+      *) die "sessions: need report|active|rename|list" ;;
     esac
     ;;
   say)
@@ -60,7 +61,7 @@ agt — agent-tools
   agt registry …          agent-registry
   agt waker …             session-waker
   agt budget …            claude-budget
-  agt sessions report|active|rename …
+  agt sessions report|active|rename|list …
   agt say …               agent-say
   agt read …              agent-read
   agt glue scan …         glue-miner

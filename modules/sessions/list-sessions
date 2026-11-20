@@ -1,0 +1,320 @@
+#!/usr/bin/env python3
+"""
+list-sessions - List Claude Code sessions with metadata.
+
+Scans ~/.claude/projects/ for session JSONL files and displays them
+in a human-readable table with title, size, message count, dates, etc.
+
+Usage:
+    list-sessions                      # Sessions for current project (by cwd)
+    list-sessions --all                # All sessions across all projects
+    list-sessions --project <path>     # Sessions for a specific project dir
+    list-sessions --sort size          # Sort by: size, messages, started, updated (default), title
+    list-sessions --limit 20           # Limit output (default: 20, 0 = unlimited)
+    list-sessions --json               # Output as JSON for piping
+    list-sessions --stuck              # Show only likely stuck sessions (>3M or >200 msgs)
+"""
+from __future__ import annotations
+
+import argparse
+import glob
+import json
+import os
+import sys
+from datetime import datetime, timezone
+
+
+CLAUDE_DIR = os.path.expanduser("~/.claude/projects")
+
+
+def cwd_to_project_dir(cwd: str) -> str:
+    """Convert a working directory path to the Claude project directory name."""
+    return cwd.replace("/", "-")
+
+
+def find_project_dir(cwd: str) -> str | None:
+    """Find the Claude project directory for a given working directory."""
+    encoded = cwd_to_project_dir(cwd)
+    candidate = os.path.join(CLAUDE_DIR, encoded)
+    if os.path.isdir(candidate):
+        return candidate
+    return None
+
+
+def project_display_name(project_path: str) -> str:
+    """Convert a project directory path to a readable name."""
+    dirname = os.path.basename(project_path)
+    if dirname.startswith("-"):
+        dirname = dirname[1:]
+    return dirname
+
+
+def parse_iso_ts(ts_str: str | None) -> datetime | None:
+    """Parse an ISO timestamp string to a datetime."""
+    if not ts_str:
+        return None
+    try:
+        # Handle Z suffix
+        if ts_str.endswith("Z"):
+            ts_str = ts_str[:-1] + "+00:00"
+        return datetime.fromisoformat(ts_str)
+    except (ValueError, TypeError):
+        return None
+
+
+def format_datetime(dt: datetime | None) -> str:
+    """Format a datetime to a display string."""
+    if not dt:
+        return "—"
+    return dt.strftime("%Y-%m-%d %H:%M")
+
+
+def parse_session(filepath: str) -> dict:
+    """Parse a session JSONL file and extract metadata."""
+    sid = os.path.basename(filepath).replace(".jsonl", "")
+    size = os.path.getsize(filepath)
+    mtime = os.path.getmtime(filepath)
+
+    title = None
+    branch = None
+    first_user_msg = None
+    last_user_msg = None
+    user_msg_count = 0
+    assistant_msg_count = 0
+    first_timestamp = None
+    last_timestamp = None
+
+    try:
+        with open(filepath) as fh:
+            for line in fh:
+                try:
+                    obj = json.loads(line)
+                except (json.JSONDecodeError, ValueError):
+                    continue
+
+                # Track timestamps
+                ts = obj.get("timestamp")
+                if ts:
+                    if first_timestamp is None:
+                        first_timestamp = ts
+                    last_timestamp = ts
+
+                obj_type = obj.get("type")
+
+                # Custom title
+                if obj_type == "custom-title":
+                    title = obj.get("customTitle") or obj.get("title")
+
+                # User messages
+                if obj_type == "user":
+                    user_msg_count += 1
+                    branch = obj.get("gitBranch", branch)
+                    text = extract_user_text(obj)
+                    if text:
+                        if first_user_msg is None:
+                            first_user_msg = text
+                        last_user_msg = text
+
+                # Assistant messages
+                if obj_type == "assistant":
+                    assistant_msg_count += 1
+
+    except Exception:
+        pass
+
+    started_dt = parse_iso_ts(first_timestamp)
+    updated_dt = parse_iso_ts(last_timestamp)
+
+    return {
+        "id": sid,
+        "path": filepath,
+        "size": size,
+        "size_human": format_size(size),
+        "title": title,
+        "branch": branch,
+        "first_msg": first_user_msg,
+        "last_msg": last_user_msg,
+        "user_messages": user_msg_count,
+        "assistant_messages": assistant_msg_count,
+        "total_messages": user_msg_count + assistant_msg_count,
+        "started": first_timestamp,
+        "started_dt": started_dt,
+        "started_human": format_datetime(started_dt),
+        "updated": last_timestamp,
+        "updated_dt": updated_dt,
+        "updated_human": format_datetime(updated_dt),
+        "mtime": mtime,
+    }
+
+
+def extract_user_text(obj: dict) -> str | None:
+    """Extract readable text from a user message object."""
+    content = obj.get("message", {}).get("content", [])
+    if isinstance(content, str):
+        text = content.strip()
+        if text and not text.startswith("<"):
+            return text[:200].replace("\n", " ")
+        return None
+
+    if isinstance(content, list):
+        for c in content:
+            if isinstance(c, dict) and c.get("type") == "text":
+                text = c.get("text", "").strip()
+                if text and not text.startswith("<"):
+                    return text[:200].replace("\n", " ")
+    return None
+
+
+def format_size(size: int) -> str:
+    """Format byte size to human-readable string."""
+    if size >= 1024 * 1024:
+        return f"{size / 1024 / 1024:.1f}M"
+    elif size >= 1024:
+        return f"{size / 1024:.0f}K"
+    return f"{size}B"
+
+
+def truncate(text: str | None, max_len: int) -> str:
+    """Truncate text with ellipsis."""
+    if not text:
+        return ""
+    if len(text) <= max_len:
+        return text
+    return text[: max_len - 1] + "…"
+
+
+def print_sessions(sessions: list[dict], show_project: bool = False, project_name: str = None):
+    """Print sessions in a formatted table."""
+    if not sessions:
+        print("No sessions found.")
+        return
+
+    if project_name:
+        print(f"\n  Project: {project_name}")
+        print(f"  Sessions: {len(sessions)}")
+        print()
+
+    # Column widths
+    pad = "       "
+    detail_indent = f"  {'':>3}  {'':>6}  {'':>5}  {'':>16}  {'':>16}  "
+
+    # Header
+    print(f"  {'#':>3}  {'Size':>6}  {'Msgs':>5}  {'Started':>16}  {'Updated':>16}  {'Title / Branch'}")
+    print(f"  {'─'*3}  {'─'*6}  {'─'*5}  {'─'*16}  {'─'*16}  {'─'*45}")
+
+    for i, s in enumerate(sessions, 1):
+        title_display = s["title"] or f"[{s['branch'] or 'no branch'}]"
+        title_display = truncate(title_display, 55)
+
+        print(
+            f"  {i:>3}  {s['size_human']:>6}  {s['total_messages']:>5}"
+            f"  {s['started_human']:>16}  {s['updated_human']:>16}"
+            f"  {title_display}"
+        )
+
+        # Show first message preview
+        if s["first_msg"]:
+            print(f"{detail_indent}first: {truncate(s['first_msg'], 75)}")
+
+        # Show last message if different from first
+        if s["last_msg"] and s["last_msg"] != s["first_msg"]:
+            print(f"{detail_indent}last:  {truncate(s['last_msg'], 75)}")
+
+        # Show session ID
+        print(f"{detail_indent}id:    {s['id']}")
+        print()
+
+
+def main():
+    parser = argparse.ArgumentParser(description="List Claude Code sessions")
+    parser.add_argument("--all", action="store_true", help="Show sessions from all projects")
+    parser.add_argument("--project", type=str, help="Filter to a specific project working directory")
+    parser.add_argument(
+        "--sort",
+        choices=["size", "messages", "started", "updated", "title"],
+        default="updated",
+        help="Sort order (default: updated)",
+    )
+    parser.add_argument("--limit", type=int, default=20, help="Max sessions to show (0 = unlimited)")
+    parser.add_argument("--json", action="store_true", help="Output as JSON")
+    parser.add_argument(
+        "--stuck", action="store_true", help="Show only likely stuck sessions (very large or many messages)"
+    )
+    args = parser.parse_args()
+
+    # Determine which project directories to scan
+    if args.all:
+        project_dirs = sorted(glob.glob(os.path.join(CLAUDE_DIR, "*/")))
+    elif args.project:
+        pdir = find_project_dir(args.project)
+        if not pdir:
+            print(f"No Claude project directory found for: {args.project}", file=sys.stderr)
+            sys.exit(1)
+        project_dirs = [pdir]
+    else:
+        cwd = os.getcwd()
+        pdir = find_project_dir(cwd)
+        if not pdir:
+            print(f"No Claude project directory found for: {cwd}", file=sys.stderr)
+            print("Use --all to see all projects, or --project <path>", file=sys.stderr)
+            sys.exit(1)
+        project_dirs = [pdir]
+
+    # Collect all sessions
+    all_sessions = []
+    for pdir in project_dirs:
+        pdir = pdir.rstrip("/")
+        pname = project_display_name(pdir)
+        for f in glob.glob(os.path.join(pdir, "*.jsonl")):
+            session = parse_session(f)
+            session["project"] = pname
+            session["project_path"] = pdir
+            all_sessions.append(session)
+
+    # Filter stuck sessions
+    if args.stuck:
+        all_sessions = [s for s in all_sessions if s["size"] > 3 * 1024 * 1024 or s["total_messages"] > 200]
+
+    # Sort
+    def sort_key_fn(s):
+        if args.sort == "size":
+            return s["size"]
+        elif args.sort == "messages":
+            return s["total_messages"]
+        elif args.sort == "started":
+            return s["started"] or ""
+        elif args.sort == "updated":
+            return s["updated"] or ""
+        elif args.sort == "title":
+            return (s["title"] or s["branch"] or "").lower()
+        return s["updated"] or ""
+
+    all_sessions.sort(key=sort_key_fn, reverse=(args.sort != "title"))
+
+    # Limit
+    if args.limit > 0:
+        all_sessions = all_sessions[: args.limit]
+
+    # Output
+    if args.json:
+        output = []
+        for s in all_sessions:
+            # Remove non-serializable fields
+            entry = {k: v for k, v in s.items() if k not in ("path", "started_dt", "updated_dt")}
+            output.append(entry)
+        json.dump(output, sys.stdout, indent=2)
+        print()
+    else:
+        if args.all:
+            by_project = {}
+            for s in all_sessions:
+                by_project.setdefault(s["project"], []).append(s)
+            for pname, sessions in by_project.items():
+                print_sessions(sessions, show_project=True, project_name=pname)
+        else:
+            pname = all_sessions[0]["project"] if all_sessions else "unknown"
+            print_sessions(all_sessions, project_name=pname)
+
+
+if __name__ == "__main__":
+    main()

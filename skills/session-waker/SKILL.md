@@ -14,8 +14,8 @@ its work is done.
 
 **Why it exists:** `ScheduleWakeup` (the `/loop` timer) is in-process — it only fires inside a
 live turn of the same session, so a rate-limited or backgrounded session stalls. launchd is the
-only truly session-independent local trigger. Full design + locked decisions:
-`docs/session-waker-design.md`.
+only truly session-independent local trigger. Full design + locked decisions live in
+`~/projects/tjdsneto-setup/docs/session-waker-design.md` until copied into this repo.
 
 ## If you are a session about to run a long unattended task — register yourself
 

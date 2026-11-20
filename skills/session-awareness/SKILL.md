@@ -58,6 +58,7 @@ To get the session ID, run `active-sessions` and copy the Session column value (
 
 ```bash
 list-sessions              # sessions for the current project (cwd)
+# equiv: agt sessions list
 list-sessions --all        # all sessions across every project
 list-sessions --all --sort started   # oldest first
 list-sessions --all --limit 50       # show more
