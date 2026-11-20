@@ -6,7 +6,6 @@
 tmp/
 modules/**/tmp/
 modules/**/reports/
-modules/registry/desktop/
 *.egg-info/
 dist/
 build/
