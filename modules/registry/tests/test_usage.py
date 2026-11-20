@@ -245,6 +245,44 @@ def test_cursor_window_projects_strip_workspace_suffix(monkeypatch):
     assert cursor_window_projects() == {"obra-manager", "agent-tools"}
 
 
+def test_cursor_composer_names_fall_back_to_composer_data(tmp_path):
+    """Older chats often have name only on composerData, not composerHeaders."""
+    import sqlite3
+
+    from agent_registry.usage import cursor_composer_names
+
+    db = tmp_path / "state.vscdb"
+    con = sqlite3.connect(db)
+    con.execute("CREATE TABLE composerHeaders (composerId TEXT, value TEXT)")
+    con.execute("CREATE TABLE cursorDiskKV (key TEXT PRIMARY KEY, value TEXT)")
+    con.execute(
+        "INSERT INTO composerHeaders VALUES (?, ?)",
+        ("with-header", json.dumps({"name": "From header"})),
+    )
+    con.execute(
+        "INSERT INTO cursorDiskKV VALUES (?, ?)",
+        (
+            "composerData:data-only",
+            json.dumps({"composerId": "data-only", "name": "From composerData"}),
+        ),
+    )
+    con.execute(
+        "INSERT INTO cursorDiskKV VALUES (?, ?)",
+        (
+            "composerData:with-header",
+            json.dumps({"composerId": "with-header", "name": "Should not win"}),
+        ),
+    )
+    con.commit()
+    con.close()
+
+    names = cursor_composer_names({"with-header", "data-only", "missing"}, db)
+    assert names == {
+        "with-header": "From header",
+        "data-only": "From composerData",
+    }
+
+
 def test_live_marks_an_open_cursor_chat(tmp_registry, monkeypatch):
     from agent_registry import ops
 

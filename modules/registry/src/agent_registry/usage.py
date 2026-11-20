@@ -246,7 +246,12 @@ def open_cursor_chats(storage_root: Path | None = None) -> dict[str, str]:
 def cursor_composer_names(
     session_ids: set[str], db_path: Path | None = None
 ) -> dict[str, str]:
-    """Composer display names, looked up by id. Missing names are omitted."""
+    """Composer display names, looked up by id. Missing names are omitted.
+
+    Prefer ``composerHeaders``. When a chat has no header row (common for older
+    or migrated composers), fall back to ``cursorDiskKV`` key
+    ``composerData:<id>`` which still carries ``name``.
+    """
     if not session_ids:
         return {}
     path = db_path or (
@@ -257,6 +262,10 @@ def cursor_composer_names(
         return {}
     try:
         con = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=1)
+    except sqlite3.Error:
+        return {}
+    names: dict[str, str] = {}
+    try:
         rows = con.execute(
             "SELECT composerId, value FROM composerHeaders WHERE composerId IN ({})".format(
                 ",".join("?" for _ in session_ids)
@@ -264,25 +273,48 @@ def cursor_composer_names(
             tuple(session_ids),
         ).fetchall()
     except sqlite3.Error:
-        return {}
-    names: dict[str, str] = {}
+        rows = []
     for composer_id, raw in rows:
-        if not isinstance(composer_id, str):
+        name = _composer_name_from_json(raw)
+        if isinstance(composer_id, str) and name:
+            names[composer_id] = name
+    missing = [sid for sid in session_ids if sid not in names]
+    if not missing:
+        return names
+    try:
+        kv_rows = con.execute(
+            "SELECT key, value FROM cursorDiskKV WHERE key IN ({})".format(
+                ",".join("?" for _ in missing)
+            ),
+            tuple(f"composerData:{sid}" for sid in missing),
+        ).fetchall()
+    except sqlite3.Error:
+        return names
+    for key, raw in kv_rows:
+        if not isinstance(key, str) or not key.startswith("composerData:"):
             continue
-        if isinstance(raw, bytes):
-            raw = raw.decode("utf-8", "replace")
-        if not isinstance(raw, str):
-            continue
-        try:
-            data = json.loads(raw)
-        except json.JSONDecodeError:
-            continue
-        if not isinstance(data, dict):
-            continue
-        name = data.get("name")
-        if isinstance(name, str) and name.strip():
-            names[composer_id] = name.strip()
+        composer_id = key[len("composerData:") :]
+        name = _composer_name_from_json(raw)
+        if composer_id and name:
+            names[composer_id] = name
     return names
+
+
+def _composer_name_from_json(raw: Any) -> str:
+    if isinstance(raw, bytes):
+        raw = raw.decode("utf-8", "replace")
+    if not isinstance(raw, str):
+        return ""
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return ""
+    if not isinstance(data, dict):
+        return ""
+    name = data.get("name")
+    if isinstance(name, str) and name.strip():
+        return name.strip()
+    return ""
 
 
 def _workspace_directory(path: Path) -> str:
