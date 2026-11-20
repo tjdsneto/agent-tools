@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+# agt — agent-tools dispatcher. Exec into module binaries; preserve exit codes.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cmd="${1:-}"
+[ $# -gt 0 ] && shift || true
+
+die() { echo "agt: $*" >&2; exit 2; }
+
+# Test harness overrides (see tests/test_agt_dispatch.sh).
+if [ "${AGT_TEST_MODE:-}" = 1 ]; then
+  case "$cmd" in
+    registry) exec "${AGT_TEST_REGISTRY_BIN:?}" "$@" ;;
+    *) die "unknown command '$cmd'" ;;
+  esac
+fi
+
+case "$cmd" in
+  registry)
+    exec "$ROOT/modules/registry/bin/agent-registry" "$@"
+    ;;
+  waker)
+    exec "$ROOT/modules/waker/session-waker" "$@"
+    ;;
+  budget)
+    exec "$ROOT/modules/waker/claude-budget" "$@"
+    ;;
+  sessions)
+    sub="${1:-}"; [ $# -gt 0 ] && shift || true
+    case "$sub" in
+      report) exec "$ROOT/modules/sessions/session-report" "$@" ;;
+      active) exec "$ROOT/modules/sessions/active-sessions" "$@" ;;
+      rename) exec "$ROOT/modules/sessions/rename-session" "$@" ;;
+      *) die "sessions: need report|active|rename" ;;
+    esac
+    ;;
+  say)
+    exec "$ROOT/modules/say/bin/agent-say" "$@"
+    ;;
+  read)
+    exec "$ROOT/modules/read/bin/agent-read" "$@"
+    ;;
+  glue)
+    sub="${1:-}"; [ $# -gt 0 ] && shift || true
+    case "$sub" in
+      scan) exec python3 "$ROOT/modules/glue-miner/glue_miner.py" "$@" ;;
+      *) die "glue: need scan" ;;
+    esac
+    ;;
+  ""|-h|--help|help)
+    cat <<'EOF'
+agt — agent-tools
+  agt registry …          agent-registry
+  agt waker …             session-waker
+  agt budget …            claude-budget
+  agt sessions report|active|rename …
+  agt say …               agent-say
+  agt read …              agent-read
+  agt glue scan …         glue-miner
+EOF
+    exit 0
+    ;;
+  *) die "unknown command '$cmd' (try: agt help)" ;;
+esac
