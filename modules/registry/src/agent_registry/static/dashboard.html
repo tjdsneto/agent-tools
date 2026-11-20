@@ -23,6 +23,9 @@
       --row-x: 16px;
       --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
       --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+      --scroll-size: 6px;
+      --scroll-thumb: rgba(22, 25, 29, 0.22);
+      --scroll-thumb-hover: rgba(22, 25, 29, 0.4);
     }
     @media (prefers-color-scheme: dark) {
       :root {
@@ -39,9 +42,38 @@
         --warn: #d29922;
         --danger: #f85149;
         --idle: #6b7480;
+        --scroll-thumb: rgba(255, 255, 255, 0.18);
+        --scroll-thumb-hover: rgba(255, 255, 255, 0.32);
       }
     }
     * { box-sizing: border-box; }
+    .scroll-y {
+      overflow-x: hidden;
+      overflow-y: auto;
+      scrollbar-width: thin;
+      scrollbar-color: var(--scroll-thumb) transparent;
+    }
+    .scroll-y::-webkit-scrollbar {
+      width: var(--scroll-size);
+      height: var(--scroll-size);
+    }
+    .scroll-y::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    .scroll-y::-webkit-scrollbar-thumb {
+      background: var(--scroll-thumb);
+      border-radius: 999px;
+      border: 1px solid transparent;
+      background-clip: padding-box;
+    }
+    .scroll-y::-webkit-scrollbar-thumb:hover {
+      background: var(--scroll-thumb-hover);
+      border: 1px solid transparent;
+      background-clip: padding-box;
+    }
+    .scroll-y::-webkit-scrollbar-corner {
+      background: transparent;
+    }
     body {
       margin: 0;
       font-family: var(--sans);
@@ -87,7 +119,7 @@
       color: var(--text-3);
       padding: 4px 8px 8px;
     }
-    .side-list { overflow: auto; flex: 1; min-height: 0; }
+    .side-list { flex: 1; min-height: 0; }
     .nav-sticky {
       position: sticky;
       top: 0;
@@ -151,7 +183,6 @@
     .boot .app-version { margin: 0; }
     .main {
       min-width: 0;
-      overflow: auto;
       padding: 0 24px 32px;
     }
     .list-title {
@@ -558,12 +589,12 @@
   <div id="app" class="shell hidden">
     <nav class="sidebar" aria-label="Projects">
       <div class="side-label">Projects</div>
-      <div id="projects" class="side-list"></div>
+      <div id="projects" class="side-list scroll-y"></div>
       <p class="app-version"></p>
     </nav>
     <div id="side-resize" class="side-resize" role="separator" aria-orientation="vertical"
          aria-label="Resize projects" tabindex="0"></div>
-    <div class="main">
+    <div class="main scroll-y">
       <header class="top">
         <div class="brand">agent-registry</div>
         <div class="fresh" id="fresh" title="Last successful poll">
