@@ -143,6 +143,22 @@ def test_unregister_bad_id(tmp_registry):
         ops.unregister("missing")
 
 
+def test_delete_removes_without_archive(tmp_registry):
+    from agent_registry import archive
+
+    s = ops.register(agent_type="cursor", session_id="del-1", directory="/proj")
+    ops.delete(s.registry_id)
+    assert store.load().sessions == []
+    events, status = archive.read_events_result()
+    assert status in ("ok", "missing")
+    assert events == []
+
+
+def test_delete_bad_id(tmp_registry):
+    with pytest.raises(ops.UnknownRegistryIdError):
+        ops.delete("missing")
+
+
 def _backdate_last_ping(registry_id: str, seconds_ago: int) -> None:
     """Rewind a session's last_ping to simulate time passing between pings."""
     from datetime import datetime, timedelta, timezone

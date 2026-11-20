@@ -1,6 +1,6 @@
 {
   "name": "agent-registry",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Session presence for Codex. Hooks own ensure, heartbeat, and end. The skill owns list and update.",
   "author": {
     "name": "Tiago Neto"

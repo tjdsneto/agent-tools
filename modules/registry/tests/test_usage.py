@@ -304,6 +304,55 @@ def test_claude_interrupt_reason_detects_token_limit(tmp_path):
     assert claude_interrupt_reason(sid, projects_root=tmp_path / "projects") == "token_limit"
 
 
+def test_claude_interrupt_reason_clears_after_continued_turn(tmp_path):
+    """Historical rate_limit must not keep Resume lit after the session continues."""
+    from agent_registry.usage import claude_interrupt_reason
+
+    projects = tmp_path / "projects" / "demo"
+    projects.mkdir(parents=True)
+    sid = "claude-limit-cleared"
+    (projects / f"{sid}.jsonl").write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "type": "assistant",
+                        "isApiErrorMessage": True,
+                        "error": "rate_limit",
+                        "message": {
+                            "role": "assistant",
+                            "content": [
+                                {
+                                    "type": "text",
+                                    "text": "You've hit your 5-hour limit",
+                                }
+                            ],
+                        },
+                    }
+                ),
+                json.dumps(
+                    {
+                        "type": "user",
+                        "message": {"role": "user", "content": "continue"},
+                    }
+                ),
+                json.dumps(
+                    {
+                        "type": "assistant",
+                        "message": {
+                            "role": "assistant",
+                            "content": [{"type": "text", "text": "Back at it."}],
+                        },
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    assert claude_interrupt_reason(sid, projects_root=tmp_path / "projects") is None
+
+
 def test_claude_session_title_prefers_custom_over_ai(tmp_path):
     from agent_registry.usage import claude_session_title
 
@@ -348,6 +397,43 @@ def test_claude_session_title_falls_back_to_ai_title(tmp_path):
     )
 
 
+def test_claude_session_model_reads_newest_assistant(tmp_path):
+    from agent_registry.usage import claude_session_model
+
+    projects = tmp_path / "projects" / "demo"
+    projects.mkdir(parents=True)
+    sid = "claude-model-1"
+    (projects / f"{sid}.jsonl").write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "type": "assistant",
+                        "message": {
+                            "role": "assistant",
+                            "model": "claude-opus-4-8",
+                            "content": [{"type": "text", "text": "old"}],
+                        },
+                    }
+                ),
+                json.dumps(
+                    {
+                        "type": "assistant",
+                        "message": {
+                            "role": "assistant",
+                            "model": "claude-fable-5",
+                            "content": [{"type": "text", "text": "new"}],
+                        },
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    assert claude_session_model(sid, projects_root=tmp_path / "projects") == "claude-fable-5"
+
+
 def test_live_fills_null_claude_title_from_jsonl(tmp_registry, monkeypatch, tmp_path):
     from agent_registry import ops
 
@@ -372,6 +458,10 @@ def test_live_fills_null_claude_title_from_jsonl(tmp_registry, monkeypatch, tmp_
             "Validate engine improvements" if session_id == sid else None
         ),
     )
+    monkeypatch.setattr(
+        "agent_registry.usage.claude_session_model",
+        lambda session_id, projects_root=None: None,
+    )
     ops.register(agent_type="claude", session_id=sid, directory="/am-videos", pid=None)
     httpd = serve_in_thread("127.0.0.1", 0)
     try:
@@ -385,6 +475,38 @@ def test_live_fills_null_claude_title_from_jsonl(tmp_registry, monkeypatch, tmp_
             for s in live["active"] + live["stale"] + live["attention"]
         }
         assert rows[sid]["title"] == "Validate engine improvements"
+    finally:
+        stop_server(httpd)
+
+
+def test_live_fills_null_claude_model_from_jsonl(tmp_registry, monkeypatch):
+    from agent_registry import ops
+
+    sid = "claude-live-model"
+    monkeypatch.setattr("agent_registry.usage.open_cursor_chats", lambda: {})
+    monkeypatch.setattr(
+        "agent_registry.usage.claude_session_title",
+        lambda session_id, projects_root=None: None,
+    )
+    monkeypatch.setattr(
+        "agent_registry.usage.claude_session_model",
+        lambda session_id, projects_root=None: (
+            "claude-opus-4-8" if session_id == sid else None
+        ),
+    )
+    ops.register(agent_type="claude", session_id=sid, directory="/am-videos", pid=None)
+    httpd = serve_in_thread("127.0.0.1", 0)
+    try:
+        live = json.loads(
+            urllib.request.urlopen(
+                f"http://127.0.0.1:{httpd.server_address[1]}/api/live"
+            ).read()
+        )
+        rows = {
+            s["session_id"]: s
+            for s in live["active"] + live["stale"] + live["attention"]
+        }
+        assert rows[sid]["model"] == "claude-opus-4-8"
     finally:
         stop_server(httpd)
 

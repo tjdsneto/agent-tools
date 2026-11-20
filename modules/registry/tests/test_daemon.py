@@ -283,6 +283,38 @@ def test_archive_missing_session_is_not_found(tmp_registry):
         stop_server(httpd)
 
 
+def test_delete_session_removes_without_archive(tmp_registry):
+    from agent_registry import archive
+
+    httpd = serve_in_thread("127.0.0.1", 0)
+    port = httpd.server_address[1]
+    try:
+        post(port, "ensure", {
+            "agent_type": "claude", "session_id": "to-delete", "directory": "/p",
+        })
+        deleted = post(port, "delete_session", {"session_id": "to-delete"})
+        assert deleted["exit_code"] == 0
+        assert deleted["data"]["session_id"] == "to-delete"
+        live = json.loads(urllib.request.urlopen(f"http://127.0.0.1:{port}/api/live").read())
+        ids = [s["session_id"] for s in live["active"] + live["stale"] + live["attention"]]
+        assert "to-delete" not in ids
+        events, status = archive.read_events_result()
+        assert status in ("ok", "missing")
+        assert events == []
+    finally:
+        stop_server(httpd)
+
+
+def test_delete_missing_session_is_not_found(tmp_registry):
+    httpd = serve_in_thread("127.0.0.1", 0)
+    port = httpd.server_address[1]
+    try:
+        missing = post(port, "delete_session", {"session_id": "nobody"})
+        assert missing["exit_code"] == 2
+    finally:
+        stop_server(httpd)
+
+
 def test_archive_unregister_race_hides_registry_id(tmp_registry, monkeypatch):
     from agent_registry.ops import UnknownRegistryIdError
 

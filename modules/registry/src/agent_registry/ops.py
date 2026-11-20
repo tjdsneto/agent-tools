@@ -306,6 +306,18 @@ def unregister(registry_id: str) -> None:
     store.transact(_do_unregister)
 
 
+def delete(registry_id: str) -> None:
+    """Remove a session from the live board with no archive record."""
+
+    def _do_delete(reg: RegistryFile) -> None:
+        sess = _find_by_registry_id(reg, registry_id)
+        if not sess:
+            raise UnknownRegistryIdError(registry_id)
+        reg.sessions = [s for s in reg.sessions if s.registry_id != registry_id]
+
+    store.transact(_do_delete)
+
+
 def list_split(*, now: datetime | None = None) -> tuple[list[dict], list[dict]]:
     reg = store.load()
     active, stale = [], []

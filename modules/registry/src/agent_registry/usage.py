@@ -90,10 +90,11 @@ _RATE_LIMIT_ERRORS = frozenset({"rate_limit", "rate_limit_error"})
 def claude_interrupt_reason(
     session_id: str, projects_root: Path | None = None
 ) -> str | None:
-    """Latest Claude interrupt class from the session jsonl, if any.
+    """Current Claude interrupt class from the session jsonl, if any.
 
-    Returns ``rate_limit`` or ``token_limit`` when the newest API error / system
-    notice matches. Used by the board to offer Resume.
+    Returns ``rate_limit`` or ``token_limit`` only when the newest turn-ending
+    event is still an interrupt (no later user/assistant progress). Used by the
+    board to offer Resume.
     """
     if projects_root is not None:
         return _claude_interrupt_from_root(session_id, Path(projects_root))
@@ -123,7 +124,11 @@ def _claude_interrupt_from_root(session_id: str, root: Path) -> str | None:
 
 
 def _interrupt_from_claude_jsonl(path: Path) -> str | None:
-    """Newest matching interrupt walking the jsonl from the end."""
+    """Current interrupt only: walk jsonl from the end; stop at first turn event.
+
+    An older rate/token limit must not keep Resume lit after the user or
+    assistant has continued past it.
+    """
     try:
         for raw in _reversed_lines(path):
             obj = _parse_json_object(raw)
@@ -132,9 +137,21 @@ def _interrupt_from_claude_jsonl(path: Path) -> str | None:
             reason = _interrupt_reason_from_event(obj)
             if reason:
                 return reason
+            if _clears_interrupt(obj):
+                return None
     except OSError:
         return None
     return None
+
+
+def _clears_interrupt(obj: dict[str, Any]) -> bool:
+    """True when this event means the session moved on past any older interrupt."""
+    kind = obj.get("type")
+    if kind == "user":
+        return True
+    if kind == "assistant" and not obj.get("isApiErrorMessage"):
+        return True
+    return False
 
 
 def _interrupt_reason_from_event(obj: dict[str, Any]) -> str | None:
@@ -196,6 +213,61 @@ def claude_session_title(
         return None
     title = wrapped.get("title")
     return title if isinstance(title, str) and title else None
+
+
+def claude_session_model(
+    session_id: str, projects_root: Path | None = None
+) -> str | None:
+    """Latest Claude Code model slug from the session jsonl, if any.
+
+    Reads ``message.model`` on the newest assistant turn. Claude hooks often
+    omit model in the payload, so the board backfills from transcript.
+    """
+    if projects_root is not None:
+        return _claude_model_from_root(session_id, Path(projects_root))
+    root = Path.home() / ".claude" / "projects"
+
+    def load() -> dict[str, Any] | None:
+        model = _claude_model_from_root(session_id, root)
+        return {"model": model} if model else None
+
+    wrapped = _cached("claude-model", session_id, load)
+    if not isinstance(wrapped, dict):
+        return None
+    model = wrapped.get("model")
+    return model if isinstance(model, str) and model else None
+
+
+def _claude_model_from_root(session_id: str, root: Path) -> str | None:
+    paths = _claude_files(root, session_id)
+    if not paths:
+        return None
+    paths.sort(key=lambda p: p.stat().st_mtime if p.exists() else 0, reverse=True)
+    for path in paths:
+        model = _model_from_claude_jsonl(path)
+        if model:
+            return model
+    return None
+
+
+def _model_from_claude_jsonl(path: Path) -> str | None:
+    """Newest assistant ``message.model`` walking the jsonl from the end."""
+    try:
+        for raw in _reversed_lines(path):
+            obj = _parse_json_object(raw)
+            if obj is None:
+                continue
+            if obj.get("type") != "assistant":
+                continue
+            message = obj.get("message")
+            if not isinstance(message, dict):
+                continue
+            model = message.get("model")
+            if isinstance(model, str) and model.strip():
+                return model.strip()
+    except OSError:
+        return None
+    return None
 
 
 def _claude_title_from_root(session_id: str, root: Path) -> str | None:

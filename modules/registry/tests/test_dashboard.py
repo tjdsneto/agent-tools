@@ -182,14 +182,18 @@ def test_board_actions_in_script(tmp_registry):
         assert "if (sess.cpu_percent != null)" in script
         assert "cpu_percent" in script and "memory_bytes" in script
         # Action buttons and ops.
-        for label in ("Archive", "Kill", "Send Message", "Open"):
+        for label in ("Kill", "Send Message", "Open"):
             assert f'actionBtn("{label}"' in script
         assert 'actionBtn("Resume"' in script
         assert 'if (!sess.pid) return ""' in script
         assert "function killBtn" in script
-        assert "archive_session" in script and "kill_session" in script
+        assert "function deleteBtn" in script
+        assert "TRASH_SVG" in script
+        assert 'if (processOpen(sess)) return ""' in script
+        assert "delete_session" in script and "kill_session" in script
         assert "send_session" in script
         assert "open_workspace" in script
+        assert "Remove from board" in script
         assert "interrupt_reason" in script
         assert 'id="send-modal"' in home
         assert "openSendModal" in script
@@ -207,6 +211,8 @@ def test_board_actions_in_script(tmp_registry):
         assert "/api/command" in script
         # Engine communicated by icon only — no agent_type word in metaBits.
         assert "else if (sess.agent_type)" not in script
+        assert 'class="label">model</span>' in script
+        assert ".usage .sep" in home
         # Nesting stays on buildForest / parent_session_id.
         assert "function buildForest" in script
         assert "parent_session_id" in script

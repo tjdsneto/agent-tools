@@ -357,6 +357,20 @@ def _prepare_command(op: str, params: Any):
             return EXIT_OK, {"ok": True, "session_id": session_id}, None
 
         return run
+    if op == "delete_session":
+        session_id = _require_str(params, "session_id")
+
+        def run() -> tuple[int, Any, str | None]:
+            session = _session_by_id(session_id)
+            if session is None:
+                return EXIT_NOT_FOUND, None, "session not found"
+            try:
+                ops.delete(session.registry_id)
+            except ops.UnknownRegistryIdError:
+                return EXIT_NOT_FOUND, None, "session not found"
+            return EXIT_OK, {"ok": True, "session_id": session_id}, None
+
+        return run
     if op == "kill_session":
         session_id = _require_str(params, "session_id")
 
@@ -478,6 +492,7 @@ class DaemonHandler(DashboardHandler):
         views = self._include_open_cursor_chats(views, open_chats)
         views = self._sync_cursor_titles(views)
         views = self._sync_claude_titles(views)
+        views = self._sync_claude_models(views)
         open_ids = set(open_chats)
         interrupt_budget = 40
         for name in ("active", "stale", "attention"):
@@ -559,6 +574,34 @@ class DaemonHandler(DashboardHandler):
             return views
         return self._apply_harness_titles(views, names)
 
+    def _sync_claude_models(self, views: dict[str, list]) -> dict[str, list]:
+        """Fill or refresh Claude models from the newest jsonl assistant turn.
+
+        Claude hooks often omit model in the payload. Cap scans per live poll;
+        prefer sessions with a pid.
+        """
+        candidates = [
+            view
+            for name in ("active", "stale", "attention")
+            for view in views[name]
+            if view.get("agent_type") == "claude" and view.get("session_id")
+        ]
+        if not candidates:
+            return views
+        candidates.sort(key=lambda v: (0 if v.get("pid") else 1))
+        models: dict[str, str] = {}
+        for view in candidates[:40]:
+            session_id = view["session_id"]
+            try:
+                model = usage.claude_session_model(session_id)
+            except Exception:
+                continue
+            if model:
+                models[session_id] = model
+        if not models:
+            return views
+        return self._apply_harness_models(views, models)
+
     def _apply_harness_titles(
         self, views: dict[str, list], names: dict[str, str]
     ) -> dict[str, list]:
@@ -572,6 +615,29 @@ class DaemonHandler(DashboardHandler):
                 continue
             try:
                 ops.update(session.registry_id, title=name)
+                changed = True
+            except Exception:
+                continue
+        if not changed:
+            return views
+        try:
+            return ops.live_views()
+        except CorruptRegistryError:
+            return views
+
+    def _apply_harness_models(
+        self, views: dict[str, list], models: dict[str, str]
+    ) -> dict[str, list]:
+        changed = False
+        for session_id, model in models.items():
+            session = _session_by_id(session_id)
+            if session is None:
+                continue
+            current = (session.model or "").strip() or None
+            if current == model:
+                continue
+            try:
+                ops.update(session.registry_id, model=model)
                 changed = True
             except Exception:
                 continue
