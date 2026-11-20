@@ -6,7 +6,7 @@
 	<string>com.tjdsneto.glue-miner</string>
 	<key>ProgramArguments</key>
 	<array>
-		<string>__ROOT__/ai/skills/shared/glue-miner/run-weekly.sh</string>
+		<string>__ROOT__/modules/glue-miner/run-weekly.sh</string>
 	</array>
 	<key>StartCalendarInterval</key>
 	<dict>
@@ -20,9 +20,9 @@
 	<key>RunAtLoad</key>
 	<true/>
 	<key>StandardOutPath</key>
-	<string>__ROOT__/ai/skills/shared/glue-miner/reports/run.log</string>
+	<string>__ROOT__/modules/glue-miner/reports/run.log</string>
 	<key>StandardErrorPath</key>
-	<string>__ROOT__/ai/skills/shared/glue-miner/reports/run.log</string>
+	<string>__ROOT__/modules/glue-miner/reports/run.log</string>
 	<key>WorkingDirectory</key>
 	<string>__ROOT__</string>
 </dict>
