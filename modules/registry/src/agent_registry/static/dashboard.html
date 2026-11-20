@@ -88,6 +88,21 @@
       padding: 4px 8px 8px;
     }
     .side-list { overflow: auto; flex: 1; min-height: 0; }
+    .nav-sticky {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      background: var(--surface);
+      padding-bottom: 4px;
+      margin-bottom: 4px;
+    }
+    .nav-main { display: flex; flex-direction: column; gap: 1px; }
+    .nav-other {
+      margin-top: 12px;
+      padding-top: 8px;
+      border-top: 1px solid var(--line);
+    }
+    .nav-other .side-label { padding-top: 0; }
     .nav-row {
       width: 100%;
       display: flex;
@@ -550,7 +565,7 @@
           <span class="pulse"></span>
           <span id="fresh-text">starting…</span>
         </div>
-        <div class="seg" role="tablist" aria-label="View">
+        <div class="seg" id="tabs" role="tablist" aria-label="View">
           <button type="button" role="tab" id="tab-open" class="active" data-tab="open"
                   aria-selected="true" aria-controls="panel-open">Open<span class="n" id="count-open"></span></button>
           <button type="button" role="tab" id="tab-closed" data-tab="closed"
@@ -582,7 +597,11 @@
   let tab = localStorage.getItem(LS_TAB) || "open";
   if (tab === "live") tab = "open";
   if (tab === "stopped") tab = "closed";
-  let selectedProject = localStorage.getItem(LS_PROJECT) || "all";
+  let selectedProject = localStorage.getItem(LS_PROJECT) || "all-open";
+  if (selectedProject === "all") {
+    selectedProject = "all-open";
+    localStorage.setItem(LS_PROJECT, "all-open");
+  }
   let archiveReason = localStorage.getItem(LS_REASON) || "";
   let liveData = { active: [], stale: [], attention: [], corrupt: false };
   let archiveData = { events: [], corrupt: false };
@@ -983,7 +1002,14 @@
   }
 
   function inProject(sess) {
-    return selectedProject === "all" || projectOf(sess) === selectedProject;
+    return selectedProject === "all-open" || projectOf(sess) === selectedProject;
+  }
+
+  function syncTabsForSelection() {
+    const tabsEl = document.getElementById("tabs");
+    const allOpen = selectedProject === "all-open";
+    if (tabsEl) tabsEl.classList.toggle("hidden", allOpen);
+    if (allOpen) setTab("open");
   }
 
   function registryRows() {
@@ -1020,18 +1046,23 @@
       present[key] = true;
       if (processOpen(s)) running[key] = (running[key] || 0) + 1;
     });
-    if (selectedProject !== "all" && !present[selectedProject]) {
-      selectedProject = "all";
-      localStorage.setItem(LS_PROJECT, "all");
+    if (selectedProject !== "all-open" && !present[selectedProject]) {
+      selectedProject = "all-open";
+      localStorage.setItem(LS_PROJECT, "all-open");
     }
+    // Task 4 nests worktree leaves; until then every key is a main project.
     const keys = Object.keys(present).sort(function (a, b) {
       const diff = (running[b] || 0) - (running[a] || 0);
       if (diff) return diff;
       return a.localeCompare(b);
     });
-    let html = navRow("all", "All", runningRows().length);
+    let html = '<div class="nav-sticky">' + navRow("all-open", "All Open", runningRows().length) + "</div>";
+    html += '<div class="nav-main">';
     keys.forEach(function (key) { html += navRow(key, key, running[key] || 0); });
+    html += "</div>";
+    html += '<div class="nav-other"><div class="side-label">Other worktrees</div></div>';
     document.getElementById("projects").innerHTML = html;
+    syncTabsForSelection();
   }
 
   function showSelectedProject() {
@@ -1040,9 +1071,9 @@
   }
 
   function projectHeading() {
-    const title = selectedProject === "all" ? "All sessions" : selectedProject;
+    const title = selectedProject === "all-open" ? "All Open" : selectedProject;
     let html = '<h1 class="list-title">' + esc(title) + "</h1>";
-    if (selectedProject !== "all") {
+    if (selectedProject !== "all-open") {
       html += dirsFor(selectedProject).map(function (dir) {
         return (
           '<div class="project-dir"><span class="path mono" title="' + esc(dir) + '">' +
@@ -1130,7 +1161,7 @@
     if (archiveReason) {
       events = events.filter(function (e) { return e.reason === archiveReason; });
     }
-    if (selectedProject !== "all") {
+    if (selectedProject !== "all-open") {
       events = events.filter(function (e) { return projectOf(e.session) === selectedProject; });
     }
     document.getElementById("count-archive").textContent = events.length ? String(events.length) : "";
@@ -1340,8 +1371,9 @@
   document.getElementById("projects").addEventListener("click", function (ev) {
     const btn = ev.target && ev.target.closest && ev.target.closest("[data-project]");
     if (!btn) return;
-    selectedProject = btn.getAttribute("data-project") || "all";
+    selectedProject = btn.getAttribute("data-project") || "all-open";
     localStorage.setItem(LS_PROJECT, selectedProject);
+    if (selectedProject !== "all-open") setTab("open");
     renderProjects();
     showSelectedProject();
     renderOpen();
@@ -1404,7 +1436,9 @@
     else startPoll();
   });
 
+  if (selectedProject === "all-open") tab = "open";
   setTab(tab);
+  syncTabsForSelection();
   startPoll();
 })();
   </script>

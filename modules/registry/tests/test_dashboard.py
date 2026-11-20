@@ -153,7 +153,12 @@ def test_board_actions_in_script(tmp_registry):
         assert "All Open" in home or "All Open" in script
         # Navigation hooks
         assert "All Open" in script or 'navRow("all-open"' in script or "all-open" in script
+        assert 'selectedProject === "all-open"' in script
+        assert 'navRow("all-open", "All Open"' in script
         assert "Other worktrees" in script
+        assert 'id="tabs"' in home
+        assert 'getElementById("tabs")' in script
+        assert 'classList.toggle("hidden", allOpen)' in script
         assert "group-by" in home.lower() or "groupby" in script.lower() or "LS_GROUP" in script
         # Usage rendered only when present.
         assert "if (sess.tokens)" in script
