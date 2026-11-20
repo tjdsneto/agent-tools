@@ -551,10 +551,10 @@
           <span id="fresh-text">starting…</span>
         </div>
         <div class="seg" role="tablist" aria-label="View">
-          <button type="button" role="tab" id="tab-live" class="active" data-tab="live"
-                  aria-selected="true" aria-controls="panel-live">Live<span class="n" id="count-live"></span></button>
-          <button type="button" role="tab" id="tab-stopped" data-tab="stopped"
-                  aria-selected="false" aria-controls="panel-stopped">Stopped<span class="n" id="count-stopped"></span></button>
+          <button type="button" role="tab" id="tab-open" class="active" data-tab="open"
+                  aria-selected="true" aria-controls="panel-open">Open<span class="n" id="count-open"></span></button>
+          <button type="button" role="tab" id="tab-closed" data-tab="closed"
+                  aria-selected="false" aria-controls="panel-closed">Closed<span class="n" id="count-closed"></span></button>
           <button type="button" role="tab" id="tab-archive" data-tab="archive"
                   aria-selected="false" aria-controls="panel-archive">Archive<span class="n" id="count-archive"></span></button>
         </div>
@@ -562,8 +562,8 @@
       </header>
       <div id="banner" role="alert"></div>
       <div class="panels">
-        <section id="panel-live" role="tabpanel" aria-labelledby="tab-live"></section>
-        <section id="panel-stopped" class="hidden" role="tabpanel" aria-labelledby="tab-stopped"></section>
+        <section id="panel-open" role="tabpanel" aria-labelledby="tab-open"></section>
+        <section id="panel-closed" class="hidden" role="tabpanel" aria-labelledby="tab-closed"></section>
         <section id="panel-archive" class="hidden" role="tabpanel" aria-labelledby="tab-archive"></section>
       </div>
     </div>
@@ -579,7 +579,9 @@
   const SIDE_MAX = 520;
   const LS_REASON = "agent-registry.archiveReason";
 
-  let tab = localStorage.getItem(LS_TAB) || "live";
+  let tab = localStorage.getItem(LS_TAB) || "open";
+  if (tab === "live") tab = "open";
+  if (tab === "stopped") tab = "closed";
   let selectedProject = localStorage.getItem(LS_PROJECT) || "all";
   let archiveReason = localStorage.getItem(LS_REASON) || "";
   let liveData = { active: [], stale: [], attention: [], corrupt: false };
@@ -590,8 +592,8 @@
   let pollOk = true;
 
   const banner = document.getElementById("banner");
-  const panelLive = document.getElementById("panel-live");
-  const panelStopped = document.getElementById("panel-stopped");
+  const panelOpen = document.getElementById("panel-open");
+  const panelClosed = document.getElementById("panel-closed");
   const panelArchive = document.getElementById("panel-archive");
   const freshEl = document.getElementById("fresh");
   const freshText = document.getElementById("fresh-text");
@@ -1051,17 +1053,17 @@
     return html;
   }
 
-  function renderLive() {
-    const running = runningRows().filter(inProject);
-    document.getElementById("count-live").textContent = running.length ? String(running.length) : "";
+  function renderOpen() {
+    const open = runningRows().filter(inProject);
+    document.getElementById("count-open").textContent = open.length ? String(open.length) : "";
 
     let html = projectHeading();
     html += '<div class="band">';
-    html += '<div class="band-head"><h2>Running</h2>';
-    if (running.length) html += '<span class="pill muted">' + running.length + "</span>";
+    html += '<div class="band-head"><h2>Open</h2>';
+    if (open.length) html += '<span class="pill muted">' + open.length + "</span>";
     html += "</div>";
-    if (running.length) {
-      html += renderForest(running, function (s, depth, orphan) {
+    if (open.length) {
+      html += renderForest(open, function (s, depth, orphan) {
         return rowHtml(s, {
           where: "live",
           attention: s.status === "blocked",
@@ -1071,23 +1073,23 @@
         });
       });
     } else {
-      html += '<div class="empty">No process open</div>';
+      html += '<div class="empty">No open sessions</div>';
     }
     html += "</div>";
-    panelLive.innerHTML = html;
+    panelOpen.innerHTML = html;
   }
 
-  function renderStopped() {
-    const stopped = stoppedRows().filter(inProject);
-    document.getElementById("count-stopped").textContent = stopped.length ? String(stopped.length) : "";
+  function renderClosed() {
+    const closed = stoppedRows().filter(inProject);
+    document.getElementById("count-closed").textContent = closed.length ? String(closed.length) : "";
 
     let html = projectHeading();
     html += '<div class="band">';
-    html += '<div class="band-head"><h2>No process</h2>';
-    if (stopped.length) html += '<span class="pill muted">' + stopped.length + "</span>";
+    html += '<div class="band-head"><h2>Closed</h2>';
+    if (closed.length) html += '<span class="pill muted">' + closed.length + "</span>";
     html += "</div>";
-    if (stopped.length) {
-      html += renderForest(stopped, function (s, depth, orphan) {
+    if (closed.length) {
+      html += renderForest(closed, function (s, depth, orphan) {
         return rowHtml(s, {
           where: "stopped",
           actions: true,
@@ -1096,10 +1098,10 @@
         });
       });
     } else {
-      html += '<div class="empty">Every listed session has a process open</div>';
+      html += '<div class="empty">No closed sessions</div>';
     }
     html += "</div>";
-    panelStopped.innerHTML = html;
+    panelClosed.innerHTML = html;
   }
 
   function archiveReasonSeg() {
@@ -1180,8 +1182,8 @@
     tab = name;
     localStorage.setItem(LS_TAB, tab);
     [
-      ["tab-live", "live", panelLive],
-      ["tab-stopped", "stopped", panelStopped],
+      ["tab-open", "open", panelOpen],
+      ["tab-closed", "closed", panelClosed],
       ["tab-archive", "archive", panelArchive],
     ].forEach(function (item) {
       const btn = document.getElementById(item[0]);
@@ -1248,8 +1250,8 @@
       if (msgs.length) showError(msgs.join(" "), "");
       else clearError();
       renderProjects();
-      renderLive();
-      renderStopped();
+      renderOpen();
+      renderClosed();
       renderArchive();
       updateFresh();
     } catch (err) {
@@ -1332,8 +1334,8 @@
     handle.addEventListener("dblclick", function () { remember(220); });
   })();
 
-  document.getElementById("tab-live").addEventListener("click", function () { setTab("live"); });
-  document.getElementById("tab-stopped").addEventListener("click", function () { setTab("stopped"); });
+  document.getElementById("tab-open").addEventListener("click", function () { setTab("open"); });
+  document.getElementById("tab-closed").addEventListener("click", function () { setTab("closed"); });
   document.getElementById("tab-archive").addEventListener("click", function () { setTab("archive"); });
   document.getElementById("projects").addEventListener("click", function (ev) {
     const btn = ev.target && ev.target.closest && ev.target.closest("[data-project]");
@@ -1342,8 +1344,8 @@
     localStorage.setItem(LS_PROJECT, selectedProject);
     renderProjects();
     showSelectedProject();
-    renderLive();
-    renderStopped();
+    renderOpen();
+    renderClosed();
     renderArchive();
   });
 
