@@ -56,3 +56,4 @@ The menu bar does not render a glance. `rows.rs` still builds one.
 
 - The app enables its own login item at startup when it is not already enabled. — `lib::run`
 - The login item is registered through the autostart plugin as a LaunchAgent under the app name `com.tjdsneto.agent-registry.menu`, which is also the Tauri identifier. The daemon's label `com.tjdsneto.agent-registry` is not used. — `lib::autostart_plugin`
+- `Info.plist` sets `LSUIElement`, so login-window restore does not start a second copy beside that LaunchAgent. — `Info.plist`
