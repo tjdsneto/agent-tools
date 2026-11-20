@@ -164,6 +164,17 @@ def test_board_actions_in_script(tmp_registry):
         assert 'getElementById("tabs")' in script
         assert 'classList.toggle("hidden", allOpen)' in script
         assert "group-by" in home.lower() or "groupby" in script.lower() or "LS_GROUP" in script
+        assert 'id="group-by"' in home
+        assert "agent-registry.groupBy.allOpen" in script
+        assert "agent-registry.groupBy.project" in script
+        assert "Latest activity" in home
+        assert "By project" in home
+        assert "By turn status" in home
+        assert 'data-group="latest"' in home
+        assert 'data-group="project"' in home
+        assert 'data-group="status"' in home
+        assert "function renderGroupedSections" in script
+        assert "function sortByLatest" in script
         # Usage rendered only when present.
         assert "if (sess.tokens)" in script
         assert "input_tokens" in script and "output_tokens" in script

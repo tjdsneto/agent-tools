@@ -578,6 +578,14 @@
           <button type="button" role="tab" id="tab-archive" data-tab="archive"
                   aria-selected="false" aria-controls="panel-archive">Archive<span class="n" id="count-archive"></span></button>
         </div>
+        <div class="group-wrap" id="group-by-wrap">
+          <span class="seg-label">Group</span>
+          <div class="seg" id="group-by" role="group" aria-label="Group by">
+            <button type="button" data-group="latest">Latest activity</button>
+            <button type="button" data-group="project" id="group-by-project">By project</button>
+            <button type="button" data-group="status">By turn status</button>
+          </div>
+        </div>
         <div class="spacer"></div>
       </header>
       <div id="banner" role="alert"></div>
@@ -598,6 +606,9 @@
   const SIDE_MIN = 160;
   const SIDE_MAX = 520;
   const LS_REASON = "agent-registry.archiveReason";
+  const LS_GROUP_ALL = "agent-registry.groupBy.allOpen";
+  const LS_GROUP_PROJECT = "agent-registry.groupBy.project";
+  const STATUS_ORDER = ["working", "idle", "reviewing", "blocked"];
 
   let tab = localStorage.getItem(LS_TAB) || "open";
   if (tab === "live") tab = "open";
@@ -608,6 +619,7 @@
     localStorage.setItem(LS_PROJECT, "all-open");
   }
   let archiveReason = localStorage.getItem(LS_REASON) || "";
+  let groupBy = "latest";
   let liveData = { active: [], stale: [], attention: [], corrupt: false };
   let archiveData = { events: [], corrupt: false };
   let timer = null;
@@ -1017,6 +1029,118 @@
     if (allOpen) setTab("open");
   }
 
+  function groupByStorageKey() {
+    return selectedProject === "all-open" ? LS_GROUP_ALL : LS_GROUP_PROJECT;
+  }
+
+  function allowedGroupModes() {
+    return selectedProject === "all-open"
+      ? ["latest", "project", "status"]
+      : ["latest", "status"];
+  }
+
+  function loadGroupBy() {
+    const allowed = allowedGroupModes();
+    let v = localStorage.getItem(groupByStorageKey()) || "latest";
+    if (allowed.indexOf(v) === -1) v = "latest";
+    return v;
+  }
+
+  function setGroupBy(mode) {
+    const allowed = allowedGroupModes();
+    groupBy = allowed.indexOf(mode) === -1 ? "latest" : mode;
+    localStorage.setItem(groupByStorageKey(), groupBy);
+    syncGroupByControl();
+    renderOpen();
+    renderClosed();
+    renderArchive();
+  }
+
+  function syncGroupByControl() {
+    groupBy = loadGroupBy();
+    const projectBtn = document.getElementById("group-by-project");
+    if (projectBtn) {
+      projectBtn.classList.toggle("hidden", selectedProject !== "all-open");
+    }
+    document.querySelectorAll("#group-by [data-group]").forEach(function (btn) {
+      const mode = btn.getAttribute("data-group");
+      const on = mode === groupBy;
+      btn.classList.toggle("active", on);
+      btn.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+  }
+
+  function activityMs(sess) {
+    const iso = (sess && (sess.last_ping || sess.updated_at)) || "";
+    if (!iso) return 0;
+    let s = String(iso);
+    if (s.endsWith("Z")) s = s.slice(0, -1) + "+00:00";
+    const t = Date.parse(s);
+    return Number.isNaN(t) ? 0 : t;
+  }
+
+  function sortByLatest(items) {
+    return items.slice().sort(function (a, b) {
+      return activityMs(b) - activityMs(a);
+    });
+  }
+
+  function turnStatusOf(sess) {
+    const st = sess && sess.status;
+    if (st === "working" || st === "idle" || st === "reviewing" || st === "blocked") return st;
+    return "idle";
+  }
+
+  function statusLabel(st) {
+    return st.charAt(0).toUpperCase() + st.slice(1);
+  }
+
+  function renderSessionRows(items, rowBuilder) {
+    if (!items.length) return "";
+    return renderForest(items, rowBuilder);
+  }
+
+  function renderGroupedSections(items, rowBuilder) {
+    if (!items.length) return "";
+    const mode = groupBy;
+    if (mode === "latest" || (mode === "project" && selectedProject !== "all-open")) {
+      return renderSessionRows(sortByLatest(items), rowBuilder);
+    }
+    if (mode === "project") {
+      const buckets = {};
+      items.forEach(function (s) {
+        const key = projectOf(s);
+        if (!buckets[key]) buckets[key] = [];
+        buckets[key].push(s);
+      });
+      return Object.keys(buckets).sort(function (a, b) {
+        return a.localeCompare(b);
+      }).map(function (key) {
+        const group = sortByLatest(buckets[key]);
+        return (
+          '<div class="group-title">' + esc(key) +
+          ' <span class="n">' + group.length + "</span></div>" +
+          renderSessionRows(group, rowBuilder)
+        );
+      }).join("");
+    }
+    // status
+    const buckets = {};
+    STATUS_ORDER.forEach(function (st) { buckets[st] = []; });
+    items.forEach(function (s) {
+      buckets[turnStatusOf(s)].push(s);
+    });
+    return STATUS_ORDER.map(function (st) {
+      const group = sortByLatest(buckets[st]);
+      if (!group.length) return "";
+      return (
+        '<div class="group-title">' + esc(statusLabel(st)) +
+        ' <span class="n">' + group.length + "</span></div>" +
+        renderSessionRows(group, rowBuilder)
+      );
+    }).join("");
+  }
+
   function registryRows() {
     return (liveData.attention || []).concat(liveData.active || []);
   }
@@ -1140,6 +1264,7 @@
     html += "</div>";
     document.getElementById("projects").innerHTML = html;
     syncTabsForSelection();
+    syncGroupByControl();
   }
 
   function showSelectedProject() {
@@ -1171,7 +1296,7 @@
     if (open.length) html += '<span class="pill muted">' + open.length + "</span>";
     html += "</div>";
     if (open.length) {
-      html += renderForest(open, function (s, depth, orphan) {
+      html += renderGroupedSections(open, function (s, depth, orphan) {
         return rowHtml(s, {
           where: "live",
           attention: s.status === "blocked",
@@ -1197,7 +1322,7 @@
     if (closed.length) html += '<span class="pill muted">' + closed.length + "</span>";
     html += "</div>";
     if (closed.length) {
-      html += renderForest(closed, function (s, depth, orphan) {
+      html += renderGroupedSections(closed, function (s, depth, orphan) {
         return rowHtml(s, {
           where: "stopped",
           actions: true,
@@ -1259,10 +1384,11 @@
       sess._project = sess.project || basename(sess.directory);
       sess._reason = e.reason;
       sess._archived_at = e.archived_at;
+      if (!sess.updated_at && e.archived_at) sess.updated_at = e.archived_at;
       return sess;
     });
 
-    html += renderForest(items, function (sess, depth, orphan) {
+    html += renderGroupedSections(items, function (sess, depth, orphan) {
       return rowHtml(sess, {
         where: "archive",
         reason: sess._reason,
@@ -1445,12 +1571,18 @@
   document.getElementById("tab-open").addEventListener("click", function () { setTab("open"); });
   document.getElementById("tab-closed").addEventListener("click", function () { setTab("closed"); });
   document.getElementById("tab-archive").addEventListener("click", function () { setTab("archive"); });
+  document.getElementById("group-by").addEventListener("click", function (ev) {
+    const btn = ev.target && ev.target.closest && ev.target.closest("[data-group]");
+    if (!btn || btn.classList.contains("hidden")) return;
+    setGroupBy(btn.getAttribute("data-group") || "latest");
+  });
   document.getElementById("projects").addEventListener("click", function (ev) {
     const btn = ev.target && ev.target.closest && ev.target.closest("[data-project]");
     if (!btn) return;
     selectedProject = btn.getAttribute("data-project") || "all-open";
     localStorage.setItem(LS_PROJECT, selectedProject);
     if (selectedProject !== "all-open") setTab("open");
+    syncGroupByControl();
     renderProjects();
     showSelectedProject();
     renderOpen();
@@ -1516,6 +1648,7 @@
   if (selectedProject === "all-open") tab = "open";
   setTab(tab);
   syncTabsForSelection();
+  syncGroupByControl();
   startPoll();
 })();
   </script>
