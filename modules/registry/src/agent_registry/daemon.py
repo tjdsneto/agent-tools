@@ -422,6 +422,7 @@ class DaemonHandler(DashboardHandler):
             open_chats = {}
         views = self._include_open_cursor_chats(views, open_chats)
         views = self._sync_cursor_titles(views)
+        views = self._sync_claude_titles(views)
         open_ids = set(open_chats)
         for name in ("active", "stale", "attention"):
             for view in views[name]:
@@ -458,17 +459,48 @@ class DaemonHandler(DashboardHandler):
             return views
         if not names:
             return views
-        changed = False
-        for view in cursor_views:
+        return self._apply_harness_titles(views, names)
+
+    def _sync_claude_titles(self, views: dict[str, list]) -> dict[str, list]:
+        """Fill empty Claude titles from jsonl customTitle / aiTitle.
+
+        Only backfills missing titles (does not chase every rename) and caps
+        how many jsonl scans run per live poll. Prefer sessions with a pid.
+        """
+        candidates = [
+            view
+            for name in ("active", "stale", "attention")
+            for view in views[name]
+            if view.get("agent_type") == "claude"
+            and view.get("session_id")
+            and not (view.get("title") or "").strip()
+        ]
+        if not candidates:
+            return views
+        candidates.sort(key=lambda v: (0 if v.get("pid") else 1))
+        names: dict[str, str] = {}
+        for view in candidates[:40]:
             session_id = view["session_id"]
-            name = names.get(session_id)
-            if not name:
+            try:
+                title = usage.claude_session_title(session_id)
+            except Exception:
                 continue
-            current = (view.get("title") or "").strip() or None
-            if current == name:
-                continue
+            if title:
+                names[session_id] = title
+        if not names:
+            return views
+        return self._apply_harness_titles(views, names)
+
+    def _apply_harness_titles(
+        self, views: dict[str, list], names: dict[str, str]
+    ) -> dict[str, list]:
+        changed = False
+        for session_id, name in names.items():
             session = _session_by_id(session_id)
             if session is None:
+                continue
+            current = (session.title or "").strip() or None
+            if current == name:
                 continue
             try:
                 ops.update(session.registry_id, title=name)

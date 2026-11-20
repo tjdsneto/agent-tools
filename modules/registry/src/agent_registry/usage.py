@@ -76,6 +76,67 @@ def claude_tokens(
     return _cached("claude", session_id, lambda: _sum_claude(session_id, root))
 
 
+def claude_session_title(
+    session_id: str, projects_root: Path | None = None
+) -> str | None:
+    """Latest Claude Code display title from the session jsonl, if any.
+
+    Prefers ``custom-title`` / ``customTitle`` (user or harness rename) over
+    ``ai-title`` / ``aiTitle``. Subagent-ness is not inferred here — callers
+    decide which sessions to query.
+    """
+    if projects_root is not None:
+        return _claude_title_from_root(session_id, Path(projects_root))
+    root = Path.home() / ".claude" / "projects"
+
+    def load() -> dict[str, Any] | None:
+        title = _claude_title_from_root(session_id, root)
+        return {"title": title} if title else None
+
+    wrapped = _cached("claude-title", session_id, load)
+    if not isinstance(wrapped, dict):
+        return None
+    title = wrapped.get("title")
+    return title if isinstance(title, str) and title else None
+
+
+def _claude_title_from_root(session_id: str, root: Path) -> str | None:
+    paths = _claude_files(root, session_id)
+    if not paths:
+        return None
+    # Same session id can appear under more than one project dir; newest wins.
+    paths.sort(key=lambda p: p.stat().st_mtime if p.exists() else 0, reverse=True)
+    for path in paths:
+        title = _title_from_claude_jsonl(path)
+        if title:
+            return title
+    return None
+
+
+def _title_from_claude_jsonl(path: Path) -> str | None:
+    """Scan jsonl from the end for the latest customTitle, else aiTitle."""
+    custom: str | None = None
+    ai: str | None = None
+    try:
+        for raw in _reversed_lines(path):
+            obj = _parse_json_object(raw)
+            if obj is None:
+                continue
+            kind = obj.get("type")
+            if kind == "custom-title" and custom is None:
+                name = obj.get("customTitle")
+                if isinstance(name, str) and name.strip():
+                    custom = name.strip()
+                    return custom
+            elif kind == "ai-title" and ai is None:
+                name = obj.get("aiTitle")
+                if isinstance(name, str) and name.strip():
+                    ai = name.strip()
+    except OSError:
+        return None
+    return custom or ai
+
+
 def codex_tokens(
     session_id: str, sessions_root: Path | None = None
 ) -> dict[str, Any] | None:

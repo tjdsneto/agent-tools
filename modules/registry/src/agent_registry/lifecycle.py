@@ -70,17 +70,30 @@ def _cursor_harness_title(session_id: str) -> str | None:
         return None
 
 
-def _resolve_title(agent_type: str, session_id: str, title: str | None) -> str | None:
-    """Prefer an explicit title; for Cursor, fall back to the composer name.
+def _claude_harness_title(session_id: str) -> str | None:
+    """Latest customTitle/aiTitle from the Claude session jsonl, or None."""
+    try:
+        return usage.claude_session_title(session_id)
+    except Exception:
+        return None
 
-    Cursor hooks omit the chat title. The composer name is the harness display
-    title — distinct from summary — and is re-read on ensure and heartbeat so
-    renames stick without waiting for a board poll.
+
+def _resolve_title(agent_type: str, session_id: str, title: str | None) -> str | None:
+    """Prefer an explicit title; else harness display name for Cursor/Claude.
+
+    Cursor hooks omit the chat title — composer name in state.vscdb.
+    Claude often omits session_title in hooks even when the jsonl has
+    customTitle/aiTitle — read those when the payload title is empty.
+    Distinct from summary; re-read on ensure/heartbeat so renames stick.
     """
     title = normalize_text(title)
-    if title is not None or agent_type != "cursor":
+    if title is not None:
         return title
-    return _cursor_harness_title(session_id)
+    if agent_type == "cursor":
+        return _cursor_harness_title(session_id)
+    if agent_type == "claude":
+        return _claude_harness_title(session_id)
+    return None
 
 
 def ensure(

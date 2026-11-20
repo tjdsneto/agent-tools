@@ -245,6 +245,91 @@ def test_cursor_window_projects_strip_workspace_suffix(monkeypatch):
     assert cursor_window_projects() == {"obra-manager", "agent-tools"}
 
 
+def test_claude_session_title_prefers_custom_over_ai(tmp_path):
+    from agent_registry.usage import claude_session_title
+
+    projects = tmp_path / "projects" / "demo"
+    projects.mkdir(parents=True)
+    sid = "claude-title-1"
+    (projects / f"{sid}.jsonl").write_text(
+        "\n".join(
+            [
+                json.dumps({"type": "ai-title", "aiTitle": "AI guess", "sessionId": sid}),
+                json.dumps(
+                    {
+                        "type": "custom-title",
+                        "customTitle": "User rename",
+                        "sessionId": sid,
+                    }
+                ),
+                json.dumps({"type": "ai-title", "aiTitle": "Later AI", "sessionId": sid}),
+                json.dumps({"type": "user", "message": {"role": "user", "content": "hi"}}),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    assert claude_session_title(sid, projects_root=tmp_path / "projects") == "User rename"
+
+
+def test_claude_session_title_falls_back_to_ai_title(tmp_path):
+    from agent_registry.usage import claude_session_title
+
+    projects = tmp_path / "projects" / "demo"
+    projects.mkdir(parents=True)
+    sid = "claude-title-2"
+    (projects / f"{sid}.jsonl").write_text(
+        json.dumps({"type": "ai-title", "aiTitle": "MCP server over Tailscale", "sessionId": sid})
+        + "\n",
+        encoding="utf-8",
+    )
+    assert (
+        claude_session_title(sid, projects_root=tmp_path / "projects")
+        == "MCP server over Tailscale"
+    )
+
+
+def test_live_fills_null_claude_title_from_jsonl(tmp_registry, monkeypatch, tmp_path):
+    from agent_registry import ops
+
+    projects = tmp_path / "projects" / "am"
+    projects.mkdir(parents=True)
+    sid = "claude-live-title"
+    (projects / f"{sid}.jsonl").write_text(
+        json.dumps(
+            {
+                "type": "custom-title",
+                "customTitle": "Validate engine improvements",
+                "sessionId": sid,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("agent_registry.usage.open_cursor_chats", lambda: {})
+    monkeypatch.setattr(
+        "agent_registry.usage.claude_session_title",
+        lambda session_id, projects_root=None: (
+            "Validate engine improvements" if session_id == sid else None
+        ),
+    )
+    ops.register(agent_type="claude", session_id=sid, directory="/am-videos", pid=None)
+    httpd = serve_in_thread("127.0.0.1", 0)
+    try:
+        live = json.loads(
+            urllib.request.urlopen(
+                f"http://127.0.0.1:{httpd.server_address[1]}/api/live"
+            ).read()
+        )
+        rows = {
+            s["session_id"]: s
+            for s in live["active"] + live["stale"] + live["attention"]
+        }
+        assert rows[sid]["title"] == "Validate engine improvements"
+    finally:
+        stop_server(httpd)
+
+
 def test_cursor_composer_names_fall_back_to_composer_data(tmp_path):
     """Older chats often have name only on composerData, not composerHeaders."""
     import sqlite3
