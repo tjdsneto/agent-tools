@@ -58,18 +58,32 @@ fn board_url(port: u16) -> String {
 
 /// Ensure the daemon is up, show the Dock icon, and open (or focus) the board.
 /// Returns the board URL.
+///
+/// Daemon I/O stays off the UI thread; AppKit / window work must run on main
+/// (otherwise macOS traps with "Must only be used from the main thread").
 async fn open_board(app: AppHandle) -> Result<String, String> {
     let port = tauri::async_runtime::spawn_blocking(|| daemon_client::ensure_daemon(None))
         .await
         .map_err(|e| e.to_string())??;
     let url = board_url(port);
 
+    let (tx, rx) = std::sync::mpsc::channel();
+    let app_ui = app.clone();
+    let url_ui = url.clone();
+    app.run_on_main_thread(move || {
+        let _ = tx.send(show_or_create_board(app_ui, url_ui));
+    })
+    .map_err(|e| e.to_string())?;
+    rx.recv().map_err(|e| e.to_string())?
+}
+
+/// AppKit / Tauri window work — call only from the main thread.
+fn show_or_create_board(app: AppHandle, url: String) -> Result<String, String> {
     #[cfg(target_os = "macos")]
     {
         app.set_activation_policy(ActivationPolicy::Regular)
             .map_err(|e| e.to_string())?;
-        let app_icon = app.clone();
-        let _ = app_icon.run_on_main_thread(|| tray_arm::set_dock_icon());
+        tray_arm::set_dock_icon();
     }
 
     if let Some(board) = app.get_webview_window("board") {
