@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+*.egg-info/
+dist/
+.superpowers/
+.worktrees/
+tmp/
+
+# ana project layer (not versioned)
+.ana/

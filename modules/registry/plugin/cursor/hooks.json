@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [
+      { "command": "plugin/scripts/registry-hook cursor ensure" }
+    ],
+    "beforeSubmitPrompt": [
+      { "command": "plugin/scripts/registry-hook cursor ping" }
+    ],
+    "stop": [
+      { "command": "plugin/scripts/registry-hook cursor heartbeat" }
+    ],
+    "sessionEnd": [
+      { "command": "plugin/scripts/registry-hook cursor end" }
+    ],
+    "subagentStart": [
+      { "command": "plugin/scripts/registry-hook cursor ensure" }
+    ],
+    "subagentStop": [
+      { "command": "plugin/scripts/registry-hook cursor end" }
+    ]
+  }
+}

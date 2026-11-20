@@ -1,0 +1,10 @@
+{
+  "name": "agent-registry",
+  "description": "Session presence for Claude Code. Hooks own ensure, heartbeat, and end. The skill owns list and update.",
+  "version": "0.1.0",
+  "hooks": "./.claude-plugin/hooks/hooks.json",
+  "author": {
+    "name": "Tiago Neto",
+    "url": "https://github.com/tjdsneto"
+  }
+}

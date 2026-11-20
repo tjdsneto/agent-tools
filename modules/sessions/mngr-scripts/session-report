@@ -1,0 +1,42 @@
+#!/usr/bin/env python3
+"""session-report - Report on Claude Code sessions touched today.
+
+Shows every session (running or already closed) with activity today, tagged with its
+cmux workspace when running inside one, plus per-session and daily-total token counts.
+Read-only: never mutates cmux, Claude Code, or any transcript.
+
+Usage:
+    session-report          # human-readable table
+    session-report --json   # machine-readable
+"""
+import argparse
+import json
+import sys
+from datetime import datetime
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import _sessions as s
+
+
+def _json_default(obj):
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    raise TypeError(f"Not JSON serializable: {obj!r}")
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--json", action="store_true", help="Output as JSON")
+    args = parser.parse_args()
+
+    report = s.gather_report()
+
+    if args.json:
+        print(json.dumps(report, indent=2, default=_json_default))
+    else:
+        print(s.format_report_table(report))
+
+
+if __name__ == "__main__":
+    main()

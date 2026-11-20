@@ -1,0 +1,48 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CODEX_PLUGIN_ROOT}/scripts/registry-hook\" codex ensure"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CODEX_PLUGIN_ROOT}/scripts/registry-hook\" codex ping"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CODEX_PLUGIN_ROOT}/scripts/registry-hook\" codex heartbeat"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CODEX_PLUGIN_ROOT}/scripts/registry-hook\" codex end"
+          }
+        ]
+      }
+    ]
+  }
+}

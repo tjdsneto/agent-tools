@@ -1,0 +1,12 @@
+STALE_SECONDS = 3600
+HEARTBEAT_SECONDS = 60  # min seconds between registry writes; override via AGENT_REGISTRY_HEARTBEAT_SECONDS
+ACTIVE_GAP_SECONDS = 300  # max gap still counted as active continuation; override via AGENT_REGISTRY_ACTIVE_GAP_SECONDS
+STATUSES = frozenset({"idle", "working", "reviewing", "blocked"})
+ARCHIVE_REASONS = frozenset({"unregister", "prune", "replace"})
+DASHBOARD_DEFAULT_PORT = 8765
+DAEMON_SERVICE = "agent-registry"
+DAEMON_START_TIMEOUT = 5.0
+EXIT_OK = 0
+EXIT_USAGE = 1
+EXIT_NOT_FOUND = 2
+EXIT_IO = 3

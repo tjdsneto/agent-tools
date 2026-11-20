@@ -1,0 +1,411 @@
+#!/usr/bin/env bash
+# session-waker — a single token-aware external monitor that keeps registered long-running
+# Claude Code sessions making progress across rate-limit windows, machine sleep, and
+# terminal-close — the gap ScheduleWakeup can't cover because it is in-process.
+#
+# Model (central registry + one monitor):
+#   A session about to run a long task registers ITSELF — passing its own session id, its
+#   working directory, and a continue-prompt. One per-user macOS LaunchAgent (the monitor)
+#   fires on an interval — surviving sleep + terminal-close — and on each fire:
+#
+#     1. Empty registry → unload the monitor (nothing to watch).
+#     2. Done-sentinel sweep (cheap, every tick): de-register any session whose sentinel exists.
+#     3. Read the account token state ONCE (bin/claude-budget snapshot): the 5h session window
+#        AND the weekly model-family window. Windows are account-wide, so one read covers all.
+#     4. RESET-EDGE wake: wake every registered session only on the transition from
+#        "a window was saturated" to "available again" — not on every tick. A session that is
+#        merely running (never blocked) is left alone.                                    (R2)
+#     5. Each wake calls `agent-registry wake <uuid>`. That command dials a live
+#        session and resumes a dead one. WAS_BLOCKED stays set until the wake
+#        exits 0 (landed, or a Codex resume that answered already_awake).
+#        Held / refused / undelivered keep the session blocked. (R1)
+#
+# De-registration is layered + self-healing: (a) the session unregisters itself when done;
+# (b) wake-ack self-eviction — every wake tells an already-finished session to unregister;
+# (c) a dead-process reaper drops a session after MAX_RESUME_FAILS failed wakes; (d) a
+# conservative SessionEnd hook de-registers on a genuine user exit (logout/prompt_input_exit).
+#
+# Reuses bin/claude-budget (the /usage read) and the Watts dev-env dialer pattern
+# (personas/watts/scripts/dev_env.py:_spawn_dialer). See docs/session-waker-design.md.
+#
+#   session-waker register --session <id> --prompt-file <path> [--cwd <dir>] [--model <family>]
+#                          [--done-sentinel <path>] [--interval 15m] [--threshold 88]
+#   session-waker unregister <id>      # drop a session (aliases: done, remove)
+#   session-waker list / status [<id>] # monitor + registry + last token read + log tail
+#   session-waker tick                 # the monitor's per-fire logic (hand-runnable for testing)
+#   session-waker fire                 # force one tick now (launchctl kickstart)
+#   session-waker start / stop         # load / unload the monitor LaunchAgent
+#
+# NOTE on --model + windows: the 5h "session" window is account-wide and binds EVERY session.
+# The weekly window is per model family and /usage reports only ONE (e.g. "Fable") — not every
+# model has a weekly cap. So the weekly gate binds a session ONLY when its --model is that family
+# (or --model is unset); a session on another model gates on the 5h window alone. /usage exposes
+# no other family's weekly, so per-model weekly beyond the one it reports is not available.
+#
+# NOTE on caffeine: while any session is registered the monitor keeps the Mac awake
+# (`caffeinate -ims`, no screen-lock); it is released when the registry empties. SESSION_WAKER_NO_CAFFEINE=1 opts out.
+#
+# Env: CLAUDE_BIN overrides the claude binary · AGENT_REGISTRY_BIN overrides agent-registry
+#      · SESSION_WAKER_HOME overrides the state dir (default ~/.session-waker)
+#      · SESSION_WAKER_PCT overrides the default gate threshold (88).
+set -uo pipefail
+
+SELF_DIR="$(cd "$(dirname "$0")" >/dev/null 2>&1 && pwd)"
+SELF="$SELF_DIR/$(basename "$0")"
+BUDGET="$SELF_DIR/claude-budget"
+
+CLAUDE="${CLAUDE_BIN:-}"
+[ -z "$CLAUDE" ] && { CLAUDE="$HOME/.nvm/versions/node/v20.20.2/bin/claude"; [ -x "$CLAUDE" ] || CLAUDE="$(command -v claude || true)"; }
+
+AGENT_REG="${AGENT_REGISTRY_BIN:-}"
+[ -z "$AGENT_REG" ] && { AGENT_REG="$HOME/.local/bin/agent-registry"; [ -x "$AGENT_REG" ] || AGENT_REG="$(command -v agent-registry || true)"; }
+
+SW_HOME="${SESSION_WAKER_HOME:-$HOME/.session-waker}"
+SESS_DIR="$SW_HOME/sessions"           # the registry: one <id>.conf per session
+MONITOR_CONF="$SW_HOME/monitor.conf"   # interval + threshold + expected model
+STATE_FILE="$SW_HOME/monitor.state"    # unreadable-/usage streak across ticks
+CAFFEINE_PID="$SW_HOME/caffeinate.pid" # session-waker's own caffeinate process
+LOG="$SW_HOME/log/monitor.log"
+LAUNCH_DIR="$HOME/Library/LaunchAgents"
+MONITOR_LABEL="com.tjdsneto.session-waker.monitor"
+MONITOR_PLIST="$LAUNCH_DIR/$MONITOR_LABEL.plist"
+DEFAULT_PCT="${SESSION_WAKER_PCT:-88}"
+DEFAULT_INTERVAL="15m"
+MAX_RESUME_FAILS=3                     # reap a session after this many consecutive failed wakes
+UNKNOWN_FORCE=4                        # after this many unreadable /usage ticks, force a wake
+UID_NUM="$(id -u)"
+
+mkdir -p "$SESS_DIR" "$SW_HOME/log"
+
+die(){ echo "session-waker: $*" >&2; exit 2; }
+sess_conf(){ echo "$SESS_DIR/$1.conf"; }
+log(){ echo "[$(date '+%F %T')] $*"; }
+monitor_loaded(){ launchctl print "gui/$UID_NUM/$MONITOR_LABEL" >/dev/null 2>&1; }
+registry_ids(){ for c in "$SESS_DIR"/*.conf; do [ -e "$c" ] && basename "$c" .conf; done; }
+registry_count(){ registry_ids | grep -c . ; }
+
+to_seconds(){
+  local v="$1" n u
+  case "$v" in
+    *s) n="${v%s}"; u=1;; *m) n="${v%m}"; u=60;; *h) n="${v%h}"; u=3600;; *) n="$v"; u=1;;
+  esac
+  case "$n" in (*[!0-9]*|'') return 1;; esac
+  echo $(( n * u ))
+}
+
+read_monitor_conf(){
+  INTERVAL="$DEFAULT_INTERVAL"; INTERVAL_SECS=900; THRESHOLD="$DEFAULT_PCT"
+  # shellcheck disable=SC1090
+  [ -f "$MONITOR_CONF" ] && source "$MONITOR_CONF"
+}
+write_monitor_conf(){
+  cat >"$MONITOR_CONF" <<CONF
+INTERVAL='$INTERVAL'
+INTERVAL_SECS='$INTERVAL_SECS'
+THRESHOLD='$THRESHOLD'
+CLAUDE_BIN='$CLAUDE'
+AGENT_REGISTRY_BIN='$AGENT_REG'
+CONF
+}
+# Per-session block-state lives in each session conf (WAS_BLOCKED); only the account-wide
+# unreadable-/usage streak is global here.
+read_state(){ UNKNOWN_STREAK=0; [ -f "$STATE_FILE" ] && source "$STATE_FILE"; }
+write_state(){ printf "UNKNOWN_STREAK=%s\n" "${UNKNOWN_STREAK:-0}" >"$STATE_FILE"; }
+
+# ---------------------------------------------------------------- monitor agent load/unload
+ensure_monitor(){
+  read_monitor_conf
+  cat >"$MONITOR_PLIST" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key><string>$MONITOR_LABEL</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>$SELF</string>
+        <string>tick</string>
+    </array>
+    <key>StartInterval</key><integer>$INTERVAL_SECS</integer>
+    <key>RunAtLoad</key><true/>
+    <key>StandardOutPath</key><string>$LOG</string>
+    <key>StandardErrorPath</key><string>$LOG</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>HOME</key><string>$HOME</string>
+        <key>CLAUDE_BIN</key><string>${CLAUDE_BIN:-$CLAUDE}</string>
+        <key>AGENT_REGISTRY_BIN</key><string>${AGENT_REGISTRY_BIN:-$AGENT_REG}</string>
+        <key>SESSION_WAKER_HOME</key><string>$SW_HOME</string>
+    </dict>
+</dict>
+</plist>
+PLIST
+  launchctl bootout "gui/$UID_NUM/$MONITOR_LABEL" >/dev/null 2>&1 || true
+  launchctl bootstrap "gui/$UID_NUM" "$MONITOR_PLIST" || die "launchctl bootstrap failed for $MONITOR_PLIST"
+  start_caffeine
+}
+unload_monitor(){
+  launchctl bootout "gui/$UID_NUM/$MONITOR_LABEL" >/dev/null 2>&1 || true
+  rm -f "$MONITOR_PLIST"
+  stop_caffeine
+}
+
+# Keep the Mac awake while autonomous sessions are registered (reset-edge waking can't cover a
+# stall caused purely by sleep). Uses `caffeinate -ims` (idle/disk/system sleep; display may still
+# sleep) WITHOUT the screen-lock the `caffeine` alias does — the waker must not lock Tiago out.
+# Tracks its OWN pid so it never kills a caffeinate Tiago started by hand. Opt out: SESSION_WAKER_NO_CAFFEINE=1.
+start_caffeine(){
+  [ -n "${SESSION_WAKER_NO_CAFFEINE:-}" ] && return 0
+  command -v caffeinate >/dev/null 2>&1 || return 0
+  [ -f "$CAFFEINE_PID" ] && kill -0 "$(cat "$CAFFEINE_PID" 2>/dev/null)" 2>/dev/null && return 0
+  nohup caffeinate -ims >/dev/null 2>&1 &
+  echo $! >"$CAFFEINE_PID"
+  disown 2>/dev/null || true
+}
+stop_caffeine(){
+  [ -f "$CAFFEINE_PID" ] || return 0
+  local p; p="$(cat "$CAFFEINE_PID" 2>/dev/null)"
+  [ -n "$p" ] && kill "$p" 2>/dev/null
+  rm -f "$CAFFEINE_PID"
+}
+
+# ---------------------------------------------------------------------------- register
+cmd_register(){
+  local session="" prompt_file="" cwd="$PWD" sentinel="" interval="" pct="" model=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --session)       session="$2"; shift 2;;
+      --prompt-file)   prompt_file="$2"; shift 2;;
+      --cwd)           cwd="$2"; shift 2;;
+      --model)         model="$2"; shift 2;;
+      --done-sentinel) sentinel="$2"; shift 2;;
+      --interval)      interval="$2"; shift 2;;
+      --threshold)     pct="$2"; shift 2;;
+      *) die "register: unknown arg '$1'";;
+    esac
+  done
+  [ -n "$session" ] || die "register: --session <id> is required"
+  [ -n "$prompt_file" ] || die "register: --prompt-file <path> is required"
+  [ -f "$prompt_file" ] || die "register: prompt file not found: $prompt_file"
+  [ -d "$cwd" ] || die "register: --cwd is not a directory: $cwd"
+  [ -n "$CLAUDE" ] || die "register: no claude binary found (set CLAUDE_BIN)"
+  prompt_file="$(cd "$(dirname "$prompt_file")" && pwd)/$(basename "$prompt_file")"
+  cwd="$(cd "$cwd" && pwd)"
+  [ -n "$sentinel" ] && sentinel="$(cd "$(dirname "$sentinel")" 2>/dev/null && pwd || echo "$cwd")/$(basename "$sentinel")"
+
+  read_monitor_conf
+  if [ -n "$interval" ]; then INTERVAL="$interval"; INTERVAL_SECS="$(to_seconds "$interval")" || die "register: bad --interval '$interval'"; fi
+  [ -n "$pct" ] && THRESHOLD="$pct"
+  write_monitor_conf
+
+  cat >"$(sess_conf "$session")" <<CONF
+# session-waker registry entry — written $(date '+%F %T').
+SESSION='$session'
+CWD='$cwd'
+PROMPT_FILE='$prompt_file'
+SENTINEL='$sentinel'
+MODEL='$model'
+REGISTERED_AT='$(date '+%F %T')'
+LAST_WOKEN=''
+RESUME_FAILS=0
+WAS_BLOCKED=0
+CONF
+
+  ensure_monitor
+  echo "session-waker: registered '$session' (cwd $cwd${model:+, model $model}). Monitor watches $(registry_count) session(s), fires every $INTERVAL."
+  echo "  gate: <${THRESHOLD}% of the 5h window (all sessions) + the weekly window (only its model family)."
+  echo "  wakes on the token-reset edge (a window went saturated → available), not every tick."
+  [ -z "${SESSION_WAKER_NO_CAFFEINE:-}" ] && command -v caffeinate >/dev/null 2>&1 \
+    && echo "  caffeine: Mac kept awake (caffeinate -ims) while any session is registered; released when the registry empties."
+  echo "  When this session's long task is DONE, it must de-register itself: session-waker unregister $session   (or touch its done-sentinel)."
+  [ -n "$sentinel" ] && echo "  done-sentinel: $sentinel"
+}
+
+# ---------------------------------------------------------------------------- unregister
+cmd_unregister(){
+  local session="${1:-}"; [ -n "$session" ] || die "unregister: need <id>"
+  local c; c="$(sess_conf "$session")"
+  if [ -f "$c" ]; then rm -f "$c"; echo "session-waker: unregistered '$session'."
+  else echo "session-waker: '$session' was not registered (nothing to do)."; fi
+  if [ "$(registry_count)" -eq 0 ]; then unload_monitor; rm -f "$STATE_FILE"; echo "session-waker: registry empty → monitor unloaded."; fi
+}
+
+# ---------------------------------------------------------------------------- tick (monitor)
+cmd_tick(){
+  read_monitor_conf
+  read_state
+  local claude="${CLAUDE_BIN:-$CLAUDE}"
+
+  # 1. Empty registry → unload self.
+  if [ "$(registry_count)" -eq 0 ]; then log "registry empty → unloading monitor."; unload_monitor; rm -f "$STATE_FILE"; exit 0; fi
+
+  # 2. Done-sentinel sweep (cheap, every tick — responsive de-register independent of waking).
+  local id c
+  for id in $(registry_ids); do
+    c="$(sess_conf "$id")"
+    ( # shellcheck disable=SC1090
+      source "$c"
+      if [ -n "${SENTINEL:-}" ] && [ -f "$SENTINEL" ]; then log "$id: done-sentinel present → de-registering."; rm -f "$c"; fi )
+  done
+  if [ "$(registry_count)" -eq 0 ]; then log "all sessions finished (sentinels) → unloading monitor."; unload_monitor; rm -f "$STATE_FILE"; exit 0; fi
+
+  # 3. One token read for all sessions (5h window + weekly window).
+  if [ ! -x "$BUDGET" ] || [ -z "$claude" ]; then
+    log "no claude-budget or claude binary — cannot gate; holding."; exit 0
+  fi
+  local snap sp wp sr wr wf
+  snap="$(CLAUDE_BIN="$claude" "$BUDGET" snapshot 2>/dev/null)"
+  sp="$(printf '%s\n' "$snap" | sed -n 's/^session_pct=//p')"
+  wp="$(printf '%s\n' "$snap" | sed -n 's/^week_pct=//p')"
+  sr="$(printf '%s\n' "$snap" | sed -n 's/^session_reset=//p')"
+  wr="$(printf '%s\n' "$snap" | sed -n 's/^week_reset=//p')"
+  wf="$(printf '%s\n' "$snap" | sed -n 's/^week_family=//p')"
+
+  # Unreadable /usage → likely rate-limited (can't evaluate anyone). Mark every session blocked;
+  # force-wake all after UNKNOWN_FORCE ticks so a persistently unreadable /usage can't stall forever.
+  if [ -z "$sp" ] && [ -z "$wp" ]; then
+    UNKNOWN_STREAK=$(( ${UNKNOWN_STREAK:-0} + 1 )); write_state
+    if [ "$UNKNOWN_STREAK" -ge "$UNKNOWN_FORCE" ]; then
+      log "/usage unreadable for $UNKNOWN_STREAK ticks → forcing a wake of all sessions (fail-safe)."
+      UNKNOWN_STREAK=0; write_state
+      for id in $(registry_ids); do _wake_one "$id" "$claude"; done
+      exit 0
+    fi
+    log "/usage unreadable (streak $UNKNOWN_STREAK) — assuming blocked, holding."
+    for id in $(registry_ids); do _set_blocked "$(sess_conf "$id")" 1; done
+    exit 0
+  fi
+  UNKNOWN_STREAK=0; write_state
+
+  # The 5h window is account-wide (binds every session). The weekly window binds ONLY the model
+  # family it is reported for (e.g. Fable) — a session on another model is not limited by it. So a
+  # session is blocked if the 5h window is saturated, OR (its model is the weekly's family / its
+  # model is unset) AND the weekly window is saturated. Reset-edge is tracked PER SESSION.
+  local sp_blk=0 wk_blk=0
+  [ -n "$sp" ] && [ "$sp" -ge "$THRESHOLD" ] && sp_blk=1
+  [ -n "$wp" ] && [ "$wp" -ge "$THRESHOLD" ] && wk_blk=1
+
+  local vals model wasb weekly_applies blocked why wkinfo
+  for id in $(registry_ids); do
+    c="$(sess_conf "$id")"
+    vals="$( # shellcheck disable=SC1090
+      source "$c" 2>/dev/null; printf '%s\t%s' "${MODEL:-}" "${WAS_BLOCKED:-0}" )"
+    model="${vals%%$'\t'*}"; wasb="${vals##*$'\t'}"
+    weekly_applies=0
+    if [ -z "$model" ] || { [ -n "$wf" ] && [ "$(printf '%s' "$model" | tr A-Z a-z)" = "$(printf '%s' "$wf" | tr A-Z a-z)" ]; }; then weekly_applies=1; fi
+    wkinfo=""; [ "$weekly_applies" = 1 ] && wkinfo=", weekly ${wp:-?}%"
+
+    blocked=0; why=""
+    [ "$sp_blk" = 1 ] && { blocked=1; why="5h ${sp}% resets $(_human "$sr")"; }
+    [ "$weekly_applies" = 1 ] && [ "$wk_blk" = 1 ] && { blocked=1; why="${why:+$why; }weekly${wf:+ ($wf)} ${wp}% resets $(_human "$wr")"; }
+
+    if [ "$blocked" = 1 ]; then
+      _set_blocked "$c" 1
+      log "$id: holding — $why."
+    elif [ "$wasb" = 1 ]; then
+      log "$id: token window reset (5h ${sp}%${wkinfo}) → waking."
+      _wake_one "$id" "$claude"
+    else
+      log "$id: ok (5h ${sp}%${wkinfo}) — no reset edge."
+    fi
+  done
+  exit 0
+}
+
+_set_blocked(){ sed -i '' "s/^WAS_BLOCKED=.*/WAS_BLOCKED=$2/" "$1" 2>/dev/null || true; }
+
+_human(){ [ -n "${1:-}" ] && date -r "$1" '+%F %H:%M' 2>/dev/null || echo "unknown"; }
+
+_wake_one(){
+  local id="$1" claude="$2" c; c="$(sess_conf "$id")"
+  [ -f "$c" ] || return 0
+  # shellcheck disable=SC1090
+  ( source "$c"
+    local continue_msg; continue_msg="$(cat "$PROMPT_FILE" 2>/dev/null)"
+    [ -n "$continue_msg" ] || { log "$id: prompt file empty/missing ($PROMPT_FILE) — skipping."; return 0; }
+
+    local msg="[session-waker] You were woken to keep a long-running task moving. If that work is ALREADY COMPLETE, do NOT continue — run \`session-waker unregister $id\` so I stop waking you. Otherwise, do one unit of work then go idle:
+$continue_msg"
+
+    local bin="${AGENT_REGISTRY_BIN:-$AGENT_REG}"
+    if [ -z "$bin" ] || [ ! -x "$bin" ]; then
+      log "$id: agent-registry not on PATH — wake skipped, still blocked."
+      return 0
+    fi
+    local msgfile; msgfile="$(mktemp)"
+    printf '%s\n' "$msg" > "$msgfile"
+    log "$id: agent-registry wake …"
+    # Exit 0 is landed. Held, refused, and undelivered are non-zero, so
+    # WAS_BLOCKED stays set and the next reset-edge tick tries again.
+    local out; out="$("$bin" wake "$id" --message "$msgfile" 2>&1)"
+    local code=$?
+    rm -f "$msgfile"
+    if [ "$code" -eq 0 ]; then
+      if printf '%s' "$out" | grep -q '"result": "already_awake"'; then
+        log "$id: already awake, not retrying. $(printf '%s' "$out" | head -c 160)"
+      else
+        log "$id: wake landed. $(printf '%s' "$out" | head -c 160)"
+      fi
+      _set_fails "$c" 0
+      _set_blocked "$c" 0
+      sed -i '' "s/^LAST_WOKEN=.*/LAST_WOKEN='$(date '+%F %T')'/" "$c" 2>/dev/null || true
+    else
+      local n; n=$(( ${RESUME_FAILS:-0} + 1 ))
+      if [ "$n" -ge "$MAX_RESUME_FAILS" ]; then
+        log "$id: wake failed ${n}x → REAPING as dead. Last out: $(printf '%s' "$out" | head -c 160)"
+        rm -f "$c"
+      else
+        log "$id: wake not landed (${n}/${MAX_RESUME_FAILS}), still blocked. Out: $(printf '%s' "$out" | head -c 160)"
+        _set_fails "$c" "$n"
+      fi
+    fi
+  )
+}
+_set_fails(){ sed -i '' "s/^RESUME_FAILS=.*/RESUME_FAILS=$2/" "$1" 2>/dev/null || true; }
+
+# ---------------------------------------------------------------------------- status / list
+cmd_status(){
+  local session="${1:-}"
+  read_monitor_conf; read_state
+  local mark="unloaded"; monitor_loaded && mark="LOADED"
+  if [ -n "$session" ]; then
+    local c; c="$(sess_conf "$session")"; [ -f "$c" ] || die "status: '$session' is not registered"
+    # shellcheck disable=SC1090
+    ( source "$c"
+      echo "session '$session' — monitor: $mark"
+      echo "  cwd:       $CWD"
+      [ -n "${MODEL:-}" ] && echo "  model:     $MODEL (advisory — /usage exposes one weekly family only)"
+      echo "  prompt:    $PROMPT_FILE"
+      [ -n "$SENTINEL" ] && echo "  sentinel:  $SENTINEL $([ -f "$SENTINEL" ] && echo '(PRESENT — next tick de-registers)')"
+      echo "  registered:$REGISTERED_AT   last woken: ${LAST_WOKEN:-never}   wake fails: ${RESUME_FAILS:-0}/$MAX_RESUME_FAILS" )
+    return 0
+  fi
+  echo "session-waker monitor: $mark   interval: $INTERVAL (${INTERVAL_SECS}s)   gate: <${THRESHOLD}% (5h + weekly)"
+  echo "state: 5h window binds all sessions; weekly binds only its own model family. unknown-streak: ${UNKNOWN_STREAK:-0}"
+  echo "registry: $(registry_count) session(s)"
+  local id
+  for id in $(registry_ids); do
+    # shellcheck disable=SC1090
+    ( source "$(sess_conf "$id")"; echo "  - $id  (cwd $CWD;${MODEL:+ model $MODEL;} last woken ${LAST_WOKEN:-never}; fails ${RESUME_FAILS:-0}$([ "${WAS_BLOCKED:-0}" = 1 ] && echo '; BLOCKED-awaiting-reset'))" )
+  done
+  [ -f "$LOG" ] && { echo "  --- last 8 monitor log lines ($LOG) ---"; tail -n 8 "$LOG" | sed 's/^/  /'; }
+}
+
+# ---------------------------------------------------------------------------- start/stop/fire
+cmd_start(){ [ "$(registry_count)" -gt 0 ] || die "start: registry is empty — register a session first"; ensure_monitor; echo "session-waker: monitor loaded."; }
+cmd_stop(){ unload_monitor; echo "session-waker: monitor unloaded (registry kept — use unregister to clear it)."; }
+cmd_fire(){ monitor_loaded || die "fire: monitor not loaded (register a session or run: session-waker start)"; launchctl kickstart -k "gui/$UID_NUM/$MONITOR_LABEL" && echo "session-waker: kicked one tick — see: session-waker status"; }
+
+# ---------------------------------------------------------------------------- dispatch
+cmd="${1:-}"; [ $# -gt 0 ] && shift
+case "$cmd" in
+  register)                 cmd_register "$@";;
+  unregister|done|remove)   cmd_unregister "$@";;
+  tick)                     cmd_tick "$@";;
+  status|list)              cmd_status "$@";;
+  start)                    cmd_start;;
+  stop)                     cmd_stop;;
+  fire|kick)                cmd_fire;;
+  ""|-h|--help|help)        sed -n '2,48p' "$SELF" | sed 's/^# \{0,1\}//';;
+  *) die "unknown command '$cmd' (try: register | unregister | list | tick | fire | start | stop)";;
+esac

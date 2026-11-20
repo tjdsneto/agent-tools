@@ -1,0 +1,198 @@
+#!/usr/bin/env bash
+# registry-hook <claude|cursor|codex> <ensure|heartbeat|ping|end>
+# Fail open. Cursor always prints {}. Claude ensure prints SessionStart context.
+set -u
+HOST="${1:-}"
+EVENT="${2:-}"
+BIN="${AGENT_REGISTRY_BIN:-$(command -v agent-registry || true)}"
+
+cursor_reply() {
+  if [[ "$EVENT" == "ping" ]]; then
+    echo '{"continue":true}'
+  else
+    echo '{}'
+  fi
+}
+
+if [[ "$HOST" == "cursor" ]]; then
+  trap 'cursor_reply; exit 0' EXIT
+fi
+
+if [[ -z "$HOST" || -z "$EVENT" || -z "$BIN" ]]; then
+  if [[ "$HOST" == "claude" && "$EVENT" == "ensure" ]]; then
+    echo "registry-hook: agent-registry not found on PATH" >&2
+    HOST="$HOST" python3 - <<'PY'
+import json, os
+host = os.environ.get("HOST") or "claude"
+print(json.dumps({
+    "hookSpecificOutput": {
+        "hookEventName": "SessionStart",
+        "additionalContext": f"agent-registry: registry unavailable (type={host}).",
+    }
+}))
+PY
+  fi
+  exit 0
+fi
+
+INPUT=$(cat || true)
+
+read_field() {
+  printf '%s' "$INPUT" | python3 -c "$1" 2>/dev/null || true
+}
+
+SESSION_ID=$(read_field 'import sys,json
+d=json.load(sys.stdin)
+print(d.get("session_id") or d.get("sessionId") or d.get("conversation_id") or "")')
+CWD=$(read_field 'import sys,json
+d=json.load(sys.stdin)
+print(d.get("cwd") or d.get("working_directory") or "")')
+IS_CURSOR=$(read_field 'import sys,json
+d=json.load(sys.stdin)
+name=str(d.get("hook_event_name") or "")
+print("yes" if d.get("cursor_version") or (name[:1].islower()) else "")')
+if [[ "$IS_CURSOR" == "yes" ]]; then
+  HOST=cursor
+  trap 'cursor_reply; exit 0' EXIT
+  if [[ -z "$CWD" ]]; then
+    CWD=$(read_field 'import sys,json
+d=json.load(sys.stdin)
+roots=d.get("workspace_roots") or []
+print(roots[0] if isinstance(roots, list) and roots and isinstance(roots[0], str) else "")')
+  fi
+fi
+PARENT=$(read_field 'import sys,json
+d=json.load(sys.stdin)
+print(d.get("parent_session_id") or d.get("parentSessionId") or "")')
+MODEL=$(read_field 'import sys,json
+d=json.load(sys.stdin)
+# Prefer the structured id when Cursor has one. "default" is a real
+# selection (Auto), not a missing value — keep it.
+m=d.get("model_id") or d.get("model") or ""
+print(str(m).strip())')
+TITLE=$(read_field 'import sys,json
+d=json.load(sys.stdin)
+t=d.get("session_title") or d.get("title") or d.get("conversation_title") or d.get("name") or ""
+print(str(t).strip())')
+TRANSCRIPT=$(read_field 'import sys,json
+d=json.load(sys.stdin)
+print(str(d.get("transcript_path") or "").strip())')
+
+emit_ensure_context() {
+  local list_text="${1:-(none)}"
+  local status="${2:-agent-registry: session registered (type=$HOST).}"
+  LIST="$list_text" STATUS="$status" python3 - <<'PY'
+import json, os
+list_text = (os.environ.get("LIST") or "(none)")[:1500]
+status = os.environ.get("STATUS") or "agent-registry: session registered."
+print(json.dumps({
+  "hookSpecificOutput": {
+    "hookEventName": "SessionStart",
+    "additionalContext": (
+      status + " Keep registry_id private; hooks own heartbeat. Active peers:\n"
+      + list_text
+    ),
+  }
+}))
+PY
+}
+
+address_args_for() {
+  local sid="$1"
+  ADDRESS_ARGS=()
+  [[ "$HOST" != "claude" || -z "$sid" ]] && return 0
+  local flag val
+  while IFS= read -r flag; do
+    IFS= read -r val || break
+    [[ -n "$flag" && -n "$val" ]] && ADDRESS_ARGS+=("$flag" "$val")
+  done < <(python3 - "$sid" <<'PY'
+import glob, json, os, sys
+sid = sys.argv[1]
+root = os.path.expanduser("~/.claude/sessions")
+for path in glob.glob(os.path.join(root, "*.json")):
+    try:
+        data = json.load(open(path))
+    except Exception:
+        continue
+    if not isinstance(data, dict) or data.get("sessionId") != sid:
+        continue
+    for flag, key in (
+        ("--peer-name", "name"),
+        ("--socket", "messagingSocketPath"),
+        ("--pid", "pid"),
+        ("--peer-status", "status"),
+    ):
+        val = data.get(key)
+        if val is None or str(val).strip() == "":
+            continue
+        print(flag)
+        print(val)
+    break
+PY
+)
+}
+
+if [[ "$EVENT" == "ping" ]]; then
+  [[ -z "$SESSION_ID" ]] && exit 0
+  address_args_for "$SESSION_ID"
+  HB_ARGS=(heartbeat --type "$HOST" --session-id "$SESSION_ID" --status working)
+  [[ -n "$MODEL" ]] && HB_ARGS+=(--model "$MODEL")
+  [[ -n "$TITLE" ]] && HB_ARGS+=(--title "$TITLE")
+  HB_ARGS+=("${ADDRESS_ARGS[@]}")
+  "$BIN" "${HB_ARGS[@]}" >/dev/null 2>&1 || true
+  exit 0
+fi
+
+case "$EVENT" in
+  ensure)
+    if [[ -z "$SESSION_ID" ]]; then
+      if [[ "$HOST" == "claude" ]]; then
+        echo "registry-hook: missing session_id in stdin" >&2
+        emit_ensure_context "(none)" \
+          "agent-registry: registration skipped (type=claude; no session_id)."
+      fi
+      exit 0
+    fi
+    [[ -z "$CWD" ]] && CWD="$PWD"
+    address_args_for "$SESSION_ID"
+    ENSURE_ARGS=(ensure --type "$HOST" --session-id "$SESSION_ID" --directory "$CWD")
+    [[ -n "$PARENT" ]] && ENSURE_ARGS+=(--parent-session "$PARENT")
+    [[ -n "$MODEL" ]] && ENSURE_ARGS+=(--model "$MODEL")
+    [[ -n "$TITLE" ]] && ENSURE_ARGS+=(--title "$TITLE")
+    ENSURE_ARGS+=("${ADDRESS_ARGS[@]}")
+    if ! "$BIN" "${ENSURE_ARGS[@]}" >/dev/null 2>&1; then
+      if [[ "$HOST" == "claude" ]]; then
+        echo "registry-hook: ensure failed for session_id=$SESSION_ID" >&2
+        emit_ensure_context "(registry unavailable)" \
+          "agent-registry: registration failed (type=claude)."
+      fi
+      exit 0
+    fi
+    if [[ "$HOST" == "claude" ]]; then
+      LIST=$("$BIN" list 2>/dev/null | head -n 25 || true)
+      [[ -z "$LIST" ]] && LIST="(none)"
+      emit_ensure_context "$LIST" \
+        "agent-registry: session registered (type=claude)."
+    fi
+    ;;
+  heartbeat)
+    [[ -z "$SESSION_ID" ]] && exit 0
+    address_args_for "$SESSION_ID"
+    HB_ARGS=(heartbeat --type "$HOST" --session-id "$SESSION_ID" --status idle)
+    [[ -n "$MODEL" ]] && HB_ARGS+=(--model "$MODEL")
+    [[ -n "$TITLE" ]] && HB_ARGS+=(--title "$TITLE")
+    HB_ARGS+=("${ADDRESS_ARGS[@]}")
+    "$BIN" "${HB_ARGS[@]}" >/dev/null 2>&1 || true
+    SUM_ARGS=(summarize --type "$HOST" --session-id "$SESSION_ID")
+    [[ -n "$TRANSCRIPT" ]] && SUM_ARGS+=(--transcript "$TRANSCRIPT")
+    ("$BIN" "${SUM_ARGS[@]}" >/dev/null 2>&1 &) || true
+    ;;
+  end)
+    [[ -z "$SESSION_ID" ]] && exit 0
+    SUM_ARGS=(summarize --type "$HOST" --session-id "$SESSION_ID")
+    [[ -n "$TRANSCRIPT" ]] && SUM_ARGS+=(--transcript "$TRANSCRIPT")
+    "$BIN" "${SUM_ARGS[@]}" >/dev/null 2>&1 || true
+    "$BIN" end --type "$HOST" --session-id "$SESSION_ID" >/dev/null 2>&1 || true
+    ;;
+esac
+exit 0

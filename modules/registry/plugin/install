@@ -1,0 +1,161 @@
+#!/usr/bin/env bash
+# Point Claude Code, Codex, and Cursor at this repo's plugin.
+# Removes the old launcher symlink from tjdsneto-setup when it points here.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+HOOK="$ROOT/plugin/scripts/registry-hook"
+chmod +x "$HOOK"
+
+mkdir -p "$HOME/.local/bin" "$HOME/.claude/skills" "$HOME/.codex/skills"
+ln -sfn "$ROOT/bin/agent-registry" "$HOME/.local/bin/agent-registry"
+
+SETUP_LINK="$HOME/projects/tjdsneto-setup/bin/agent-registry"
+if [[ -L "$SETUP_LINK" ]]; then
+  TARGET="$(readlink "$SETUP_LINK")"
+  if [[ "$TARGET" == "$ROOT/bin/agent-registry" ]]; then
+    rm -f "$SETUP_LINK"
+  fi
+fi
+
+for dest in "$HOME/.claude/skills/agent-registry" "$HOME/.codex/skills/agent-registry"; do
+  rm -rf "$dest"
+  ln -sfn "$ROOT/plugin/skills/agent-registry" "$dest"
+done
+
+rm -f "$HOME/.cursor/hooks/agent-registry.sh"
+
+ROOT="$ROOT" HOOK="$HOOK" python3 - <<'PY'
+import json
+import os
+from datetime import datetime, timezone
+from pathlib import Path
+
+root = os.environ["ROOT"]
+hook = os.environ["HOOK"]
+
+def load(path):
+    file = Path(path)
+    if not file.exists():
+        return None
+    return json.loads(file.read_text(encoding="utf-8"))
+
+def save(path, data):
+    Path(path).write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+def registry_command(cmd):
+    text = str(cmd or "")
+    return (
+        "agent-registry-hook" in text
+        or "agent-registry.sh" in text
+        or "registry-hook" in text
+    )
+
+settings_path = Path.home() / ".claude" / "settings.json"
+settings = load(settings_path) or {}
+hooks = {}
+for event, groups in (settings.get("hooks") or {}).items():
+    kept_groups = []
+    for group in groups if isinstance(groups, list) else []:
+        if not isinstance(group, dict) or not isinstance(group.get("hooks"), list):
+            kept_groups.append(group)
+            continue
+        kept = [
+            item for item in group["hooks"]
+            if not (isinstance(item, dict) and registry_command(item.get("command")))
+        ]
+        if kept:
+            group = dict(group)
+            group["hooks"] = kept
+            kept_groups.append(group)
+    if kept_groups:
+        hooks[event] = kept_groups
+settings["hooks"] = hooks
+settings.setdefault("enabledPlugins", {})["agent-registry@agent-registry"] = True
+settings.setdefault("extraKnownMarketplaces", {})["agent-registry"] = {
+    "source": {"source": "directory", "path": root}
+}
+save(settings_path, settings)
+
+known_path = Path.home() / ".claude" / "plugins" / "known_marketplaces.json"
+known = load(known_path) or {}
+known["agent-registry"] = {
+    "source": {"source": "directory", "path": root},
+    "installLocation": root,
+    "lastUpdated": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z"),
+}
+save(known_path, known)
+
+cursor_path = Path.home() / ".cursor" / "hooks.json"
+cursor = load(cursor_path) or {"version": 1, "hooks": {}}
+template = load(Path(root) / "plugin" / "cursor" / "hooks.json")
+cursor_hooks = dict(cursor.get("hooks") or {})
+for event, entries in (template.get("hooks") or {}).items():
+    current = [e for e in (cursor_hooks.get(event) or []) if isinstance(e, dict)]
+    kept = [e for e in current if not registry_command(e.get("command"))]
+    have = {str(e.get("command") or "") for e in kept}
+    for entry in entries:
+        command = str(entry.get("command") or "").replace("plugin/scripts/registry-hook", hook)
+        if command not in have:
+            kept.append({"command": command})
+            have.add(command)
+    cursor_hooks[event] = kept
+cursor["hooks"] = cursor_hooks
+cursor.setdefault("version", 1)
+save(cursor_path, cursor)
+
+# Codex 0.166 reads plugin hook files and does not run them (feature
+# plugin_hooks is removed). User hooks in ~/.codex/hooks.json do run.
+codex_hooks_path = Path.home() / ".codex" / "hooks.json"
+codex_hooks = load(codex_hooks_path) or {"hooks": {}}
+codex_template = load(Path(root) / "plugin" / ".codex-plugin" / "hooks.json")
+codex_events = dict(codex_hooks.get("hooks") or {})
+for event, groups in (codex_template.get("hooks") or {}).items():
+    current = [g for g in (codex_events.get(event) or []) if isinstance(g, dict)]
+    kept = []
+    have = set()
+    for group in current:
+        items = group.get("hooks")
+        if not isinstance(items, list):
+            kept.append(group)
+            continue
+        filtered = []
+        for item in items:
+            if isinstance(item, dict) and registry_command(item.get("command")):
+                continue
+            filtered.append(item)
+            if isinstance(item, dict):
+                have.add(str(item.get("command") or ""))
+        if filtered:
+            group = dict(group)
+            group["hooks"] = filtered
+            kept.append(group)
+    for group in groups if isinstance(groups, list) else []:
+        for item in group.get("hooks") or []:
+            command = str(item.get("command") or "")
+            command = command.replace('"${CODEX_PLUGIN_ROOT}/scripts/registry-hook"', hook)
+            command = command.replace("${CODEX_PLUGIN_ROOT}/scripts/registry-hook", hook)
+            if command and command not in have:
+                kept.append({"hooks": [{"type": "command", "command": command}]})
+                have.add(command)
+    codex_events[event] = kept
+codex_hooks["hooks"] = codex_events
+save(codex_hooks_path, codex_hooks)
+
+codex = Path.home() / ".codex" / "config.toml"
+text = codex.read_text(encoding="utf-8") if codex.exists() else ""
+block = (
+    "\n[marketplaces.agent-registry]\n"
+    'source_type = "local"\n'
+    f'source = "{root}"\n'
+    "\n"
+    '[plugins."agent-registry@agent-registry"]\n'
+    "enabled = true\n"
+)
+if "[marketplaces.agent-registry]" not in text:
+    if text and not text.endswith("\n"):
+        text += "\n"
+    codex.write_text(text + block, encoding="utf-8")
+PY
+
+echo "agent-registry plugin installed from $ROOT"

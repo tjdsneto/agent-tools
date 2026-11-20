@@ -1,0 +1,255 @@
+#!/usr/bin/env python3
+"""
+active-sessions - Show currently running Claude Code sessions with context.
+
+Finds all live claude processes and correlates them with transcript files
+to show what each session is working on.
+
+Usage:
+    active-sessions              # show all active sessions
+    active-sessions --json       # output as JSON
+"""
+from __future__ import annotations
+
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+from datetime import datetime
+from pathlib import Path
+
+CLAUDE_DIR = Path.home() / ".claude" / "projects"
+HOME = str(Path.home())
+
+
+def cwd_to_project_dir(cwd: str) -> Path:
+    """Convert a filesystem path to the .claude/projects/ directory name."""
+    return CLAUDE_DIR / cwd.replace("/", "-")
+
+
+def get_claude_processes() -> list[dict]:
+    """Return all running Claude Code session processes (excludes MCP/ShipIt helpers)."""
+    result = subprocess.run(["ps", "aux"], capture_output=True, text=True)
+    processes = []
+    for line in result.stdout.splitlines():
+        if "stream-json" not in line or "claude" not in line:
+            continue
+        parts = line.split(None, 10)
+        if len(parts) < 11:
+            continue
+        pid, args = parts[1], parts[10]
+        resume_match = re.search(r"--resume\s+(\S+)", args)
+        processes.append({
+            "pid": pid,
+            "resume_id": resume_match.group(1) if resume_match else None,
+        })
+    return processes
+
+
+def get_process_cwd(pid: str) -> str | None:
+    try:
+        result = subprocess.run(
+            ["lsof", "-p", pid], capture_output=True, text=True, timeout=5
+        )
+        for line in result.stdout.splitlines():
+            if " cwd " in line:
+                return line.split()[-1]
+    except Exception:
+        pass
+    return None
+
+
+def read_session_meta(filepath: Path) -> dict:
+    """Extract title, first message, branch, and cwd from a transcript file."""
+    title = branch = cwd = first_msg = None
+    try:
+        with open(filepath) as fh:
+            for i, line in enumerate(fh):
+                if i > 50:
+                    break
+                try:
+                    obj = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                obj_type = obj.get("type")
+                if not branch and obj.get("gitBranch"):
+                    branch = obj["gitBranch"]
+                if not cwd and obj.get("cwd"):
+                    cwd = obj["cwd"]
+                if obj_type == "user" and not first_msg:
+                    first_msg = _extract_text(obj)
+        # Check tail for custom-title (appended at end)
+        with open(filepath, "rb") as fh:
+            fh.seek(0, 2)
+            fh.seek(max(0, fh.tell() - 2048))
+            tail = fh.read().decode("utf-8", errors="replace")
+        for line in reversed(tail.strip().splitlines()):
+            try:
+                obj = json.loads(line)
+                if obj.get("type") == "custom-title":
+                    title = obj.get("customTitle")
+                    break
+            except json.JSONDecodeError:
+                continue
+    except OSError:
+        pass
+    return {"title": title, "first_msg": first_msg, "branch": branch, "cwd": cwd}
+
+
+def _extract_text(obj: dict) -> str | None:
+    content = obj.get("message", {}).get("content", [])
+    if isinstance(content, str):
+        text = content.strip()
+        return text[:120].replace("\n", " ") if text and not text.startswith("<") else None
+    if isinstance(content, list):
+        for c in content:
+            if isinstance(c, dict) and c.get("type") == "text":
+                text = c.get("text", "").strip()
+                if text and not text.startswith("<"):
+                    return text[:120].replace("\n", " ")
+    return None
+
+
+def find_transcript(session_id: str) -> Path | None:
+    """Search all project dirs for a session transcript by ID."""
+    for d in CLAUDE_DIR.iterdir():
+        if d.is_dir():
+            f = d / f"{session_id}.jsonl"
+            if f.exists():
+                return f
+    return None
+
+
+def find_newest_transcript(project_dir: Path, exclude_ids: set[str]) -> Path | None:
+    """Find most recently modified transcript in a project dir, skipping known IDs."""
+    if not project_dir.is_dir():
+        return None
+    candidates = [
+        (f.stat().st_mtime, f)
+        for f in project_dir.glob("*.jsonl")
+        if f.stem not in exclude_ids
+    ]
+    return max(candidates, default=(None, None))[1] if candidates else None
+
+
+def shorten_path(p: str) -> str:
+    return p.replace(HOME, "~") if p else p
+
+
+def format_age(mtime: float) -> str:
+    age = time.time() - mtime
+    if age < 60:
+        return f"{int(age)}s ago"
+    if age < 3600:
+        return f"{int(age / 60)}m ago"
+    if age < 86400:
+        return f"{int(age / 3600)}h ago"
+    return f"{int(age / 86400)}d ago"
+
+
+RECENT_THRESHOLD = 30 * 60  # 30 minutes
+
+
+def main():
+    as_json = "--json" in sys.argv
+    show_all = "--all" in sys.argv
+
+    processes = get_claude_processes()
+    if not processes:
+        if not as_json:
+            print("No active Claude Code sessions found.")
+        else:
+            print("[]")
+        return
+
+    # Enrich each process with CWD
+    for proc in processes:
+        proc["cwd"] = get_process_cwd(proc["pid"])
+
+    # Build sessions: resumed sessions first (definite match), then new ones
+    resumed_ids: set[str] = {p["resume_id"] for p in processes if p["resume_id"]}
+    sessions = []
+
+    for proc in processes:
+        pid = proc["pid"]
+        cwd = proc["cwd"] or "unknown"
+        resume_id = proc["resume_id"]
+
+        if resume_id:
+            transcript = find_transcript(resume_id)
+            session_id = resume_id
+            certain = True
+        else:
+            project_dir = cwd_to_project_dir(cwd) if cwd != "unknown" else None
+            transcript = find_newest_transcript(project_dir, resumed_ids) if project_dir else None
+            session_id = transcript.stem if transcript else None
+            if session_id:
+                resumed_ids.add(session_id)
+            certain = False
+
+        meta = read_session_meta(transcript) if transcript else {}
+        mtime = transcript.stat().st_mtime if transcript else None
+
+        sessions.append({
+            "pid": pid,
+            "session_id": session_id,
+            "certain": certain,
+            "cwd": cwd,
+            "transcript": str(transcript) if transcript else None,
+            "title": meta.get("title"),
+            "first_msg": meta.get("first_msg"),
+            "branch": meta.get("branch"),
+            "last_active": mtime,
+            "last_active_human": format_age(mtime) if mtime else None,
+        })
+
+    # Sort by last_active descending
+    sessions.sort(key=lambda s: s["last_active"] or 0, reverse=True)
+
+    # Split into recent vs idle
+    now = time.time()
+    recent = [s for s in sessions if s["last_active"] and now - s["last_active"] <= RECENT_THRESHOLD]
+    idle = [s for s in sessions if not s["last_active"] or now - s["last_active"] > RECENT_THRESHOLD]
+
+    if as_json:
+        output = sessions if show_all else recent
+        print(json.dumps(output, indent=2))
+        return
+
+    display = sessions if show_all else recent
+    idle_count = len(idle)
+
+    if not display:
+        print("\n  No recently active sessions (last 30 min).")
+        if idle_count:
+            print(f"  {idle_count} idle process(es) — use --all to show them.\n")
+        return
+
+    label_suffix = "all processes" if show_all else f"active last 30 min — {idle_count} idle hidden, use --all"
+    print(f"\n  Claude Code Sessions — {len(display)} shown ({label_suffix})\n")
+    print(f"  {'PID':>6}  {'Last active':>11}  {'Session':8}  {'CWD / Context'}")
+    print(f"  {'─'*6}  {'─'*11}  {'─'*8}  {'─'*55}")
+
+    for s in display:
+        pid = s["pid"]
+        age = s["last_active_human"] or "  unknown"
+        sid_short = (s["session_id"] or "new")[:8]
+        certainty = "" if s["certain"] else "~"
+        cwd_short = shorten_path(s["cwd"])
+
+        label = s["title"] or s["first_msg"] or s["branch"] or cwd_short
+        if label and len(label) > 60:
+            label = label[:57] + "..."
+
+        print(f"  {pid:>6}  {age:>11}  {certainty}{sid_short:<8}  {cwd_short}")
+        if label and label != cwd_short:
+            print(f"  {'':>6}  {'':>11}  {'':9}  ▸ {label}")
+        print()
+
+    print(f"  (~ = best-guess match for sessions without --resume)\n")
+
+
+if __name__ == "__main__":
+    main()

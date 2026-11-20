@@ -1,0 +1,16 @@
+{
+  "name": "agent-registry",
+  "owner": {
+    "name": "Tiago Neto",
+    "url": "https://github.com/tjdsneto"
+  },
+  "metadata": {
+    "description": "Agent session presence for Claude Code, Codex, and Cursor"
+  },
+  "plugins": [
+    {
+      "name": "agent-registry",
+      "source": "./plugin"
+    }
+  ]
+}

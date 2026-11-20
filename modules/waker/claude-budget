@@ -1,0 +1,120 @@
+#!/bin/bash
+# claude-budget — Claude token-window (5h session) budget primitive, reusable by ANY script or agent
+# that drives headless `claude -p` work and must survive a saturated window.
+#
+#   claude-budget check               print current session usage %, or empty if unknown
+#   claude-budget reset-at            print "<epoch> <human>" of the window reset, or empty
+#   claude-budget wait [--pct N]      BLOCK (sleep — token-free) until usage < N% (default 88), sleeping
+#                                     until the real reset when saturated. The reusable in-process gate.
+#   claude-budget run  [--pct N] -- cmd...    wait for budget (foreground), then exec cmd
+#   claude-budget wake [--pct N] [--log F] -- cmd...
+#                                     DETACHED, token-free waker: forks a background process that waits
+#                                     for budget then launches cmd — and SURVIVES the caller exiting or
+#                                     being rate-limited. This is how an agent "wakes itself": it cannot,
+#                                     from inside a dead budget (the waker would itself need tokens), so it
+#                                     arms an EXTERNAL token-free waiter here, then lets itself go idle.
+#                                     Typical cmd: `claude -p "<continue>"` or `claude --resume <id> ...`.
+#
+# Only the /usage polls spend tokens (tiny, and a rejected poll while blocked costs nothing); the WAITING
+# is plain sleep, so a waker never burns tokens or gets blocked just to hold a loop across a reset — the
+# exact failure this primitive prevents. See tjdsneto-setup .../pr-review-oracle/tmp/fleet-run-2026-10-17.md.
+#
+# Flags: --pct N (threshold, default 88) · --poll S (recheck interval when usage/reset unknown, default 120)
+#        --log F (wake only: detached log path)
+# Env:   CLAUDE_BIN overrides the claude binary · BUDGET_MAX_ITERS caps the wait loop (default 240)
+set -uo pipefail
+
+SELF="$(cd "$(dirname "$0")" >/dev/null 2>&1 && pwd)/$(basename "$0")"
+CLAUDE="${CLAUDE_BIN:-}"
+[ -z "$CLAUDE" ] && { CLAUDE="$HOME/.nvm/versions/node/v20.20.2/bin/claude"; [ -x "$CLAUDE" ] || CLAUDE="$(command -v claude)"; }
+
+_usage_raw(){ "$CLAUDE" -p "/usage" 2>/dev/null; }
+_pct_from(){ printf '%s' "$1" | grep -oiE "current session: *[0-9]+%" | grep -oE "[0-9]+" | head -1; }
+# Parse "… resets Oct 17 at 1:10pm …" / "… resets Nov 15 at 6am …" from a line → epoch (local TZ).
+# Handles times with or without minutes. $1 = full raw usage, $2 = line marker (grep -i pattern).
+_reset_line(){
+  local t
+  t="$(printf '%s' "$1" | grep -i "$2" | sed -nE 's/.*resets ([A-Za-z]+ [0-9]+ at [0-9]+(:[0-9]+)?[ap]m).*/\1/p' | head -1)"
+  [ -z "$t" ] && return 1
+  t="$(printf '%s' "$t" | sed -E 's/ at / /' | tr '[:lower:]' '[:upper:]')"             # "NOV 15 6AM" | "OCT 17 1:10PM"
+  printf '%s' "$t" | grep -qE '[0-9]+:[0-9]+[AP]M' || t="$(printf '%s' "$t" | sed -E 's/ ([0-9]+)([AP]M)/ \1:00\2/')"  # bare hour → H:00
+  date -j -f "%b %d %I:%M%p" "$t" +%s 2>/dev/null
+}
+_reset_from(){ _reset_line "$1" 'current session'; }
+# Weekly window (per model family): "Current week (Fable): 0% used · resets Nov 15 at 6am …"
+_week_pct_from(){ printf '%s' "$1" | grep -oiE "current week[^:]*: *[0-9]+%" | grep -oE "[0-9]+" | head -1; }
+_week_family_from(){ printf '%s' "$1" | grep -i 'current week' | sed -nE 's/.*[Cc]urrent week \(([^)]+)\).*/\1/p' | head -1; }
+_week_reset_from(){ _reset_line "$1" 'current week'; }
+
+cmd="${1:-}"; [ $# -gt 0 ] && shift
+
+case "$cmd" in
+  check)
+    _pct_from "$(_usage_raw)"
+    ;;
+  reset-at)
+    raw="$(_usage_raw)"; e="$(_reset_from "$raw")" || true
+    [ -n "${e:-}" ] && echo "$e $(date -r "$e" '+%F %H:%M')"
+    ;;
+  snapshot)
+    # One /usage call → both windows as key=val lines (empty value = unreadable). Used by
+    # session-waker so it reads /usage once per tick and gates on 5h + weekly together.
+    raw="$(_usage_raw)"
+    sp="$(_pct_from "$raw")"; sr="$(_reset_from "$raw")" || true
+    wp="$(_week_pct_from "$raw")"; wr="$(_week_reset_from "$raw")" || true
+    wf="$(_week_family_from "$raw")"
+    echo "session_pct=${sp}"
+    echo "session_reset=${sr:-}"
+    echo "week_pct=${wp}"
+    echo "week_reset=${wr:-}"
+    echo "week_family=${wf}"
+    ;;
+  wait|run)
+    PCT=88; POLL=120; MAXITER="${BUDGET_MAX_ITERS:-240}"; args=()
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --pct)  PCT="$2"; shift 2;;
+        --poll) POLL="$2"; shift 2;;
+        --)     shift; args=("$@"); break;;
+        *)      args+=("$1"); shift;;
+      esac
+    done
+    i=0
+    while :; do
+      i=$((i+1)); [ "$i" -gt "$MAXITER" ] && { echo "claude-budget: max iterations ($MAXITER) — proceeding" >&2; break; }
+      raw="$(_usage_raw)"; p="$(_pct_from "$raw")"
+      if [ -z "$p" ]; then echo "claude-budget: usage unknown — sleep ${POLL}s, recheck" >&2; sleep "$POLL"; continue; fi
+      [ "$p" -lt "$PCT" ] && { echo "claude-budget: ${p}% < ${PCT}% — go" >&2; break; }
+      e="$(_reset_from "$raw")" || true; now="$(date +%s)"
+      if [ -n "${e:-}" ] && [ "$e" -gt "$now" ]; then
+        echo "claude-budget: ${p}% >= ${PCT}% — sleep $(( (e-now)/60 + 2 ))m to reset $(date -r "$e" '+%F %H:%M')" >&2
+        sleep $(( e - now + 120 ))
+      else
+        echo "claude-budget: ${p}% >= ${PCT}% — reset unknown, sleep ${POLL}s" >&2; sleep "$POLL"
+      fi
+    done
+    if [ "$cmd" = run ] && [ "${#args[@]}" -gt 0 ]; then exec "${args[@]}"; fi
+    ;;
+  wake)
+    PCT=88; POLL=120; LOG=""; args=()
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --pct)  PCT="$2"; shift 2;;
+        --poll) POLL="$2"; shift 2;;
+        --log)  LOG="$2"; shift 2;;
+        --)     shift; args=("$@"); break;;
+        *)      args+=("$1"); shift;;
+      esac
+    done
+    [ "${#args[@]}" -gt 0 ] || { echo "claude-budget wake: need -- cmd..." >&2; exit 2; }
+    [ -n "$LOG" ] || LOG="$HOME/.claude/claude-budget-wake.$(date +%Y%m%d-%H%M%S).log"
+    # Detach a token-free waiter that outlives this caller (nohup → ignores SIGHUP; subshell + & +
+    # disown → reparents to init if the caller dies/gets blocked). It waits for budget, then execs cmd.
+    ( nohup "$SELF" run --pct "$PCT" --poll "$POLL" -- "${args[@]}" >"$LOG" 2>&1 & )
+    echo "claude-budget: wake armed → $LOG ; waits for <${PCT}% then runs: ${args[*]}"
+    ;;
+  *)
+    echo "usage: claude-budget {check | reset-at | wait [--pct N] | run [--pct N] -- cmd... | wake [--pct N] [--log F] -- cmd...}" >&2
+    exit 2
+    ;;
+esac
