@@ -193,6 +193,8 @@ def test_board_actions_in_script(tmp_registry):
         assert "interrupt_reason" in script
         assert 'id="send-modal"' in home
         assert "openSendModal" in script
+        assert "sendSuccessToast" in script
+        assert "headless Cursor agent" in script
         assert "prompt(" not in script
         assert "confirm(" not in script
         assert "session_id: sess.session_id" in script

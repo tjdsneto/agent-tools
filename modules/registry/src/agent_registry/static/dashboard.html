@@ -906,6 +906,25 @@
     return '<div class="usage mono">' + bits.map(esc).join('<span class="sep">·</span>') + "</div>";
   }
 
+  function sendSuccessToast(data) {
+    const type = String((data && data.agent_type) || "").toLowerCase();
+    const result = (data && data.result) || "landed";
+    if (type === "cursor") {
+      // Cursor wake is always a new headless cursor-agent process — not the IDE chat tab.
+      flashToast(
+        result === "landed"
+          ? "Started headless Cursor agent (not the IDE chat)"
+          : ("Cursor wake: " + result)
+      );
+      return;
+    }
+    if (result === "already_awake") {
+      flashToast("Already awake");
+      return;
+    }
+    flashToast(result === "landed" ? "Message sent" : ("Send: " + result));
+  }
+
   async function postCommand(op, params) {
     const res = await fetch("/api/command", {
       method: "POST",
@@ -915,6 +934,7 @@
     const body = await res.json();
     if (body.exit_code === 0) {
       if (op === "open_workspace") flashToast("Opened in Cursor");
+      else if (op === "send_session") sendSuccessToast(body.data || {});
       poll();
     } else {
       flashToast(body.error || ("failed: " + op));
