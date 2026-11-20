@@ -123,6 +123,11 @@
       background: var(--surface-2);
       box-shadow: inset 2px 0 0 var(--info);
     }
+    .nav-row.child {
+      padding-left: 22px;
+      color: var(--text-2);
+      font-size: 12px;
+    }
     .nav-label {
       flex: 1;
       overflow: hidden;
@@ -1028,39 +1033,111 @@
     return registryRows().filter(function (s) { return !processOpen(s); });
   }
 
-  function navRow(key, label, count) {
+  function isWorktreeLeaf(key, directory) {
+    const leaf = key || basename(directory);
+    if (/^\.wt/.test(leaf)) return true;
+    const d = String(directory || "");
+    return d.indexOf("/.worktrees/") !== -1 || /\/\.wt-/.test(d);
+  }
+
+  function worktreeParentKey(directory) {
+    const d = String(directory || "").replace(/\/+$/, "");
+    if (!d) return null;
+    const wtIdx = d.indexOf("/.worktrees/");
+    if (wtIdx !== -1) {
+      const parentPath = d.slice(0, wtIdx);
+      return basename(parentPath) || null;
+    }
+    const leaf = basename(d);
+    if (/^\.wt/.test(leaf)) {
+      const parentPath = d.slice(0, d.length - leaf.length).replace(/\/+$/, "");
+      if (!parentPath) return null;
+      return projectOf({ directory: parentPath });
+    }
+    const m = d.match(/^(.*)\/\.wt-[^/]+/);
+    if (m && m[1]) return projectOf({ directory: m[1] });
+    return null;
+  }
+
+  function navRow(key, label, count, opts) {
     const on = selectedProject === key;
     const badge = count ? '<span class="badge">' + count + "</span>" : "";
+    const child = opts && opts.child ? " child" : "";
     return (
-      '<button type="button" class="nav-row' + (on ? " on" : "") + '" data-project="' + esc(key) +
+      '<button type="button" class="nav-row' + child + (on ? " on" : "") + '" data-project="' + esc(key) +
       '" aria-pressed="' + on + '"><span class="nav-label">' + esc(label) +
       "</span>" + badge + "</button>"
     );
   }
 
+  function sortByRunningThenName(keys, running) {
+    return keys.slice().sort(function (a, b) {
+      const diff = (running[b] || 0) - (running[a] || 0);
+      if (diff) return diff;
+      return a.localeCompare(b);
+    });
+  }
+
   function renderProjects() {
     const running = {};
     const present = {};
+    const dirs = {};
     registryRows().forEach(function (s) {
       const key = projectOf(s);
       present[key] = true;
+      if (!dirs[key] && s.directory) dirs[key] = String(s.directory).replace(/\/+$/, "");
       if (processOpen(s)) running[key] = (running[key] || 0) + 1;
     });
     if (selectedProject !== "all-open" && !present[selectedProject]) {
       selectedProject = "all-open";
       localStorage.setItem(LS_PROJECT, "all-open");
     }
-    // Task 4 nests worktree leaves; until then every key is a main project.
-    const keys = Object.keys(present).sort(function (a, b) {
-      const diff = (running[b] || 0) - (running[a] || 0);
-      if (diff) return diff;
-      return a.localeCompare(b);
+
+    const children = {};
+    const orphans = [];
+    const mains = {};
+    Object.keys(present).forEach(function (key) {
+      const dir = dirs[key] || "";
+      if (!isWorktreeLeaf(key, dir)) {
+        mains[key] = true;
+        return;
+      }
+      const parent = worktreeParentKey(dir);
+      // One-level nest only: parent must look like a real project, not another leaf.
+      if (parent && !isWorktreeLeaf(parent, dirs[parent] || "")) {
+        if (!children[parent]) children[parent] = [];
+        children[parent].push(key);
+        mains[parent] = true;
+      } else {
+        orphans.push(key);
+      }
     });
+
+    const badgeFor = function (key) {
+      let n = running[key] || 0;
+      (children[key] || []).forEach(function (child) {
+        n += running[child] || 0;
+      });
+      return n;
+    };
+    const mainBadges = {};
+    Object.keys(mains).forEach(function (k) { mainBadges[k] = badgeFor(k); });
+    const mainKeys = sortByRunningThenName(Object.keys(mains), mainBadges);
+
     let html = '<div class="nav-sticky">' + navRow("all-open", "All Open", runningRows().length) + "</div>";
     html += '<div class="nav-main">';
-    keys.forEach(function (key) { html += navRow(key, key, running[key] || 0); });
+    mainKeys.forEach(function (key) {
+      html += navRow(key, key, badgeFor(key));
+      sortByRunningThenName(children[key] || [], running).forEach(function (child) {
+        html += navRow(child, child, running[child] || 0, { child: true });
+      });
+    });
     html += "</div>";
-    html += '<div class="nav-other"><div class="side-label">Other worktrees</div></div>';
+    html += '<div class="nav-other"><div class="side-label">Other worktrees</div>';
+    sortByRunningThenName(orphans, running).forEach(function (key) {
+      html += navRow(key, key, running[key] || 0, { child: true });
+    });
+    html += "</div>";
     document.getElementById("projects").innerHTML = html;
     syncTabsForSelection();
   }

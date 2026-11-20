@@ -156,6 +156,10 @@ def test_board_actions_in_script(tmp_registry):
         assert 'selectedProject === "all-open"' in script
         assert 'navRow("all-open", "All Open"' in script
         assert "Other worktrees" in script
+        assert "function isWorktreeLeaf" in script
+        assert "function worktreeParentKey" in script
+        assert "/.worktrees/" in script
+        assert "nav-row.child" in home or "opts.child" in script or '{ child: true }' in script
         assert 'id="tabs"' in home
         assert 'getElementById("tabs")' in script
         assert 'classList.toggle("hidden", allOpen)' in script
