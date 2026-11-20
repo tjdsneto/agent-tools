@@ -24,4 +24,10 @@ code=$?
 set -e
 [[ "$code" -eq 2 ]] || { echo "FAIL unknown cmd exit: $code"; exit 1; }
 
+unset FAKE_EXIT
+export AGT_TEST_MODE=1
+export AGT_TEST_REGISTRY_BIN="$FIX"
+out="$(AGT_TEST_MODE=1 AGT_TEST_REGISTRY_BIN="$FIX" "$ROOT/shims/agent-registry" list --json)"
+[[ "$out" == "fake:list --json" ]] || { echo "FAIL shim: $out"; exit 1; }
+
 echo "OK test_agt_dispatch"
