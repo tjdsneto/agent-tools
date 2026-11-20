@@ -28,12 +28,13 @@ Two layers, kept apart on purpose:
 
 ### scan
 
+CLI: **`agt glue scan`**. (Module script: `python3 ~/projects/agent-tools/modules/glue-miner/glue_miner.py`.)
+
 ```bash
 agt glue scan --days 7                              # all 3 sources → reports/<ISO-week>.md
 agt glue scan --days 30 --stdout                     # one-off, print instead
 agt glue scan --days 30 --json                       # machine-readable groups
 agt glue scan --source cursor,codex --days 30 --stdout
-# equiv: python3 ~/projects/agent-tools/modules/glue-miner/glue_miner.py …
 ```
 
 All three sources scan by default; `--source` takes a comma list (`claude`, `cursor`, `codex`). Pass `--exclude-session <this session id>` so the scan doesn't count itself (claude only). A weekly scan runs automatically (launchd `com.tjdsneto.glue-miner`, Mondays 07:30 + on login; installed by agent-tools `./install.sh`), so `reports/` usually already has this week's file.

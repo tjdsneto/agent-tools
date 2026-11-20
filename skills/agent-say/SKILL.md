@@ -1,11 +1,11 @@
 ---
 name: agent-say
-description: Use when an agent needs the human's attention (ask modal), a choice among options, short free-text, or to read text aloud via Kokoro. Runs the agent-say CLI and continues from the JSON result on stdout.
+description: Use when an agent needs the human's attention (ask modal), a choice among options, short free-text, or to read text aloud via Kokoro. Runs `agt say` and continues from the JSON result on stdout.
 ---
 
 # agent-say — ask the human / read aloud
 
-CLI: `agent-say` (shim) or `agt say` (after `./install.sh`).
+CLI: **`agt say`**. Legacy PATH shim `agent-say` still works.
 
 ## Ask (default) — interrupt / choose / short answer
 
@@ -22,9 +22,8 @@ How:
 2. Run blocking:
 
 ```bash
-printf '%s' "$JSON" | agent-say --timeout 180
+printf '%s' "$JSON" | agt say --timeout 180
 # or --wait / --default <id> / --speak
-# equiv: agt say …
 ```
 
 3. Parse **stdout** JSON: `status`, `choice`, `text`, `elapsed_ms`.
@@ -36,12 +35,12 @@ Optional `--speak` / `"speak": true` is best-effort (Kokoro, else macOS `say`). 
 
 When the human should **hear** content (summary, notes, PR body) without a modal.
 
-Prefer dedicated `agent-read` / `agt read` for listen-only. Via agent-say, exactly one of stdin / `--text` / `--file`:
+Prefer dedicated **`agt read`** for listen-only. Via say, exactly one of stdin / `--text` / `--file`:
 
 ```bash
-agent-say read --text "$TEXT"
-agent-say read --file path.md --title "Notes"
-printf '%s' "$TEXT" | agent-say read --title "…"
+agt say read --text "$TEXT"
+agt say read --file path.md --title "Notes"
+printf '%s' "$TEXT" | agt say read --title "…"
 ```
 
 Stdout: `{status, mode, title, chars, voice, elapsed_ms}`. Exit `0` ok, `1` error (no Kokoro / empty text). Hard-fail — no `say` fallback.

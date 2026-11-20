@@ -1,19 +1,18 @@
 ---
 name: session-awareness
-description: List active Claude Code sessions — what's running, where, and what it's working on
+description: List active Claude Code sessions — what's running, where, and what it's working on. CLI via `agt sessions …`.
 user-invocable: true
 argument-hint: "[--all]"
 ---
 
 # Session Awareness
 
-Run `active-sessions` (shim) or `agt sessions active` to show currently running Claude Code sessions.
+Run **`agt sessions active`** to show currently running Claude Code sessions. Legacy shims (`active-sessions`, `list-sessions`, `rename-session`) still work.
 
 ## Default (recently active)
 
 ```bash
-active-sessions
-# equiv: agt sessions active
+agt sessions active
 ```
 
 Shows sessions whose transcript was modified in the last 30 minutes — these are the sessions you're actually working in. Idle Cursor tabs are hidden.
@@ -21,8 +20,7 @@ Shows sessions whose transcript was modified in the last 30 minutes — these ar
 ## All processes
 
 ```bash
-active-sessions --all
-# equiv: agt sessions active --all
+agt sessions active --all
 ```
 
 Shows every running `claude` process — one per open Cursor tab, regardless of when it was last used.
@@ -46,28 +44,27 @@ Each Claude Code session is an OS process. Sessions opened via `--resume` carry 
 To manually rename any session by ID:
 
 ```bash
-rename-session <session-id> "New Title"
-# equiv: agt sessions rename <session-id> "New Title"
+agt sessions rename <session-id> "New Title"
 ```
 
 Searches across all projects for the session and appends a `custom-title` record to the JSONL transcript — the same mechanism used by Ctrl+R rename and `rename-claude-sessions`.
 
-To get the session ID, run `active-sessions` and copy the Session column value (prefix with the full UUID from `list-sessions --all` if needed).
+To get the session ID, run `agt sessions active` and copy the Session column value (prefix with the full UUID from `agt sessions list --all` if needed).
 
 ## Browsing session history
 
 ```bash
-list-sessions              # sessions for the current project (cwd)
-# equiv: agt sessions list
-list-sessions --all        # all sessions across every project
-list-sessions --all --sort started   # oldest first
-list-sessions --all --limit 50       # show more
-list-sessions --stuck      # sessions that are very large or have many messages
+agt sessions list              # sessions for the current project (cwd)
+agt sessions list --all        # all sessions across every project
+agt sessions list --all --sort started   # oldest first
+agt sessions list --all --limit 50       # show more
+agt sessions list --stuck      # sessions that are very large or have many messages
 ```
 
 The `--all` flag is the cross-project view — it groups sessions by project and shows title, size, message count, and timestamps.
 
-## Related scripts
+## Related
 
 - `rename-claude-sessions` — auto-title sessions from PR/issue context or AI
-- `rename-session <id> <title>` — manually rename a specific session
+- `agt sessions rename <id> <title>` — manually rename a specific session
+- `agt sessions report` — today's session-report table (tokens / running / closed)
