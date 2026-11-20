@@ -907,17 +907,7 @@
   }
 
   function sendSuccessToast(data) {
-    const type = String((data && data.agent_type) || "").toLowerCase();
     const result = (data && data.result) || "landed";
-    if (type === "cursor") {
-      // Cursor wake is always a new headless cursor-agent process — not the IDE chat tab.
-      flashToast(
-        result === "landed"
-          ? "Started headless Cursor agent (not the IDE chat)"
-          : ("Cursor wake: " + result)
-      );
-      return;
-    }
     if (result === "already_awake") {
       flashToast("Already awake");
       return;
@@ -942,10 +932,14 @@
     return body;
   }
 
-  function actionBtn(label, action, sess, cls) {
+  function actionBtn(label, action, sess, cls, opts) {
+    opts = opts || {};
+    const disabled = !!opts.disabled;
+    const title = opts.title ? ' title="' + esc(opts.title) + '"' : "";
     return (
-      '<button type="button" class="act-btn' + (cls ? " " + cls : "") + '" data-act="' + action +
-      '" data-sid="' + esc(sess.session_id || "") + '">' + label + "</button>"
+      '<button type="button" class="act-btn' + (cls ? " " + cls : "") + '"' +
+      (disabled ? " disabled" : ' data-act="' + action + '" data-sid="' + esc(sess.session_id || "") + '"') +
+      title + ">" + label + "</button>"
     );
   }
 
@@ -961,7 +955,21 @@
 
   function sendBtn(sess) {
     const type = String(sess.agent_type || "").toLowerCase();
-    if (!ENGINE_ICONS[type]) return "";
+    // Cursor has no IDE-chat inject — headless resume is not "Send Message".
+    if (type === "cursor") {
+      return actionBtn("Send Message", "send_session", sess, "", {
+        disabled: true,
+        title: "Can't send into a live Cursor IDE chat — only Claude/Codex live sessions support Send Message",
+      });
+    }
+    if (type !== "claude" && type !== "codex") return "";
+    // Send Message = nudge a live session only (not archive/resume/headless).
+    if (!processOpen(sess)) {
+      return actionBtn("Send Message", "send_session", sess, "", {
+        disabled: true,
+        title: "Send Message is only for live sessions",
+      });
+    }
     return actionBtn("Send Message", "send_session", sess);
   }
 

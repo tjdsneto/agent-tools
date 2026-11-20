@@ -194,8 +194,12 @@ def test_board_actions_in_script(tmp_registry):
         assert 'id="send-modal"' in home
         assert "openSendModal" in script
         assert "sendSuccessToast" in script
-        assert "headless Cursor agent" in script
+        assert "Can't send into a live Cursor IDE chat" in script
+        assert 'type === "cursor"' in script or "type === 'cursor'" in script
+        assert "Send Message is only for live sessions" in script
         assert "prompt(" not in script
+        # Cursor still shows the control, but disabled (no data-act when disabled).
+        assert 'actionBtn("Send Message"' in script
         assert "confirm(" not in script
         assert "session_id: sess.session_id" in script
         assert "registry_id" not in script
