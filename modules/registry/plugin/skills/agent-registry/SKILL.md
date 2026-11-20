@@ -8,7 +8,7 @@ description: >-
 
 # agent-registry — session presence
 
-CLI: `agent-registry` (or `~/projects/agent-registry/bin/agent-registry`).
+CLI: `agent-registry` (PATH shim) or `agt registry` — binary at `~/projects/agent-tools/modules/registry/bin/agent-registry`.
 
 Store: `~/.local/share/agent-registry/registry.json` (override: `AGENT_REGISTRY_PATH`).
 Archive sibling: `archive.jsonl` in the same directory (unregister / replace / prune append here).

@@ -218,7 +218,7 @@ agent-registry update "$REGISTRY_ID" \
   --pr-url "https://github.com/org/repo/pull/42"
 
 agent-registry update "$REGISTRY_ID" \
-  --directory ~/projects/agent-registry \
+  --directory ~/projects/agent-tools \
   --goflow-timer timer-abc \
   --parent-session parent-session-id
 
@@ -371,11 +371,13 @@ archive: /Users/you/.local/share/agent-registry/archive.jsonl
 
 ## Agent skill
 
-For integration patterns (when to register, ping cadence, field conventions), see the skill in tjdsneto-setup:
+For integration patterns (when to register, ping cadence, field conventions), see:
 
 ```
-~/projects/tjdsneto-setup/ai/skills/shared/agent-registry/SKILL.md
+~/projects/agent-tools/modules/registry/plugin/skills/agent-registry/SKILL.md
 ```
+
+Install hooks + skill symlink: `~/projects/agent-tools/modules/registry/plugin/install`.
 
 ## Development
 

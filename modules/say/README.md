@@ -6,17 +6,19 @@ Agents and skills call `bin/agent-say`, block until the user responds (or a wait
 
 **Design spec:** [`~/projects/tjdsneto-setup/docs/superpowers/specs/2026-09-25-agent-say-design.md`](~/projects/tjdsneto-setup/docs/superpowers/specs/2026-09-25-agent-say-design.md)
 
-**Skill:** [`ai/skills/shared/agent-say`](~/projects/tjdsneto-setup/ai/skills/shared/agent-say/SKILL.md) in `tjdsneto-setup` — when to call, payload shape, how to branch on the result.
+**Skill:** [`skills/agent-say`](~/projects/agent-tools/skills/agent-say/SKILL.md) in this repo — when to call, payload shape, how to branch on the result.
 
 ## Install
 
 ```bash
-cd ~/projects/agent-say
+cd ~/projects/agent-tools/modules/say
 
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 ```
+
+Or from the monorepo root: `~/projects/agent-tools && ./install.sh` (links `agent-say` / `agt say` via shims).
 
 Build the SwiftUI helper (prebuilt binary lives at `bin/agent-say-ui`):
 

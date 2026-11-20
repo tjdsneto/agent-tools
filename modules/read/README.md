@@ -8,7 +8,7 @@ This is **not** an interrupt/ask modal — that remains `agent-ping`. agent-read
 
 **Design spec:** [`~/projects/tjdsneto-setup/docs/superpowers/specs/2026-09-24-agent-read-design.md`](~/projects/tjdsneto-setup/docs/superpowers/specs/2026-09-24-agent-read-design.md)
 
-**Skill:** [`ai/skills/shared/agent-read`](~/projects/tjdsneto-setup/ai/skills/shared/agent-read/SKILL.md) in `tjdsneto-setup` — when to call, how to pass text/file, how to branch on the result.
+**Skill:** [`skills/agent-read`](~/projects/agent-tools/skills/agent-read/SKILL.md) in this repo — when to call, how to pass text/file, how to branch on the result.
 
 ## Prerequisites
 
@@ -20,13 +20,15 @@ This is **not** an interrupt/ask modal — that remains `agent-ping`. agent-read
 ## Install
 
 ```bash
-cd ~/projects/agent-read
+cd ~/projects/agent-tools/modules/read
 
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 
 ./scripts/build-ui.sh
 ```
+
+Or from the monorepo root: `~/projects/agent-tools && ./install.sh` (links `agent-read` / `agt read` via shims).
 
 Run via `bin/agent-read` (wrapper that uses `.venv/bin/python`).
 
