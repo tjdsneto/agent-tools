@@ -38,7 +38,7 @@ The menu bar does not render a glance. `rows.rs` still builds one.
 
 ## Board and Dock
 
-- A menu-bar click calls `ensure_daemon` off the UI thread, then opens or focuses a window named `board` titled `Agent Registry` at 1100x800 on the main thread (activation policy, Dock icon, show/focus, `orderFrontRegardless`). — `lib::open_board`, `lib::show_or_create_board`
+- A menu-bar click calls `ensure_daemon` off the UI thread, then opens or focuses a window named `board` titled `Agent Registry` at 1100x800 on the main thread (activation policy, Dock icon, show/focus, `orderFrontRegardless`). A visible board is focused; an existing but non-visible board is destroyed and rebuilt so reopen is not stuck on Loading. — `lib::open_board`, `lib::show_or_create_board`
 - The board window loads `http://127.0.0.1:{port}/` and no other URL. — `lib::board_url`
 - The Dock icon is hidden at start (activation policy Accessory), becomes visible (Regular) while the board is open, and returns to Accessory when the board's close is requested. While it is visible it is that same slate tile with three bars: green, gold, coral. — `lib::run`, `lib::show_or_create_board`, `tray_arm::set_dock_icon`
 - Closing the board does not stop the tray or the daemon. — `lib::open_board`

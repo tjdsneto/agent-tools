@@ -213,6 +213,7 @@ def test_board_actions_in_script(tmp_registry):
         assert "else if (sess.agent_type)" not in script
         assert 'class="label">model</span>' in script
         assert ".usage .sep" in home
+        assert "document.hidden && revealed" in script
         # Nesting stays on buildForest / parent_session_id.
         assert "function buildForest" in script
         assert "parent_session_id" in script

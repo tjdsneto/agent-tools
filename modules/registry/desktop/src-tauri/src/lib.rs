@@ -87,11 +87,16 @@ fn show_or_create_board(app: AppHandle, url: String) -> Result<String, String> {
     }
 
     if let Some(board) = app.get_webview_window("board") {
-        board.show().map_err(|e| e.to_string())?;
-        board.set_focus().map_err(|e| e.to_string())?;
-        #[cfg(target_os = "macos")]
-        tray_arm::order_front(&board);
-        return Ok(url);
+        // A closed board can linger in the manager. Reusing it leaves the
+        // webview stuck on Loading; destroy and build a fresh one instead.
+        let visible = board.is_visible().unwrap_or(false);
+        if visible {
+            board.set_focus().map_err(|e| e.to_string())?;
+            #[cfg(target_os = "macos")]
+            tray_arm::order_front(&board);
+            return Ok(url);
+        }
+        let _ = board.destroy();
     }
 
     let external = url.parse::<tauri::Url>().map_err(|e| e.to_string())?;
@@ -100,6 +105,8 @@ fn show_or_create_board(app: AppHandle, url: String) -> Result<String, String> {
         .inner_size(1100.0, 800.0)
         .build()
         .map_err(|e| e.to_string())?;
+    board.show().map_err(|e| e.to_string())?;
+    board.set_focus().map_err(|e| e.to_string())?;
     #[cfg(target_os = "macos")]
     tray_arm::order_front(&board);
 

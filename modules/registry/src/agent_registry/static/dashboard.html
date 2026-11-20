@@ -1714,7 +1714,10 @@
   }
 
   async function poll() {
-    if (document.hidden) return;
+    // Skip background polls once revealed. Do not skip the first load: a
+    // menu-bar reopen can report document.hidden briefly and would otherwise
+    // leave the board stuck on Loading forever.
+    if (document.hidden && revealed) return;
     try {
       const [live, arch] = await Promise.all([
         fetchJson("/api/live"),
