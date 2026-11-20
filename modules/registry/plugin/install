@@ -4,11 +4,35 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+AGENT_TOOLS_ROOT="$(cd "$ROOT/../.." && pwd)"
 HOOK="$ROOT/plugin/scripts/registry-hook"
 chmod +x "$HOOK"
 
+resolve_path() {
+  local p="$1"
+  [[ -e "$p" || -L "$p" ]] || return 1
+  while [ -L "$p" ]; do
+    local dir target
+    dir="$(cd "$(dirname "$p")" && pwd)"
+    target="$(readlink "$p")"
+    [[ "$target" != /* ]] && target="$dir/$target"
+    p="$target"
+  done
+  echo "$(cd "$(dirname "$p")" && pwd)/$(basename "$p")"
+}
+
 mkdir -p "$HOME/.local/bin" "$HOME/.claude/skills" "$HOME/.codex/skills"
-ln -sfn "$ROOT/bin/agent-registry" "$HOME/.local/bin/agent-registry"
+PATH_LINK="$HOME/.local/bin/agent-registry"
+if [[ -e "$PATH_LINK" || -L "$PATH_LINK" ]]; then
+  RESOLVED="$(resolve_path "$PATH_LINK")"
+  if [[ "$RESOLVED" == "$AGENT_TOOLS_ROOT"/* ]]; then
+    echo "skip: keeping $PATH_LINK (-> $RESOLVED); use agent-tools install.sh for agt shims"
+  else
+    ln -sfn "$ROOT/bin/agent-registry" "$PATH_LINK"
+  fi
+else
+  ln -sfn "$ROOT/bin/agent-registry" "$PATH_LINK"
+fi
 
 SETUP_LINK="$HOME/projects/tjdsneto-setup/bin/agent-registry"
 if [[ -L "$SETUP_LINK" ]]; then

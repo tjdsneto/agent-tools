@@ -20,6 +20,8 @@ Put the launcher on your PATH and install the Claude Code, Codex, and Cursor plu
 plugin/install
 ```
 
+After `plugin/install`, run `~/projects/agent-tools/./install.sh` if you want the `agt` shim on PATH.
+
 The `bin/agent-registry` wrapper runs the CLI through the repo's `.venv`. `PYTHONPATH` includes `src/`.
 
 ## Data path
