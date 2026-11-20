@@ -1,0 +1,14 @@
+.venv/
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+.DS_Store
+tmp/
+modules/**/tmp/
+modules/**/reports/
+modules/registry/desktop/
+*.egg-info/
+dist/
+build/
+.ana/
+.superpowers/
