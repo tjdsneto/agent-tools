@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import tempfile
 import time
@@ -81,6 +82,27 @@ def read_claude_address(session_id: str, sessions_dir: Path) -> dict | None:
             "peer_status": normalize_text(data.get("status")),
             "cwd": normalize_text(data.get("cwd")),
         }
+    return None
+
+
+def read_claude_transcript(session_id: str, projects_dir: Path) -> dict | None:
+    """An exited Claude session has no registry row or sessions file, but its transcript
+    remains. Its cwd is enough to resume it there. None if absent."""
+    if not re.fullmatch(r"[A-Za-z0-9-]+", session_id or "") or not projects_dir.is_dir():
+        return None
+    for path in projects_dir.glob(f"*/{session_id}.jsonl"):
+        try:
+            with path.open(errors="replace") as fh:
+                for line in fh:
+                    try:
+                        obj = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    cwd = normalize_text(obj.get("cwd")) if isinstance(obj, dict) else None
+                    if cwd:
+                        return {"peer_name": None, "socket": None, "pid": None, "peer_status": None, "cwd": cwd}
+        except OSError:
+            continue
     return None
 
 
@@ -186,6 +208,7 @@ def resolve_session(
     cursor_chats: Path | None = None,
     alive_check=None,
     codex_live=None,
+    projects_dir: Path | None = None,
 ) -> dict:
     """Address for a session UUID. Registry row first; harness files fill a missing name."""
     sessions_dir = sessions_dir if sessions_dir is not None else claude_sessions_dir()
@@ -237,6 +260,12 @@ def resolve_session(
         harvested = read_claude_address(session_id, sessions_dir)
         if harvested is not None and (sess is None or not peer_name):
             _take(harvested, "sessions_file", "claude")
+        elif harvested is None and sess is None:
+            harvested = read_claude_transcript(
+                session_id, projects_dir if projects_dir is not None else claude_projects_dir()
+            )
+            if harvested is not None:
+                _take(harvested, "transcript", "claude")
     if agent_type in (None, "codex") and (sess is None or (agent_type == "codex" and not peer_name)):
         looked = True
         harvested = read_codex_address(session_id, codex_index)
@@ -521,6 +550,7 @@ def wake(
         cursor_chats=cursor_chats,
         alive_check=alive_check,
         codex_live=codex_live,
+        projects_dir=projects_dir,
     )
     agent_type = view.get("agent_type") or ""
     if agent_type not in {"claude", "codex", "cursor"}:

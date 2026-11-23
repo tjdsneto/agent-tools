@@ -522,3 +522,32 @@ def test_cli_resolve_and_wake(tmp_registry, tmp_path, capsys, monkeypatch, inpro
     assert held["result"] == "held"
 
     assert main(["resolve", "missing"]) == EXIT_NOT_FOUND
+
+
+def test_resolve_an_exited_claude_session_from_its_transcript(tmp_registry, tmp_path):
+    sessions = tmp_path / "sessions"
+    sessions.mkdir()
+    project = tmp_path / "projects" / "-proj"
+    project.mkdir(parents=True)
+    (project / "uuid-gone.jsonl").write_text(
+        '{"type": "queue-operation", "sessionId": "uuid-gone"}\n'
+        '{"type": "user", "cwd": "/proj", "sessionId": "uuid-gone"}\n'
+    )
+    view = resolve_session(
+        "uuid-gone", sessions_dir=sessions, projects_dir=tmp_path / "projects",
+        alive_check=lambda pid: False,
+    )
+    assert view["agent_type"] == "claude"
+    assert view["directory"] == "/proj"
+    assert view["alive"] is False
+    assert view["source"] == "transcript"
+
+
+def test_transcript_lookup_ignores_glob_characters(tmp_path):
+    from agent_registry.transport import read_claude_transcript
+    (tmp_path / "-p").mkdir()
+    (tmp_path / "-p" / "x.jsonl").write_text('{"cwd": "/p"}\n')
+    assert read_claude_transcript("x", tmp_path) == {
+        "peer_name": None, "socket": None, "pid": None, "peer_status": None, "cwd": "/p",
+    }
+    assert read_claude_transcript("*", tmp_path) is None
