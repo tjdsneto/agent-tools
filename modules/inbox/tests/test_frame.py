@@ -38,9 +38,9 @@ def test_frame_serves_the_agent_document(conn):
     assert "<p>diagram</p>" in body
     assert '<base target="_blank">' in body
     csp = headers["Content-Security-Policy"]
-    assert "frame-ancestors http://127.0.0.1:8787" in csp
+    assert "frame-ancestors http://127.0.0.1:8797" in csp
     assert "sandbox allow-scripts allow-popups" in csp
-    assert "8787" not in body
+    assert "8797" not in body
 
 
 def test_frame_unknown_id_is_404(conn):

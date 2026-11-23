@@ -10,12 +10,12 @@ from urllib.parse import parse_qs, quote, urlparse
 from psycopg.types.json import Jsonb
 
 from agent_inbox import db, store
-from agent_inbox.constants import NOTIFY_CHANNEL
+from agent_inbox.constants import FRAME_PORT, HTTP_PORT, NOTIFY_CHANNEL
 from agent_inbox.errors import ConflictError, NotFoundError, StoreError, ValidationError
 
 HISTORY_STATES = ("delivered", "expired", "withdrawn", "superseded", "undelivered", "archived")
 HIDDEN_STATES = {"archived", "withdrawn", "superseded"}
-FRAME_ORIGIN = "http://127.0.0.1:8788"
+FRAME_ORIGIN = f"http://127.0.0.1:{FRAME_PORT}"
 
 _HEAD = """<!doctype html>
 <html>
@@ -24,7 +24,8 @@ _HEAD = """<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{title}</title>
 <style>
-body {{ font-family: system-ui, sans-serif; margin: 16px; }}
+body {{ font-family: system-ui, sans-serif; margin: 16px; background: #fff; color: #1a1a1a; }}
+a {{ color: #0645ad; }}
 article {{ padding: 12px; border: 1px solid #ccc; margin-bottom: 12px; }}
 a, button, input, select, textarea {{ min-height: 44px; box-sizing: border-box; }}
 a {{ display: inline-block; }}
@@ -36,7 +37,8 @@ iframe {{ width: 100%; min-height: 240px; border: 1px solid #ccc; }}
 
 _SCRIPT = """<script>
 const es = new EventSource("/events");
-es.onmessage = () => location.reload();
+let open = false;
+es.onmessage = () => { if (open) location.reload(); open = true; };
 </script>
 </body></html>
 """
@@ -46,8 +48,15 @@ def _esc(value: object) -> str:
     return html.escape("" if value is None else str(value), quote=True)
 
 
-def _frame_origin() -> str:
-    return os.environ.get("INBOX_FRAME_ORIGIN", FRAME_ORIGIN).rstrip("/")
+def _frame_origin(host_header: str | None = None) -> str:
+    configured = os.environ.get("INBOX_FRAME_ORIGIN")
+    if configured:
+        return configured.rstrip("/")
+    host = (host_header or "").split(":")[0]
+    if host.endswith(".ts.net"):
+        https_port = os.environ.get("INBOX_FRAME_HTTPS_PORT", "8445")
+        return f"https://{host}:{https_port}"
+    return FRAME_ORIGIN
 
 
 def _authorized(handler: BaseHTTPRequestHandler) -> bool:
@@ -171,7 +180,7 @@ def _control_fields(control: dict) -> str:
     return ""
 
 
-def _entry_page(entry: dict, error: str | None = None) -> str:
+def _entry_page(entry: dict, error: str | None = None, frame_origin: str | None = None) -> str:
     eid = _esc(entry["id"])
     parts = [_HEAD.format(title=_esc(entry["title"]))]
     if error:
@@ -180,7 +189,7 @@ def _entry_page(entry: dict, error: str | None = None) -> str:
     if entry.get("summary"):
         parts.append(f"<p>{_esc(entry['summary'])}</p>")
     if entry.get("html"):
-        src = f"{_frame_origin()}/h/{eid}"
+        src = f"{(frame_origin or _frame_origin()).rstrip('/')}/h/{eid}"
         parts.append(f'<iframe sandbox="allow-scripts allow-popups" src="{src}"></iframe>')
         parts.append("<p>Reference only. Answer below.</p>")
     if entry.get("detail"):
@@ -278,7 +287,7 @@ class InboxHandler(BaseHTTPRequestHandler):
             if entry["kind"] == "post" and entry["state"] in ("unread", "read"):
                 store.mark_read(conn, entry_id)
                 entry = store.get_entry(conn, entry_id)
-            self._html(status, _entry_page(entry, error))
+            self._html(status, _entry_page(entry, error, _frame_origin(self.headers.get("Host"))))
 
     def _post_entry(self, entry_id: str, action: str) -> None:
         form = self._form()
@@ -373,5 +382,5 @@ class InboxHandler(BaseHTTPRequestHandler):
 
 def make_server(host: str = "127.0.0.1", port: int | None = None) -> ThreadingHTTPServer:
     if port is None:
-        port = int(os.environ.get("INBOX_HTTP_PORT", "8787"))
+        port = int(os.environ.get("INBOX_HTTP_PORT", str(HTTP_PORT)))
     return ThreadingHTTPServer((host, port), InboxHandler)

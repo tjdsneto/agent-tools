@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import threading
+
 import psycopg
 from psycopg.types.json import Jsonb
 
@@ -42,7 +44,21 @@ def run_once() -> None:
         sweep(conn)
 
 
+def _serve_http() -> None:
+    from agent_inbox.web import make_server
+    server = make_server()
+    threading.Thread(target=server.serve_forever, name="inbox-http", daemon=True).start()
+
+
+def _serve_frame() -> None:
+    from agent_inbox.frame import make_server
+    server = make_server()
+    threading.Thread(target=server.serve_forever, name="inbox-frame", daemon=True).start()
+
+
 def run(poll: float = 5.0) -> None:
+    _serve_http()
+    _serve_frame()
     conn = db.connect()
     conn.execute(f"LISTEN {NOTIFY_CHANNEL}")
     try:

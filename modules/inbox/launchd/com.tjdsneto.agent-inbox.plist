@@ -23,6 +23,10 @@
 	<dict>
 		<key>PATH</key>
 		<string>__HOME__/.local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+		<key>INBOX_UI_ORIGIN</key>
+		<string>__UI_ORIGIN__</string>
+		<key>INBOX_FRAME_ORIGIN</key>
+		<string>__FRAME_ORIGIN__</string>
 	</dict>
 </dict>
 </plist>

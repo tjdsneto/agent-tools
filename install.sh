@@ -68,11 +68,30 @@ INBOX_PLIST_DST="$HOME/Library/LaunchAgents/com.tjdsneto.agent-inbox.plist"
 if [ -f "$INBOX_PLIST_SRC" ]; then
   mkdir -p "$ROOT/modules/inbox/tmp"
   mkdir -p "$(dirname "$INBOX_PLIST_DST")"
-  sed -e "s|__ROOT__|$ROOT|g" -e "s|__HOME__|$HOME|g" "$INBOX_PLIST_SRC" > "$INBOX_PLIST_DST"
+  ui_origin="http://127.0.0.1:8797"
+  frame_origin="http://127.0.0.1:8798"
+  if command -v tailscale >/dev/null && command -v python3 >/dev/null; then
+    ts_dns="$(tailscale status --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["Self"]["DNSName"].rstrip("."))' 2>/dev/null || true)"
+    if [ -n "$ts_dns" ]; then
+      ui_origin="https://${ts_dns}:8444"
+      frame_origin="https://${ts_dns}:8445"
+    fi
+  fi
+  sed -e "s|__ROOT__|$ROOT|g" -e "s|__HOME__|$HOME|g" \
+      -e "s|__UI_ORIGIN__|$ui_origin|g" -e "s|__FRAME_ORIGIN__|$frame_origin|g" \
+      "$INBOX_PLIST_SRC" > "$INBOX_PLIST_DST"
   uid="$(id -u)"
   launchctl bootout "gui/$uid/com.tjdsneto.agent-inbox" 2>/dev/null || true
   launchctl bootstrap "gui/$uid" "$INBOX_PLIST_DST"
   echo "reloaded com.tjdsneto.agent-inbox"
+fi
+
+# Inbox UI on the tailnet. 443 stays the existing Funnel; these are extra ports.
+if command -v tailscale >/dev/null; then
+  tailscale serve --bg --yes --https=8444 http://127.0.0.1:8797
+  tailscale serve --bg --yes --https=8445 http://127.0.0.1:8798
+else
+  echo "tailscale not on PATH; UI stays on 127.0.0.1"
 fi
 
 # session-waker: if any sessions registered, start monitor via PATH shim

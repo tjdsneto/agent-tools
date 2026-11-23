@@ -275,7 +275,7 @@ Replace the loop in both visual-ask skill copies so it:
 
 1. Writes the fragment to a temp file.
 2. Runs `agt inbox ask --wait --engine <this engine> --session-id <this session> --html-file <fragment>` with the title and control on stdin. The CLI already copies `--html-file` into the request.
-3. Opens the entry URL. The URL is `INBOX_UI_ORIGIN` plus `/e/<id>`, default `http://127.0.0.1:8787/e/<id>`.
+3. Opens the entry URL. The URL is `INBOX_UI_ORIGIN` plus `/e/<id>`, default `http://127.0.0.1:8797/e/<id>`.
 4. Stops. The wait command returns the answer into the session. Delete the instruction to read `state/events`.
 
 Do not delete `scripts/server.mjs`. Nothing in this plan proves it has no other caller.

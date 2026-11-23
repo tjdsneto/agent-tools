@@ -50,6 +50,7 @@ def test_feed_pins_open_questions_above_unread_info(conn, http):
     assert body.index("Q") < body.index("I")
     assert "Old" not in body
     assert q["id"] in body and info["id"] in body
+    assert "if (open) location.reload()" in body
 
 
 def test_entry_layers(conn, http):
@@ -63,7 +64,7 @@ def test_entry_layers(conn, http):
     assert "Which split?" in body and "because" in body
     assert 'sandbox="allow-scripts allow-popups"' in body
     assert "allow-same-origin" not in body and "allow-forms" not in body
-    assert f"http://127.0.0.1:8788/h/{e['id']}" in body
+    assert f"http://127.0.0.1:8798/h/{e['id']}" in body
     assert "Reference only. Answer below." in body
 
 

@@ -5,17 +5,18 @@ import re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from agent_inbox import db, store
+from agent_inbox.constants import FRAME_PORT, HTTP_PORT
 from agent_inbox.errors import NotFoundError
 
-DEFAULT_UI_ORIGIN = "http://127.0.0.1:8787"
+DEFAULT_UI_ORIGIN = f"http://127.0.0.1:{HTTP_PORT}"
 
 
 def _ancestors() -> str:
-    origin = os.environ.get("INBOX_UI_ORIGIN", DEFAULT_UI_ORIGIN).rstrip("/")
-    ancestors = [origin]
-    local = "http://localhost:8787"
-    if local not in ancestors:
-        ancestors.append(local)
+    configured = os.environ.get("INBOX_UI_ORIGIN", DEFAULT_UI_ORIGIN).rstrip("/")
+    ancestors: list[str] = []
+    for origin in (configured, DEFAULT_UI_ORIGIN, f"http://localhost:{HTTP_PORT}"):
+        if origin not in ancestors:
+            ancestors.append(origin)
     return " ".join(ancestors)
 
 
@@ -61,5 +62,5 @@ class FrameHandler(BaseHTTPRequestHandler):
 
 def make_server(host: str = "127.0.0.1", port: int | None = None) -> ThreadingHTTPServer:
     if port is None:
-        port = int(os.environ.get("INBOX_FRAME_PORT", "8788"))
+        port = int(os.environ.get("INBOX_FRAME_PORT", str(FRAME_PORT)))
     return ThreadingHTTPServer((host, port), FrameHandler)

@@ -8,6 +8,8 @@ EXIT_CONFLICT = 4
 EXIT_TIMEOUT = 5
 
 DEFAULT_DSN = "host=localhost port=5433 dbname=agent_inbox"
+HTTP_PORT = 8797
+FRAME_PORT = 8798
 NOTIFY_CHANNEL = "agent_inbox"
 
 KINDS = ("ask", "post")
