@@ -7,6 +7,31 @@ from pathlib import Path
 from agent_registry.daemon import serve_in_thread, stop_server
 
 
+def test_interrupt_reason_reaches_open_sessions_past_closed_rows(monkeypatch):
+    from agent_registry import daemon
+
+    asked = []
+
+    def fake(session_id):
+        asked.append(session_id)
+        return "rate_limit" if session_id == "open-late" else None
+
+    monkeypatch.setattr(daemon.usage, "claude_interrupt_reason", fake)
+    closed = [
+        {"agent_type": "claude", "session_id": f"old-{i}"}
+        for i in range(daemon._INTERRUPT_SCAN_CAP + 1)
+    ]
+    late = {"agent_type": "claude", "session_id": "open-late", "pid": 123, "title": "Hotline"}
+    copy = {"agent_type": "claude", "session_id": "open-late", "pid": 123, "title": "Hotline"}
+    views = {"active": [], "stale": closed + [late], "attention": [copy]}
+    daemon.attach_interrupt_reasons(views)
+    assert "open-late" in asked
+    assert late["interrupt_reason"] == "rate_limit"
+    assert copy["interrupt_reason"] == "rate_limit"
+    assert f"old-{daemon._INTERRUPT_SCAN_CAP - 1}" in asked
+    assert f"old-{daemon._INTERRUPT_SCAN_CAP}" not in asked
+
+
 def test_health_and_pid_files(tmp_registry):
     httpd = serve_in_thread("127.0.0.1", 0)
     port = httpd.server_address[1]

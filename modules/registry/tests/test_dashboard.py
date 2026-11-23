@@ -195,6 +195,16 @@ def test_board_actions_in_script(tmp_registry):
         assert "open_workspace" in script
         assert "Remove from board" in script
         assert "interrupt_reason" in script
+        assert 'if (reason === "rate_limit") return "out of tokens"' in script
+        assert "function interruptLabel" in script
+        assert "function outOfTokensMark" in script
+        assert 'class="token-stop"' in script
+        assert 'aria-label="Out of tokens"' in script
+        assert 'sess.interrupt_reason === "rate_limit"' in script
+        assert 'return "out-of-tokens"' in script
+        assert 'st === "out-of-tokens"' in script
+        assert '? "paused"' in script
+        assert 'return "Paused"' in script
         assert 'id="send-modal"' in home
         assert "openSendModal" in script
         assert "sendSuccessToast" in script

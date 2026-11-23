@@ -396,6 +396,7 @@
     .row:hover { background: var(--surface-2); }
     .row[data-status="working"] { --state: var(--ok); }
     .row[data-status="idle"] { --state: var(--warn); }
+    .row[data-status="out-of-tokens"] { --state: var(--warn); }
     .row[data-status="reviewing"] { --state: var(--info); }
     .row[data-status="blocked"] { --state: var(--danger); }
     .row[data-status="stopped"] { --state: var(--idle); }
@@ -422,12 +423,19 @@
     }
     .body { min-width: 0; }
     .headline {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 0;
       font-size: 14px;
       font-weight: 500;
       color: var(--text);
-      white-space: nowrap;
+    }
+    .headline .title {
+      min-width: 0;
       overflow: hidden;
       text-overflow: ellipsis;
+      white-space: nowrap;
     }
     .headline.fallback { color: var(--text-2); font-weight: 400; }
     .meta {
@@ -503,9 +511,8 @@
       justify-content: center;
       width: 16px;
       height: 16px;
-      margin-right: 6px;
+      flex: 0 0 auto;
       color: var(--text);
-      vertical-align: -2px;
     }
     .engine svg { width: 16px; height: 16px; display: block; }
     .engine.letter {
@@ -515,6 +522,22 @@
       font: 600 10px/1 var(--mono);
     }
     .engine-claude { color: #d97757; }
+    .token-stop {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      flex: 0 0 auto;
+      padding: 0 6px 0 4px;
+      height: 18px;
+      border-radius: 999px;
+      background: color-mix(in srgb, var(--warn) 18%, transparent);
+      color: var(--warn);
+      font-size: 11px;
+      font-weight: 600;
+      line-height: 1;
+      letter-spacing: 0.01em;
+    }
+    .token-stop svg { width: 12px; height: 12px; display: block; }
     .usage {
       margin-top: 2px;
       font-size: 11px;
@@ -742,7 +765,7 @@
   const LS_REASON = "agent-registry.archiveReason";
   const LS_GROUP_ALL = "agent-registry.groupBy.allOpen";
   const LS_GROUP_PROJECT = "agent-registry.groupBy.project";
-  const STATUS_ORDER = ["working", "idle", "reviewing", "blocked"];
+  const STATUS_ORDER = ["out-of-tokens", "working", "idle", "reviewing", "blocked"];
 
   let tab = localStorage.getItem(LS_TAB) || "open";
   if (tab === "live") tab = "open";
@@ -803,6 +826,7 @@
   function dotStatus(sess, where) {
     if (where === "archive") return "archive";
     if (where === "stopped") return "stopped";
+    if (sess && sess.interrupt_reason === "rate_limit") return "out-of-tokens";
     if (sess.status === "working") return "working";
     if (sess.status === "reviewing") return "reviewing";
     if (sess.status === "blocked") return "blocked";
@@ -817,6 +841,8 @@
     '<svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M4.6 1.5c.4-.4 1-.5 1.5-.3l1.5.6c.5.2.8.7.8 1.2v1.7c0 .4-.2.8-.6 1L6.5 6.3c.8 1.5 2 2.7 3.5 3.5l.6-1.3c.2-.4.6-.6 1-.6h1.7c.5 0 1 .3 1.2.8l.6 1.5c.2.5.1 1.1-.3 1.5l-1.1 1.1c-.4.4-1 .5-1.5.4C7.4 13.6 2.4 8.6 1.7 3.8c-.1-.5 0-1.1.4-1.5l1.1-1.1Z"/></svg>';
   const TRASH_SVG =
     '<svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M6.5 1.75A.75.75 0 0 1 7.25 1h1.5a.75.75 0 0 1 .75.75V3h3.25a.75.75 0 0 1 0 1.5h-.34l-.5 8.1A1.75 1.75 0 0 1 10.16 14H5.84a1.75 1.75 0 0 1-1.75-1.4l-.5-8.1H3.25a.75.75 0 0 1 0-1.5H6.5V1.75ZM5.1 4.5l.48 7.75c.03.4.36.7.76.7h4.32c.4 0 .73-.3.76-.7L11.9 4.5H5.1Zm2.15 1.75a.75.75 0 0 1 .75.75v4a.75.75 0 0 1-1.5 0v-4a.75.75 0 0 1 .75-.75Zm2.5 0a.75.75 0 0 1 .75.75v4a.75.75 0 0 1-1.5 0v-4a.75.75 0 0 1 .75-.75Z"/></svg>';
+  const OUT_OF_TOKENS_SVG =
+    '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.25" y="4.25" width="11.5" height="7.5" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.4"/><rect x="13.1" y="6.4" width="1.7" height="3.2" rx="0.4" fill="currentColor"/></svg>';
 
   function resumeCmd(sess) {
     const sid = sess.session_id || "";
@@ -1012,6 +1038,20 @@
     return actionBtn("Open", "open_workspace", sess);
   }
 
+  function interruptLabel(reason) {
+    if (reason === "rate_limit") return "out of tokens";
+    if (reason === "token_limit") return "token limit";
+    return String(reason || "").replace(/_/g, " ");
+  }
+
+  function outOfTokensMark(sess) {
+    if (sess.interrupt_reason !== "rate_limit") return "";
+    return (
+      '<span class="token-stop" title="Out of tokens" aria-label="Out of tokens">' +
+      OUT_OF_TOKENS_SVG + "<span>out of tokens</span></span>"
+    );
+  }
+
   function resumeDefaultMessage(reason) {
     if (reason === "token_limit") {
       return "Continue — previous turn hit the context/token limit. Summarize if needed and proceed.";
@@ -1065,7 +1105,7 @@
       || sess.session_id;
     sendModalTitle.textContent = opts.resume ? "Resume session" : "Send message";
     sendModalHint.textContent = opts.resume
-      ? ("Resume " + label + (sess.interrupt_reason ? " (" + sess.interrupt_reason.replace(/_/g, " ") + ")" : ""))
+      ? ("Resume " + label + (sess.interrupt_reason ? " (" + interruptLabel(sess.interrupt_reason) + ")" : ""))
       : ("Message for " + label);
     sendModalText.value = opts.prefill || "";
     sendModal.classList.remove("hidden");
@@ -1109,8 +1149,8 @@
     if (opts.reason) {
       parts.unshift("<span>" + esc(opts.reason) + "</span>");
     }
-    if (sess.interrupt_reason) {
-      parts.push('<span class="mono">' + esc(String(sess.interrupt_reason).replace(/_/g, " ")) + "</span>");
+    if (sess.interrupt_reason && sess.interrupt_reason !== "rate_limit") {
+      parts.push('<span class="mono">' + esc(interruptLabel(sess.interrupt_reason)) + "</span>");
     }
     if (sess.model) {
       parts.push(
@@ -1163,6 +1203,9 @@
     const inAttention = !!opts.attention;
     const depth = Math.min(3, opts.depth || 0);
     const status = dotStatus(sess, opts.where);
+    const shownStatus = status === "out-of-tokens"
+      ? "paused"
+      : (opts.statusLabel || sess.status);
     const ageIso = opts.ageIso || sess.last_ping;
     const age = humanAge(ageIso);
     const titleText = (sess.title && String(sess.title).trim()) || "";
@@ -1188,13 +1231,13 @@
       '<div class="' + cls + '" data-status="' + esc(status) + '" title="' + esc(tip) + '">' +
         '<div class="dot" aria-hidden="true"></div>' +
         '<div class="body">' +
-          '<div class="headline' + (fallback ? " fallback" : "") + '">' + engineMark(sess) + headline + "</div>" +
+          '<div class="headline' + (fallback ? " fallback" : "") + '">' + engineMark(sess) + outOfTokensMark(sess) + '<span class="title">' + headline + "</span></div>" +
           (titleText && summaryText && summaryText !== titleText
             ? '<div class="meta">' + esc(summaryText) + "</div>"
             : "") +
           '<div class="meta">' + metaBits(sess, {
             reason: opts.reason,
-            statusLabel: opts.statusLabel || sess.status,
+            statusLabel: shownStatus,
           }) + "</div>" +
           usageLine(sess) +
           idsLine(sess, { showParent: !!opts.showParent }) +
@@ -1332,12 +1375,14 @@
   }
 
   function turnStatusOf(sess) {
+    if (sess && sess.interrupt_reason === "rate_limit") return "out-of-tokens";
     const st = sess && sess.status;
     if (st === "working" || st === "idle" || st === "reviewing" || st === "blocked") return st;
     return "idle";
   }
 
   function statusLabel(st) {
+    if (st === "out-of-tokens") return "Paused";
     return st.charAt(0).toUpperCase() + st.slice(1);
   }
 

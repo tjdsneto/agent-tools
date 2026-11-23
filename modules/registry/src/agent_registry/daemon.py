@@ -470,6 +470,52 @@ def dispatch(op: str, params: dict) -> tuple[int, Any, str | None]:
     return command()
 
 
+_INTERRUPT_SCAN_CAP = 40
+
+
+def attach_interrupt_reasons(views: dict[str, list]) -> None:
+    """Mark Claude rows whose newest turn is still an interrupt.
+
+    Every row with a pid is checked. Rows without a pid are checked until
+    ``_INTERRUPT_SCAN_CAP`` of them have been read, so a live out-of-tokens
+    session is not hidden behind older closed rows.
+    """
+    grouped: dict[str, list[dict]] = {}
+    ordered: list[dict] = []
+    live_ids: set[str] = set()
+    for name in ("active", "stale", "attention"):
+        for view in views.get(name) or []:
+            if view.get("agent_type") != "claude":
+                continue
+            session_id = view.get("session_id")
+            if not session_id:
+                continue
+            if view.get("pid"):
+                live_ids.add(session_id)
+            bucket = grouped.get(session_id)
+            if bucket is None:
+                grouped[session_id] = [view]
+                ordered.append(view)
+            else:
+                bucket.append(view)
+    ordered.sort(key=lambda view: 0 if view.get("session_id") in live_ids else 1)
+    quiet_budget = _INTERRUPT_SCAN_CAP
+    for view in ordered:
+        session_id = view["session_id"]
+        if session_id not in live_ids:
+            if quiet_budget <= 0:
+                break
+            quiet_budget -= 1
+        try:
+            reason = usage.claude_interrupt_reason(session_id)
+        except Exception:
+            reason = None
+        if not reason:
+            continue
+        for sibling in grouped[session_id]:
+            sibling["interrupt_reason"] = reason
+
+
 class DaemonHandler(DashboardHandler):
     def do_GET(self) -> None:
         if urlparse(self.path).path == "/api/health":
@@ -494,7 +540,6 @@ class DaemonHandler(DashboardHandler):
         views = self._sync_claude_titles(views)
         views = self._sync_claude_models(views)
         open_ids = set(open_chats)
-        interrupt_budget = 40
         for name in ("active", "stale", "attention"):
             for view in views[name]:
                 usage.attach_usage(view)
@@ -503,18 +548,7 @@ class DaemonHandler(DashboardHandler):
                     and view.get("session_id") in open_ids
                 ):
                     view["cursor_open"] = True
-                if (
-                    interrupt_budget > 0
-                    and view.get("agent_type") == "claude"
-                    and view.get("session_id")
-                ):
-                    interrupt_budget -= 1
-                    try:
-                        reason = usage.claude_interrupt_reason(view["session_id"])
-                    except Exception:
-                        reason = None
-                    if reason:
-                        view["interrupt_reason"] = reason
+        attach_interrupt_reasons(views)
         self._json(views)
 
     def _cursor_views(self, views: dict[str, list]) -> list[dict]:
