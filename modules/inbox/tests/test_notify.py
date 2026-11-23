@@ -76,3 +76,11 @@ def test_answer_survives_a_missing_hermes(conn, monkeypatch):
     )
     result = store.answer(conn, entry["id"], "a", via="web")
     assert result["state"] == "answered"
+
+
+def test_default_target_is_the_hermes_home_channel(monkeypatch):
+    from agent_inbox import notify
+    monkeypatch.delenv("AGENT_INBOX_TELEGRAM_TO")
+    assert notify._target() == "telegram"
+    monkeypatch.setenv("AGENT_INBOX_TELEGRAM_TO", "")
+    assert notify._target() == ""

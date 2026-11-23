@@ -14,6 +14,12 @@ def reachable(monkeypatch):
     """Answers in tests must not shell out to registry or claude-budget."""
     monkeypatch.setattr("agent_inbox.reach.for_entry", lambda entry: Reach("resumable"))
 
+
+@pytest.fixture(autouse=True)
+def no_telegram(monkeypatch):
+    """The default target is the real Hermes home channel; tests opt in with their own."""
+    monkeypatch.setenv("AGENT_INBOX_TELEGRAM_TO", "")
+
 TEST_DSN = os.environ.get("AGENT_INBOX_TEST_DSN", "host=localhost port=5433 dbname=agent_inbox_test")
 
 

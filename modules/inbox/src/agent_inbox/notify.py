@@ -46,6 +46,14 @@ def card(entry: dict, *, ui: str) -> str:
 _warned_unset = False
 
 
+# Hermes's home Telegram channel. An empty AGENT_INBOX_TELEGRAM_TO turns pushes off.
+DEFAULT_TELEGRAM_TO = "telegram"
+
+
+def _target() -> str:
+    return os.environ.get("AGENT_INBOX_TELEGRAM_TO", DEFAULT_TELEGRAM_TO)
+
+
 def hermes_send(to: str, text: str) -> None:
     subprocess.run(["hermes", "send", "--to", to, text], check=False, timeout=60)
 
@@ -115,7 +123,7 @@ def _warn_unset() -> None:
     global _warned_unset
     if _warned_unset:
         return
-    print("telegram target unset", file=sys.stderr)
+    print("telegram pushes off (AGENT_INBOX_TELEGRAM_TO is empty)", file=sys.stderr)
     _warned_unset = True
 
 
@@ -132,7 +140,7 @@ def push_new(conn, entries: list[dict], *, now: datetime, ui: str) -> None:
     batch = due(fresh, now=now, last_normal_at=_last_normal(conn))
     if not batch:
         return
-    target = os.environ.get("AGENT_INBOX_TELEGRAM_TO")
+    target = _target()
     urgent = [entry for entry in batch if entry["priority"] == "urgent"]
     normal = [entry for entry in batch if entry["priority"] == "normal"]
     if target:
@@ -162,7 +170,7 @@ def push_pending(conn, *, now: datetime | None = None, ui: str | None = None) ->
 def push_answerable(conn, ids: list[str], priority: str) -> None:
     if not ids:
         return
-    target = os.environ.get("AGENT_INBOX_TELEGRAM_TO")
+    target = _target()
     text = f"{len(ids)} entries are answerable again\n" + "\n".join(ids)
     if not target:
         _warn_unset()
@@ -174,7 +182,7 @@ def push_answerable(conn, ids: list[str], priority: str) -> None:
 
 
 def note_answered(entry_id: str, via: str, value) -> None:
-    target = os.environ.get("AGENT_INBOX_TELEGRAM_TO")
+    target = _target()
     if not target:
         return
     shown = ", ".join(value) if isinstance(value, list) else value
