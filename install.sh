@@ -62,6 +62,19 @@ if [ -f "$PLIST_SRC" ]; then
   echo "reloaded com.tjdsneto.glue-miner"
 fi
 
+# agent-inbox delivery loop.
+INBOX_PLIST_SRC="$ROOT/modules/inbox/launchd/com.tjdsneto.agent-inbox.plist"
+INBOX_PLIST_DST="$HOME/Library/LaunchAgents/com.tjdsneto.agent-inbox.plist"
+if [ -f "$INBOX_PLIST_SRC" ]; then
+  mkdir -p "$ROOT/modules/inbox/tmp"
+  mkdir -p "$(dirname "$INBOX_PLIST_DST")"
+  sed -e "s|__ROOT__|$ROOT|g" -e "s|__HOME__|$HOME|g" "$INBOX_PLIST_SRC" > "$INBOX_PLIST_DST"
+  uid="$(id -u)"
+  launchctl bootout "gui/$uid/com.tjdsneto.agent-inbox" 2>/dev/null || true
+  launchctl bootstrap "gui/$uid" "$INBOX_PLIST_DST"
+  echo "reloaded com.tjdsneto.agent-inbox"
+fi
+
 # session-waker: if any sessions registered, start monitor via PATH shim
 if command -v session-waker >/dev/null && [ -d "$HOME/.session-waker/sessions" ] \
    && [ -n "$(ls -A "$HOME/.session-waker/sessions" 2>/dev/null || true)" ]; then

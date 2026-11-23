@@ -1,6 +1,6 @@
 # agent-inbox
 
-Persistent inbox for AI agents to ask Tiago questions or leave him information. Answers are delivered back to the session that asked, even after it has exited (delivery lands in slice 2; this slice stores questions and answers and supports blocking waits).
+Persistent inbox for AI agents to ask Tiago questions or leave him information. Answers are delivered back to the session that asked, even after it has exited.
 
 **Design spec:** [docs/superpowers/specs/2026-11-23-agent-inbox-design.md](docs/superpowers/specs/2026-11-23-agent-inbox-design.md)
 
@@ -58,6 +58,10 @@ Controls: `choice` (2–6 options), `multi`, `text` (`size`: short|long), `appro
 | 3 | store unreachable |
 | 4 | conflict: already answered, or closed |
 | 5 | wait timed out |
+
+## Delivery
+
+`agt inbox serve` starts at login as `com.tjdsneto.agent-inbox`. While `waiter_pid` is a live process, that process's return is the delivery and the dispatcher does not wake the session. A dead waiter falls through to `agt registry wake`. Three failed wakes move the entry to `undelivered`. A held Claude session waits until `claude-budget` drops below 88 percent. An answer is refused while the session is held or unreachable.
 
 ## Tests
 
