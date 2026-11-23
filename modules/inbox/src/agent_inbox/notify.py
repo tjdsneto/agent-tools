@@ -26,20 +26,25 @@ def due(entries: list[dict], *, now: datetime, last_normal_at: datetime | None) 
 
 
 def card(entry: dict, *, ui: str) -> str:
-    project = os.path.basename((entry.get("asker") or {}).get("project") or "") or "-"
-    lines = [f"{entry['priority']}  {project}", entry["title"]]
+    """Telegram card. hermes send renders Markdown, so the title is bold and the UI is a short link."""
+    project = os.path.basename((entry.get("asker") or {}).get("project") or "")
+    head = f"*{entry['title']}*"
+    if entry.get("priority") == "urgent":
+        head = "🚨 Urgent: " + head
+    lines = [head, " · ".join(([f"from {project}"] if project else []) + [entry["id"]])]
     control = entry.get("control") or {}
     ctype = control.get("type")
+    options = control.get("options") or []
     if ctype in ("choice", "multi"):
-        for i, opt in enumerate(control.get("options") or [], start=1):
+        for i, opt in enumerate(options, start=1):
             mark = " (recommended)" if opt.get("recommended") else ""
             lines.append(f"{i}. {opt['label']}{mark}")
-        lines.append("reply 1" if ctype == "choice" else "reply the numbers")
+        lines.append(f"Reply with a number (1–{len(options)})" if ctype == "choice" else "Reply with numbers, e.g. 1 3")
     elif ctype == "text":
-        lines.append("reply with the text")
+        lines.append("Reply with your answer")
     elif ctype == "approve":
-        lines.append('reply "approve" or "revise: reason"')
-    lines.append(ui)
+        lines.append('Reply "approve" or "revise: reason"')
+    lines.append(f"[Open details]({ui})")
     return "\n".join(lines)
 
 

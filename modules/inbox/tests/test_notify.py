@@ -16,8 +16,10 @@ def test_choice_card_is_numbered():
     }, ui="https://mbp.tailnet/e/ib-7k3q")
     assert "Which split?" in text
     assert "1. Tauri" in text and "2. Go (recommended)" in text
-    assert "https://mbp.tailnet/e/ib-7k3q" in text
-    assert "reply 1" in text
+    assert "[Open details](https://mbp.tailnet/e/ib-7k3q)" in text
+    assert "Reply with a number (1–2)" in text
+    assert text.splitlines()[:2] == ["*Which split?*", "from agent-tools · ib-7k3q"]
+    assert "normal" not in text
 
 
 def test_approve_card_tells_him_the_words():
@@ -26,7 +28,8 @@ def test_approve_card_tells_him_the_words():
         "asker": {"project": None},
         "control": {"type": "approve"},
     }, ui="https://x/e/ib-7k3q")
-    assert 'reply "approve"' in text and "revise: reason" in text
+    assert 'Reply "approve"' in text and "revise: reason" in text
+    assert text.startswith("🚨 Urgent: *Ship it?*")
 
 
 def test_quiet_hours():
