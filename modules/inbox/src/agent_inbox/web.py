@@ -70,6 +70,32 @@ def _authorized(handler: BaseHTTPRequestHandler) -> bool:
     return login.startswith("tjdsneto@")
 
 
+def _allowed_origins(handler: BaseHTTPRequestHandler) -> set[str]:
+    port = handler.server.server_address[1]
+    origins = {f"http://127.0.0.1:{port}", f"http://localhost:{port}"}
+    configured = os.environ.get("INBOX_UI_ORIGIN")
+    if configured:
+        origins.add(configured.rstrip("/"))
+    return origins
+
+
+def _same_site(handler: BaseHTTPRequestHandler) -> bool:
+    """Refuse what a foreign page can make the browser send: a cross-site form post
+    (including one from the sandboxed agent frame, whose origin is "null") and a
+    DNS-rebound Host. Non-browser callers send neither Origin nor Sec-Fetch-Site."""
+    origins = _allowed_origins(handler)
+    host = (handler.headers.get("Host") or "").rsplit(":", 1)[0]
+    if host and host not in {urlparse(o).hostname for o in origins}:
+        return False
+    if handler.command != "POST":
+        return True
+    site = handler.headers.get("Sec-Fetch-Site")
+    if site and site != "same-origin":
+        return False
+    origin = handler.headers.get("Origin")
+    return origin is None or origin in origins
+
+
 def _query_value(qs: dict, key: str) -> str | None:
     values = qs.get(key)
     if not values or values[0] == "":
@@ -210,12 +236,12 @@ def _entry_page(entry: dict, error: str | None = None, frame_origin: str | None 
         parts.append(
             f'<form method="post" action="/e/{eid}/answer">{_control_fields(entry.get("control") or {})}'
             '<input name="comment" placeholder="comment">'
-            '<input type="hidden" name="via" value="web"></form>'
+            '</form>'
         )
     if (entry.get("asker") or {}).get("session_id"):
         parts.append(
             f'<form method="post" action="/e/{eid}/followup"><input name="text">'
-            '<input type="hidden" name="via" value="web"><button type="submit">follow up</button></form>'
+            '<button type="submit">follow up</button></form>'
         )
     parts.append(f'<p><a href="/">feed</a></p>{_SCRIPT}')
     return "".join(parts)
@@ -255,6 +281,9 @@ class InboxHandler(BaseHTTPRequestHandler):
     def _route(self, method: str) -> None:
         if not _authorized(self):
             self._bytes(403, b"tailnet login required", "text/plain; charset=utf-8")
+            return
+        if not _same_site(self):
+            self._bytes(403, b"cross-site request refused", "text/plain; charset=utf-8")
             return
         try:
             self._dispatch(method)
@@ -308,12 +337,12 @@ class InboxHandler(BaseHTTPRequestHandler):
                     store.answer(
                         conn, entry_id, value,
                         comment=(form.get("comment") or [""])[0],
-                        via=(form.get("via") or ["web"])[0],
+                        via="web",
                     )
                 else:
                     store.add_followup(
                         conn, entry_id, (form.get("text") or [""])[0],
-                        via=(form.get("via") or ["web"])[0],
+                        via="web",
                     )
         except ConflictError as exc:
             self._show(entry_id, 409, str(exc))

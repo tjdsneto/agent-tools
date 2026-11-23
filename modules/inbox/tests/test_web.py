@@ -30,11 +30,11 @@ def _get(http, path, headers=None):
     return resp.status, resp.read().decode()
 
 
-def _post(http, path, body):
+def _post(http, path, body, headers=None):
     conn = HTTPConnection(http[0], http[1], timeout=5)
     conn.request(
         "POST", path, body=body,
-        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        headers={"Content-Type": "application/x-www-form-urlencoded", **(headers or {})},
     )
     resp = conn.getresponse()
     return resp.status, resp.getheader("Location"), resp.read().decode()
@@ -103,3 +103,48 @@ def test_dismiss_hides_an_undelivered_question(conn, http):
     assert store.get_entry(conn, e["id"])["state"] == "undelivered"
     _, body = _get(http, "/")
     assert "stuck" not in body
+
+
+def _open_ask(conn):
+    req = validate_request({"title": "Q", "control": CHOICE}, "ask")
+    return store.create_entry(conn, "ask", req, engine="claude", session_id="s-1")
+
+
+@pytest.mark.parametrize("headers", [
+    {"Origin": "http://evil.example"},
+    {"Origin": "null"},
+    {"Sec-Fetch-Site": "cross-site"},
+    {"Sec-Fetch-Site": "same-site"},
+])
+def test_a_post_from_another_site_is_refused(conn, http, headers):
+    e = _open_ask(conn)
+    status, _, _ = _post(http, f"/e/{e['id']}/answer", "value=b", headers)
+    assert status == 403
+    assert store.get_entry(conn, e["id"])["state"] == "open"
+
+
+def test_a_post_from_the_ui_origin_is_accepted(conn, http):
+    e = _open_ask(conn)
+    origin = f"http://127.0.0.1:{http[1]}"
+    status, _, _ = _post(http, f"/e/{e['id']}/answer", "value=b", {"Origin": origin, "Sec-Fetch-Site": "same-origin"})
+    assert status == 303
+
+
+def test_the_configured_tailnet_origin_is_accepted(conn, http, monkeypatch):
+    monkeypatch.setenv("INBOX_UI_ORIGIN", "https://box.example.ts.net:8444")
+    e = _open_ask(conn)
+    status, _, _ = _post(
+        http, f"/e/{e['id']}/answer", "value=b",
+        {"Origin": "https://box.example.ts.net:8444", "Host": "box.example.ts.net:8444"},
+    )
+    assert status == 303
+
+
+def test_a_rebound_host_is_refused(conn, http):
+    assert _get(http, "/", {"Host": f"evil.example:{http[1]}"})[0] == 403
+
+
+def test_the_form_cannot_choose_its_surface(conn, http):
+    e = _open_ask(conn)
+    _post(http, f"/e/{e['id']}/answer", "value=b&via=telegram")
+    assert store.get_entry(conn, e["id"])["answer"]["via"] == "web"
