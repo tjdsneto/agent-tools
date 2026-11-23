@@ -94,6 +94,17 @@ if [ -f "$INBOX_PLIST_SRC" ]; then
   echo "reloaded com.tjdsneto.agent-inbox"
 fi
 
+BACKUP_PLIST_SRC="$ROOT/modules/inbox/launchd/com.tjdsneto.agent-inbox-backup.plist"
+BACKUP_PLIST_DST="$HOME/Library/LaunchAgents/com.tjdsneto.agent-inbox-backup.plist"
+if [ -f "$BACKUP_PLIST_SRC" ]; then
+  mkdir -p "$(dirname "$BACKUP_PLIST_DST")"
+  sed "s|__ROOT__|$ROOT|g" "$BACKUP_PLIST_SRC" > "$BACKUP_PLIST_DST"
+  uid="$(id -u)"
+  launchctl bootout "gui/$uid/com.tjdsneto.agent-inbox-backup" 2>/dev/null || true
+  launchctl bootstrap "gui/$uid" "$BACKUP_PLIST_DST"
+  echo "reloaded com.tjdsneto.agent-inbox-backup"
+fi
+
 # Inbox UI on the tailnet. 443 stays the existing Funnel; these are extra ports.
 if command -v tailscale >/dev/null; then
   tailscale serve --bg --yes --https=8444 http://127.0.0.1:8797

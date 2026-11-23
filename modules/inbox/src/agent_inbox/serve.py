@@ -49,6 +49,20 @@ def sweep(conn: psycopg.Connection) -> None:
     if freed:
         push_answerable(conn, freed, "urgent" if freed_urgent else "normal")
     push_pending(conn)
+    purge_html(conn)
+
+
+def purge_html(conn: psycopg.Connection) -> int:
+    rows = conn.execute(
+        """
+        UPDATE entries SET html = NULL
+        WHERE html IS NOT NULL
+          AND state IN ('delivered', 'expired', 'withdrawn', 'superseded', 'undelivered', 'archived')
+          AND updated_at < now() - interval '90 days'
+        RETURNING id
+        """
+    ).fetchall()
+    return len(rows)
 
 
 def run_once() -> None:

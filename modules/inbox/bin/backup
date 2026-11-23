@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+DEST="${HOME}/.local/share/agent-inbox/backups"
+mkdir -p "$DEST"
+STAMP="$(date +%Y%m%d)"
+/opt/homebrew/opt/postgresql@17/bin/pg_dump -h localhost -p 5433 -d agent_inbox -f "$DEST/agent_inbox-$STAMP.sql"
+old="$(ls -1t "$DEST"/agent_inbox-*.sql 2>/dev/null | tail -n +15 || true)"
+if [ -n "$old" ]; then
+  printf '%s\n' "$old" | while IFS= read -r f; do rm -f "$f"; done
+fi
