@@ -1079,7 +1079,7 @@ git commit -m "feat(inbox): create, get and list entries"
 - Modify: `modules/inbox/src/agent_inbox/store.py` (append)
 - Test: `modules/inbox/tests/test_store_answer.py`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 import threading
@@ -1160,12 +1160,12 @@ def test_concurrent_answers_exactly_one_wins(inbox_db, conn):
     assert sorted(results) == ["lost", "won"]
 ```
 
-- [ ] **Step 2: Run them to make sure they fail**
+- [x] **Step 2: Run them to make sure they fail**
 
 Run: `.venv/bin/python -m pytest tests/test_store_answer.py -v`
 Expected: FAIL with `AttributeError: module 'agent_inbox.store' has no attribute 'answer'`
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Add to the imports at the top of `store.py`:
 
@@ -1215,12 +1215,12 @@ def answer(
     return {"entry": entry_id, "state": "answered", **payload}
 ```
 
-- [ ] **Step 4: Run the tests**
+- [x] **Step 4: Run the tests**
 
 Run: `.venv/bin/python -m pytest tests/test_store_answer.py -v`
 Expected: all passed. Run the concurrency test 5 times (`-k concurrent --count` is not available; loop it: `for i in 1 2 3 4 5; do .venv/bin/python -m pytest tests/test_store_answer.py -k concurrent -q || break; done`) and report how many runs passed.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add modules/inbox/src/agent_inbox/store.py modules/inbox/tests/test_store_answer.py

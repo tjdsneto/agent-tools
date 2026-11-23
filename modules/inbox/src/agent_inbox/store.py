@@ -7,8 +7,10 @@ from typing import Any
 import psycopg
 from psycopg.types.json import Jsonb
 
-from agent_inbox.errors import NotFoundError, StoreError, ValidationError
+from agent_inbox.constants import VIAS
+from agent_inbox.errors import ConflictError, NotFoundError, StoreError, ValidationError
 from agent_inbox.ids import new_id
+from agent_inbox.validate import validate_answer
 
 ID_ATTEMPTS = 10
 LIST_HIDDEN = ("html", "summary", "detail")
@@ -175,3 +177,40 @@ def list_entries(
         {k: v for k, v in _shape(r).items() if k not in LIST_HIDDEN}
         for r in conn.execute(sql, params).fetchall()
     ]
+
+
+def _check_via(via: str) -> None:
+    if via not in VIAS:
+        raise ValidationError(f"via must be one of {', '.join(VIAS)}")
+
+
+def _closed_message(row: dict) -> str:
+    if row["answer"]:
+        return f"{row['id']} already answered via {row['answer']['via']}: {row['answer']['value']}"
+    return f"{row['id']} is {row['state']}"
+
+
+def answer(
+    conn: psycopg.Connection,
+    entry_id: str,
+    value: Any,
+    *,
+    comment: str | None = None,
+    via: str = "cli",
+) -> dict:
+    """First answer wins: the row lock makes a concurrent second answer see the first and conflict."""
+    _check_via(via)
+    with conn.transaction():
+        row = _row(conn, entry_id, lock=True)
+        if row["kind"] != "ask":
+            raise ValidationError(f"{entry_id} is not a question")
+        if row["state"] != "open":
+            raise ConflictError(_closed_message(row))
+        clean = validate_answer(row["control"], value, comment)
+        payload = {"value": clean, "comment": (comment or "").strip() or None, "via": via, "at": _now_iso()}
+        conn.execute(
+            "UPDATE entries SET state = 'answered', answer = %s, updated_at = now() WHERE id = %s",
+            (Jsonb(payload), entry_id),
+        )
+        _event(conn, entry_id, "answer", via, payload)
+    return {"entry": entry_id, "state": "answered", **payload}
