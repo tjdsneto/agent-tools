@@ -313,3 +313,39 @@ def mark_read(conn: psycopg.Connection, entry_id: str) -> dict:
 
 def archive(conn: psycopg.Connection, entry_id: str) -> dict:
     return _post_transition(conn, entry_id, ("unread", "read"), "archived")
+
+
+def set_waiter(conn: psycopg.Connection, entry_id: str, pid: int) -> None:
+    conn.execute("UPDATE entries SET waiter_pid = %s, mode = 'wait' WHERE id = %s", (pid, entry_id))
+
+
+def clear_waiter(conn: psycopg.Connection, entry_id: str, pid: int) -> None:
+    conn.execute("UPDATE entries SET waiter_pid = NULL WHERE id = %s AND waiter_pid = %s", (entry_id, pid))
+
+
+def switch_to_resume(conn: psycopg.Connection, entry_id: str) -> None:
+    conn.execute("UPDATE entries SET mode = 'resume', waiter_pid = NULL WHERE id = %s", (entry_id,))
+
+
+def take_waiter_event(conn: psycopg.Connection, entry_id: str, after: int) -> dict | None:
+    """What a blocked waiter should return now, or None to keep waiting.
+
+    Returning an answer to a waiter is its delivery, so the entry moves to delivered.
+    """
+    with conn.transaction():
+        row = _row(conn, entry_id, lock=True)
+        if row["state"] in ("answered", "delivered"):
+            if row["state"] == "answered":
+                conn.execute("UPDATE entries SET state = 'delivered', updated_at = now() WHERE id = %s", (entry_id,))
+            return {"entry": entry_id, "event": "answer", **row["answer"]}
+        if row["state"] != "open":
+            return {"entry": entry_id, "event": row["state"]}
+        ev = conn.execute(
+            "SELECT * FROM events WHERE entry_id = %s AND type = 'followup' AND seq > %s ORDER BY seq LIMIT 1",
+            (entry_id, after),
+        ).fetchone()
+    if ev is None:
+        return None
+    shaped = _shape_event(ev)
+    shaped.pop("type")
+    return {"entry": entry_id, "event": "followup", **shaped}

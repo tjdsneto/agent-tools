@@ -1543,7 +1543,7 @@ git commit -m "feat(inbox): withdraw, supersede, read and archive"
 - Create: `modules/inbox/src/agent_inbox/waiting.py`
 - Test: `modules/inbox/tests/test_waiting.py`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 import threading
@@ -1627,12 +1627,12 @@ def test_waiter_pid_set_while_blocking(conn):
     assert seen["pid"] is not None
 ```
 
-- [ ] **Step 2: Run them to make sure they fail**
+- [x] **Step 2: Run them to make sure they fail**
 
 Run: `.venv/bin/python -m pytest tests/test_waiting.py -v`
 Expected: FAIL with `ImportError: cannot import name 'waiting'`
 
-- [ ] **Step 3: Implement the store helpers**
+- [x] **Step 3: Implement the store helpers**
 
 Append to `store.py`:
 
@@ -1673,7 +1673,7 @@ def take_waiter_event(conn: psycopg.Connection, entry_id: str, after: int) -> di
     return {"entry": entry_id, "event": "followup", **shaped}
 ```
 
-- [ ] **Step 4: Implement the wait loop**
+- [x] **Step 4: Implement the wait loop**
 
 `modules/inbox/src/agent_inbox/waiting.py`:
 
@@ -1727,12 +1727,12 @@ def wait_for(
             conn.close()
 ```
 
-- [ ] **Step 5: Run the tests**
+- [x] **Step 5: Run the tests**
 
 Run: `.venv/bin/python -m pytest tests/test_waiting.py -v`
 Expected: all passed. `test_answer_wakes_the_waiter_and_marks_delivered` is the one that proves NOTIFY works (poll is 30s, so a pass under 3s can only come from the notification).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add modules/inbox/src/agent_inbox/store.py modules/inbox/src/agent_inbox/waiting.py modules/inbox/tests/test_waiting.py
