@@ -63,6 +63,8 @@ def build_parser() -> argparse.ArgumentParser:
     wait.add_argument("--after", type=int, default=0, help="return only follow-ups newer than this seq")
     wait.add_argument("--timeout", type=float, default=WAIT_TIMEOUT_SEC)
 
+    sub.add_parser("serve")
+
     get = sub.add_parser("get")
     get.add_argument("id")
 
@@ -143,6 +145,10 @@ def _dispatch(args: argparse.Namespace) -> tuple[Any, int]:
     cmd = args.cmd
     if cmd == "wait":
         return _waited(waiting.wait_for(args.id, after=args.after, timeout=args.timeout))
+    if cmd == "serve":
+        from agent_inbox.serve import run
+        run()
+        return {"ok": True}, EXIT_OK
 
     with db.connect() as conn:
         if cmd == "ask":
