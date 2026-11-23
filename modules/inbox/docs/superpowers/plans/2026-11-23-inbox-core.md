@@ -302,7 +302,7 @@ Pure functions, no database. Covers the request (`ask` / `post` JSON), the contr
 - Create: `modules/inbox/src/agent_inbox/validate.py`
 - Test: `modules/inbox/tests/test_validate.py`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 from datetime import datetime
@@ -411,12 +411,12 @@ def test_request_html_cap_source_and_expiry():
         validate_request({"title": "t", "priority": "meh"}, "post")
 ```
 
-- [ ] **Step 2: Run them to make sure they fail**
+- [x] **Step 2: Run them to make sure they fail**
 
 Run: `.venv/bin/python -m pytest tests/test_validate.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'agent_inbox.validate'`
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `modules/inbox/src/agent_inbox/validate.py`:
 
@@ -558,12 +558,12 @@ def validate_request(raw: Any, kind: str) -> dict:
     return out
 ```
 
-- [ ] **Step 4: Run the tests**
+- [x] **Step 4: Run the tests**
 
 Run: `.venv/bin/python -m pytest tests/test_validate.py -v`
 Expected: all passed.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add modules/inbox/src/agent_inbox/validate.py modules/inbox/tests/test_validate.py
