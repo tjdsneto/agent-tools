@@ -42,7 +42,7 @@ Hermes (inbox skill) ──►     ▲                  │ NOTIFY
                              │                  ▼
                     agt inbox serve ── web UI (tailscale serve, tailnet only)
                          │   ├─ dispatcher ──► agt registry wake <session>
-                         │   └─ notifier ───► hermes send (Telegram), macOS notification, agt say (opt-in)
+                         │   └─ notifier ───► hermes send (Telegram), macOS notification, agt read voice (opt-in)
                          └─ reachability ◄── claude-budget, registry usage (rate-limit detection)
 ```
 
@@ -159,7 +159,7 @@ Every entry has a thread, questions and info alike.
 
 | Priority | Push | Channels |
 |---|---|---|
-| `urgent` | immediate, at any hour | Telegram, macOS notification; `agt say` voice if opted in |
+| `urgent` | immediate, at any hour | Telegram, macOS notification; `agt read` voice if opted in (`AGENT_INBOX_SAY=1`) |
 | `normal` | batched, at most one push per 15 min, daytime only | Telegram |
 | `low` | none | UI only |
 
@@ -220,7 +220,7 @@ Exit codes and JSON output follow the conventions of `agt registry` and `agt say
 ## Relationship to existing tools
 
 - **`visual-ask`** becomes a thin wrapper: `agt inbox ask --wait --html <fragment>`, then it opens the entry's URL. Its "when to use" guidance stays. Its local server goes away.
-- **`agt say`** stays separate. The inbox uses it only as the optional voice channel for `urgent`.
+- **`agt say`** stays separate. The optional voice channel for `urgent` is `agt read --background`, because `agt say` is a blocking dialog.
 - **`agt registry wake`** and **`claude-budget`** are reused for delivery and token availability.
 
 ## Failure rules

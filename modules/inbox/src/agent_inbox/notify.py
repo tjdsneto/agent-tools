@@ -68,9 +68,16 @@ def notify_mac(title: str, body: str) -> None:
 
 
 def say(text: str) -> None:
+    """Opt-in voice. agt read speaks in the background; agt say is a blocking dialog."""
     if os.environ.get("AGENT_INBOX_SAY") != "1":
         return
-    subprocess.run(["agt", "say", "--text", text[:500]], check=False, timeout=30)
+    try:
+        subprocess.Popen(
+            ["agt", "read", "--title", "Inbox", "--text", text[:500], "--background"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True,
+        )
+    except OSError as exc:
+        print(f"voice failed: {exc}", file=sys.stderr)
 
 
 def _ops_get(conn, key: str):

@@ -84,3 +84,15 @@ def test_default_target_is_the_hermes_home_channel(monkeypatch):
     assert notify._target() == "telegram"
     monkeypatch.setenv("AGENT_INBOX_TELEGRAM_TO", "")
     assert notify._target() == ""
+
+
+def test_voice_is_opt_in_and_uses_agent_read(monkeypatch):
+    from agent_inbox import notify
+    calls = []
+    monkeypatch.setattr("agent_inbox.notify.subprocess.Popen", lambda argv, **kw: calls.append(argv))
+    monkeypatch.delenv("AGENT_INBOX_SAY", raising=False)
+    notify.say("deploy broke")
+    assert calls == []
+    monkeypatch.setenv("AGENT_INBOX_SAY", "1")
+    notify.say("deploy broke")
+    assert calls == [["agt", "read", "--title", "Inbox", "--text", "deploy broke", "--background"]]
