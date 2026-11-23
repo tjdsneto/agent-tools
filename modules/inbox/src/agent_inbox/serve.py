@@ -32,7 +32,15 @@ def sweep(conn: psycopg.Connection) -> None:
     rows = conn.execute(
         """
         SELECT id, delivery, priority FROM entries
-        WHERE kind = 'ask' AND state IN ('answered', 'delivered')
+        WHERE kind = 'ask' AND state IN ('open', 'answered', 'delivered') AND (
+            state = 'answered'
+            OR delivery ? 'inflight'
+            OR EXISTS (
+                SELECT 1 FROM events ev
+                WHERE ev.entry_id = entries.id AND ev.type = 'followup'
+                  AND ev.seq > COALESCE((entries.delivery ->> 'delivered_seq')::bigint, 0)
+            )
+        )
         ORDER BY updated_at
         """
     ).fetchall()

@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import json
 import subprocess
+import time
 from dataclasses import dataclass
+from datetime import datetime
+from typing import Callable
 
 HELD_PCT = 88
 
@@ -46,17 +49,31 @@ def resolve(session_id: str) -> dict | None:
         return None
 
 
-def claude_budget() -> tuple[int | None, str | None]:
-    """Percent and local clock time, or (None, None) when the poll cannot be read."""
-    check = _run(["claude-budget", "check"])
-    raw = check.stdout.strip()
-    pct = int(raw) if raw.isdigit() else None
-    reset = _run(["claude-budget", "reset-at"])
-    parts = reset.stdout.split()
-    when = None
-    if len(parts) >= 3 and parts[0].isdigit():
-        when = parts[1] + "T" + parts[2] + ":00"
+BUDGET_TTL = 60.0
+_budget_cache: tuple[float, tuple[int | None, str | None]] | None = None
+
+
+def parse_snapshot(text: str) -> tuple[int | None, str | None]:
+    values = dict(line.split("=", 1) for line in text.splitlines() if "=" in line)
+    raw_pct = values.get("session_pct", "").strip()
+    raw_reset = values.get("session_reset", "").strip()
+    pct = int(raw_pct) if raw_pct.isdigit() else None
+    when = datetime.fromtimestamp(int(raw_reset)).strftime("%Y-%m-%dT%H:%M:00") if raw_reset.isdigit() else None
     return pct, when
+
+
+def claude_budget(now: Callable[[], float] = time.monotonic) -> tuple[int | None, str | None]:
+    """Percent and local clock time, or (None, None) when the poll cannot be read.
+
+    Each read launches a headless `claude -p /usage`, and the windows are account-wide,
+    so one snapshot is shared by every entry for BUDGET_TTL seconds.
+    """
+    global _budget_cache
+    if _budget_cache and now() - _budget_cache[0] < BUDGET_TTL:
+        return _budget_cache[1]
+    value = parse_snapshot(_run(["claude-budget", "snapshot"]).stdout)
+    _budget_cache = (now(), value)
+    return value
 
 
 def for_entry(entry: dict) -> Reach:

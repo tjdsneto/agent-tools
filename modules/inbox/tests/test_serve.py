@@ -45,3 +45,19 @@ def test_one_failing_entry_does_not_stop_the_sweep(conn, monkeypatch):
     monkeypatch.setattr("agent_inbox.serve.dispatch_entry", flaky)
     serve.sweep(conn)
     assert seen == ids
+
+
+def test_sweep_skips_entries_with_nothing_to_deliver(conn, monkeypatch):
+    def ask():
+        req = validate_request({"title": "t", "control": CHOICE}, "ask")
+        return store.create_entry(conn, "ask", req, engine="claude", session_id="s-1")
+
+    idle_open, answered, done, followed = ask(), ask(), ask(), ask()
+    store.answer(conn, answered["id"], "a", via="cli")
+    store.answer(conn, done["id"], "a", via="cli")
+    conn.execute("UPDATE entries SET state = 'delivered' WHERE id = %s", (done["id"],))
+    store.add_followup(conn, followed["id"], "why?", via="web")
+    seen = []
+    monkeypatch.setattr("agent_inbox.serve.dispatch_entry", lambda c, i: seen.append(i))
+    serve.sweep(conn)
+    assert sorted(seen) == sorted([answered["id"], followed["id"]])
