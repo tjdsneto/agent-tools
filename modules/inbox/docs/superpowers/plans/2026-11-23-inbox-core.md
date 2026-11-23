@@ -797,7 +797,7 @@ git commit -m "feat(inbox): Postgres schema with change notifications"
 - Create: `modules/inbox/src/agent_inbox/store.py`
 - Test: `modules/inbox/tests/test_store_entries.py`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 import subprocess
@@ -870,12 +870,12 @@ def test_list_orders_urgent_first_then_oldest_and_filters(conn):
     assert "html" not in store.list_entries(conn)[0]
 ```
 
-- [ ] **Step 2: Run them to make sure they fail**
+- [x] **Step 2: Run them to make sure they fail**
 
 Run: `.venv/bin/python -m pytest tests/test_store_entries.py -v`
 Expected: FAIL with `ImportError: cannot import name 'store'`
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `modules/inbox/src/agent_inbox/store.py`:
 
@@ -1059,12 +1059,12 @@ def list_entries(
     ]
 ```
 
-- [ ] **Step 4: Run the tests**
+- [x] **Step 4: Run the tests**
 
 Run: `.venv/bin/python -m pytest tests/test_store_entries.py -v`
 Expected: all passed. If `test_project_is_git_root` fails on `/private/var` vs `/var`, compare against `str(tmp_path.resolve())` on both sides — the test already resolves the expected side; `git rev-parse` returns the resolved path.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add modules/inbox/src/agent_inbox/store.py modules/inbox/tests/test_store_entries.py
