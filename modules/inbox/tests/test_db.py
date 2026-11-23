@@ -30,6 +30,18 @@ def test_insert_notifies(inbox_db, conn):
     assert got == [{"table": "entries", "id": "ib-test"}]
 
 
+def test_existing_database_gains_delivery_column(conn):
+    conn.execute("ALTER TABLE entries DROP COLUMN IF EXISTS delivery")
+    db.ensure_schema(conn)
+    row = conn.execute(
+        """
+        SELECT column_name FROM information_schema.columns
+        WHERE table_name = 'entries' AND column_name = 'delivery'
+        """
+    ).fetchone()
+    assert row is not None
+
+
 def test_unreachable_store_is_a_store_error(monkeypatch):
     monkeypatch.setenv("AGENT_INBOX_DSN", "host=127.0.0.1 port=1 dbname=nope connect_timeout=1")
     with pytest.raises(StoreError, match="cannot reach the inbox store"):

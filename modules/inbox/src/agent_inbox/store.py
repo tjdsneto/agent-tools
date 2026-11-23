@@ -86,6 +86,7 @@ def _shape(row: dict, events: list[dict] | None = None) -> dict:
         "answer": row["answer"],
         "superseded_by": row["superseded_by"],
         "waiter_pid": row["waiter_pid"],
+        "delivery": row.get("delivery") or {},
     }
     if events is not None:
         entry["thread"] = [_shape_event(e) for e in events if e["type"] in ("followup", "reply")]

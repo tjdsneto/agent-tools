@@ -10,6 +10,7 @@ from agent_inbox.constants import DEFAULT_DSN
 from agent_inbox.errors import StoreError
 
 SCHEMA_LOCK = 7_204_811  # arbitrary advisory-lock key for schema setup
+MIGRATION = "ALTER TABLE entries ADD COLUMN IF NOT EXISTS delivery jsonb NOT NULL DEFAULT '{}'::jsonb"
 
 
 def dsn() -> str:
@@ -31,10 +32,14 @@ def connect() -> psycopg.Connection:
 
 
 def ensure_schema(conn: psycopg.Connection) -> None:
-    if conn.execute("SELECT to_regclass('events') AS t").fetchone()["t"] is not None:
+    missing = conn.execute("SELECT to_regclass('events') AS t").fetchone()["t"] is None
+    if not missing:
+        conn.execute(MIGRATION)
         return
     conn.execute("SELECT pg_advisory_lock(%s)", (SCHEMA_LOCK,))
     try:
-        conn.execute(schema_sql())
+        if conn.execute("SELECT to_regclass('events') AS t").fetchone()["t"] is None:
+            conn.execute(schema_sql())
+        conn.execute(MIGRATION)
     finally:
         conn.execute("SELECT pg_advisory_unlock(%s)", (SCHEMA_LOCK,))

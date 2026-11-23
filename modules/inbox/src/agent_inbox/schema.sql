@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS entries (
                       'unread', 'read', 'archived')),
     answer        jsonb,
     waiter_pid    integer,
+    delivery      jsonb NOT NULL DEFAULT '{}'::jsonb,
     superseded_by text REFERENCES entries (id)
 );
 
