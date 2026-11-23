@@ -232,7 +232,7 @@ Exit codes and JSON output follow the conventions of `agt registry` and `agt say
 
 ## Parked
 
-- Telegram buttons through a Hermes gateway hook, instead of numbered replies.
+- Telegram buttons instead of numbered replies. A code read on 2026-11-23 found this is feasible without a model call. Gateway hooks cannot do it, but a Hermes plugin can: `ctx.register_telegram_handler` hands the plugin the gateway's own bot app, and a `CallbackQueryHandler` on an `ib:` prefix runs `agt inbox answer`. The keyboard itself is sent with Telegram's `sendMessage` and `reply_markup`, because `hermes send` has no buttons. The plugin must check the sender's id itself, and callback data is capped at 64 bytes. Nothing has been prototyped yet.
 - Moving the store and UI to an always-on host.
 
 ## Defaults this design locks
