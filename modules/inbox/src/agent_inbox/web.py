@@ -145,12 +145,14 @@ def _nav(qs: dict) -> str:
     )
 
 
-def _feed_page(rows: list[dict], qs: dict, error: str | None = None) -> str:
+def _feed_page(rows: list[dict], qs: dict, error: str | None = None, banner: str = "") -> str:
     err = f"<p>{_esc(error)}</p>" if error else ""
+    line = f"<p>{_esc(banner)}</p>" if banner else ""
     cards = "".join(_card(row) for row in rows)
     return (
         _HEAD.format(title="feed")
         + _nav(qs)
+        + line
         + err
         + '<form method="post" action="/batch">'
         + cards
@@ -270,7 +272,8 @@ class InboxHandler(BaseHTTPRequestHandler):
             return
         if method == "GET" and path == "/":
             with db.connect() as conn:
-                self._html(200, _feed_page(load_feed(conn, qs), qs))
+                from agent_inbox.notify import urgent_counts
+                self._html(200, _feed_page(load_feed(conn, qs), qs, banner=urgent_counts(conn)))
             return
         match = re.fullmatch(r"/e/([^/]+)", path)
         if method == "GET" and match:
@@ -339,7 +342,8 @@ class InboxHandler(BaseHTTPRequestHandler):
                     errors.append(str(exc))
             if applied == 0:
                 message = errors[0] if errors else "nothing selected"
-                self._html(409, _feed_page(load_feed(conn, {}), {}, message))
+                from agent_inbox.notify import urgent_counts
+                self._html(409, _feed_page(load_feed(conn, {}), {}, message, banner=urgent_counts(conn)))
                 return
         self._redirect("/")
 

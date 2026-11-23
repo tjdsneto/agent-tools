@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 from datetime import datetime, timezone
 from typing import Any
 
@@ -220,6 +221,12 @@ def answer(
             (Jsonb(payload), entry_id),
         )
         _event(conn, entry_id, "answer", via, payload)
+    if via != "telegram":
+        try:
+            from agent_inbox.notify import note_answered
+            note_answered(entry_id, via, clean)
+        except OSError as exc:
+            print(f"telegram note failed: {exc}", file=sys.stderr)
     return {"entry": entry_id, "state": "answered", **payload}
 
 

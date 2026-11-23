@@ -30,13 +30,25 @@ def sweep(conn: psycopg.Connection) -> None:
     expire_due(conn)
     rows = conn.execute(
         """
-        SELECT id FROM entries
+        SELECT id, delivery, priority FROM entries
         WHERE kind = 'ask' AND state IN ('answered', 'delivered')
         ORDER BY updated_at
         """
     ).fetchall()
+    freed: list[str] = []
+    freed_urgent = False
     for row in rows:
+        before = (row["delivery"] or {}).get("reachability")
         dispatch_entry(conn, row["id"])
+        after_row = conn.execute("SELECT delivery FROM entries WHERE id = %s", (row["id"],)).fetchone()
+        after = ((after_row or {}).get("delivery") or {}).get("reachability")
+        if before == "held" and after in ("live", "resumable"):
+            freed.append(row["id"])
+            freed_urgent = freed_urgent or row["priority"] == "urgent"
+    from agent_inbox.notify import push_answerable, push_pending
+    if freed:
+        push_answerable(conn, freed, "urgent" if freed_urgent else "normal")
+    push_pending(conn)
 
 
 def run_once() -> None:

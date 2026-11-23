@@ -59,3 +59,8 @@ CREATE OR REPLACE TRIGGER entries_notify AFTER INSERT OR UPDATE ON entries
 
 CREATE OR REPLACE TRIGGER events_notify AFTER INSERT ON events
     FOR EACH ROW EXECUTE FUNCTION agent_inbox_notify('entry_id');
+
+CREATE TABLE IF NOT EXISTS ops (
+    key   text PRIMARY KEY,
+    value jsonb NOT NULL
+);

@@ -25,7 +25,7 @@ def inbox_db(monkeypatch):
         conn = psycopg.connect(TEST_DSN, autocommit=True)
     except psycopg.OperationalError as e:
         pytest.fail(f"test store unreachable ({TEST_DSN}): {e}. Run Task 0 of the plan.")
-    conn.execute("DROP TABLE IF EXISTS events, entries CASCADE")
+    conn.execute("DROP TABLE IF EXISTS events, entries, ops CASCADE")
     conn.close()
     return TEST_DSN
 
