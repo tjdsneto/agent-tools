@@ -7,10 +7,10 @@ from typing import Any
 import psycopg
 from psycopg.types.json import Jsonb
 
-from agent_inbox.constants import VIAS
+from agent_inbox.constants import ASK_LIVE_STATES, CLOSED_STATES, HTML_MAX_BYTES, VIAS
 from agent_inbox.errors import ConflictError, NotFoundError, StoreError, ValidationError
 from agent_inbox.ids import new_id
-from agent_inbox.validate import validate_answer
+from agent_inbox.validate import validate_answer, validate_control
 
 ID_ATTEMPTS = 10
 LIST_HIDDEN = ("html", "summary", "detail")
@@ -214,3 +214,57 @@ def answer(
         )
         _event(conn, entry_id, "answer", via, payload)
     return {"entry": entry_id, "state": "answered", **payload}
+
+
+def _set_state(conn: psycopg.Connection, row: dict, to: str, **extra: Any) -> None:
+    sets = ["state = %s", "updated_at = now()"] + [f"{k} = %s" for k in extra]
+    conn.execute(f"UPDATE entries SET {', '.join(sets)} WHERE id = %s", (to, *extra.values(), row["id"]))
+    _event(conn, row["id"], "state", None, {"from": row["state"], "to": to})
+
+
+def add_followup(conn: psycopg.Connection, entry_id: str, text: str, *, via: str = "cli") -> dict:
+    _check_via(via)
+    if not text.strip():
+        raise ValidationError("follow-up text is empty")
+    with conn.transaction():
+        row = _row(conn, entry_id, lock=True)
+        if row["kind"] == "ask" and row["state"] not in ASK_LIVE_STATES:
+            raise ConflictError(_closed_message(row))
+        if row["kind"] == "post":
+            if not row["session_id"]:
+                raise ValidationError(f"{entry_id} has no session to ask")
+            if row["state"] == "archived":
+                raise ConflictError(f"{entry_id} is archived")
+        seq = _event(conn, entry_id, "followup", via, {"text": text})
+        if row["kind"] == "post" and row["state"] == "unread":
+            _set_state(conn, row, "read")
+    return {"entry": entry_id, "event": "followup", "seq": seq}
+
+
+def add_reply(conn: psycopg.Connection, entry_id: str, text: str, *, html: str | None = None) -> dict:
+    if not text.strip():
+        raise ValidationError("reply text is empty")
+    if html is not None and len(html.encode()) > HTML_MAX_BYTES:
+        raise ValidationError("html exceeds 2 MB")
+    with conn.transaction():
+        row = _row(conn, entry_id, lock=True)
+        if row["state"] in CLOSED_STATES:
+            raise ConflictError(f"{entry_id} is {row['state']}")
+        body: dict[str, Any] = {"text": text}
+        if html is not None:
+            body["html"] = html
+        seq = _event(conn, entry_id, "reply", "agent", body)
+    return {"entry": entry_id, "event": "reply", "seq": seq}
+
+
+def revise(conn: psycopg.Connection, entry_id: str, control: Any) -> dict:
+    new = validate_control(control)
+    with conn.transaction():
+        row = _row(conn, entry_id, lock=True)
+        if row["kind"] != "ask":
+            raise ValidationError(f"{entry_id} is not a question")
+        if row["state"] != "open":
+            raise ConflictError(_closed_message(row))
+        conn.execute("UPDATE entries SET control = %s, updated_at = now() WHERE id = %s", (Jsonb(new), entry_id))
+        seq = _event(conn, entry_id, "revise", "agent", {"old": row["control"], "new": new})
+    return {"entry": entry_id, "event": "revise", "seq": seq}

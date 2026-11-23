@@ -1235,7 +1235,7 @@ git commit -m "feat(inbox): answers with first-answer-wins"
 - Modify: `modules/inbox/src/agent_inbox/store.py` (append)
 - Test: `modules/inbox/tests/test_store_thread.py`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 import pytest
@@ -1305,12 +1305,12 @@ def test_revise_only_while_open(conn):
         store.revise(conn, e["id"], CHOICE)
 ```
 
-- [ ] **Step 2: Run them to make sure they fail**
+- [x] **Step 2: Run them to make sure they fail**
 
 Run: `.venv/bin/python -m pytest tests/test_store_thread.py -v`
 Expected: FAIL with `AttributeError: module 'agent_inbox.store' has no attribute 'add_followup'`
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Add to the imports at the top of `store.py`:
 
@@ -1376,12 +1376,12 @@ def revise(conn: psycopg.Connection, entry_id: str, control: Any) -> dict:
     return {"entry": entry_id, "event": "revise", "seq": seq}
 ```
 
-- [ ] **Step 4: Run the tests**
+- [x] **Step 4: Run the tests**
 
 Run: `.venv/bin/python -m pytest tests/test_store_thread.py -v`
 Expected: all passed.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add modules/inbox/src/agent_inbox/store.py modules/inbox/tests/test_store_thread.py
