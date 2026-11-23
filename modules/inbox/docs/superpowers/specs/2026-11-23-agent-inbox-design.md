@@ -191,7 +191,7 @@ Quiet hours are 22:00–08:00: only `urgent` gets through. Any agent may set `ur
 
 ## Store and operations
 
-- Homebrew `postgresql@17`, run as a background service at login. Database `agent_inbox`. Reached through a database URL (default local socket).
+- Homebrew `postgresql@17`, run as a login service (`brew services`) on port 5433. Database `agent_inbox`. Default URL `host=localhost port=5433 dbname=agent_inbox`. Port 5432 is Docker `am-video-db` and is not used.
 - This is the repo's first non-stdlib runtime dependency: the `psycopg` driver.
 - Nightly `pg_dump` to `~/.local/share/agent-inbox/backups/`, keeping the last 14.
 - Retention: entries, threads and answers are kept forever. The HTML part is deleted 90 days after an entry closes.

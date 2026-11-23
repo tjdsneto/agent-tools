@@ -57,26 +57,35 @@ Python style follows `modules/registry`: 4-space indents, `from __future__ impor
 
 Tiago approved Homebrew `postgresql@17` as a native service (spec: Store and operations). It is keg-only, so its client tools are not on `PATH`; use the full path.
 
-- [ ] **Step 1: Install and start**
+Port decision (2026-11-23): 5432 stays Docker `am-video-db` (postgres:16). This server listens on **5433**. Every inbox connection sets `port=5433`, because libpq's default port is the Docker database.
+
+- [x] **Step 1: Install and start**
+
+Confirm 5433 is free (if it is taken, stop and report; do not pick another port), install, set the port before the first start, then start:
 
 ```bash
+lsof -nP -iTCP:5433 -sTCP:LISTEN
 HOMEBREW_NO_AUTO_UPDATE=1 brew install postgresql@17
+sed -i '' 's/^#port = 5432/port = 5433/' /opt/homebrew/var/postgresql@17/postgresql.conf
+grep -n '^port' /opt/homebrew/var/postgresql@17/postgresql.conf
 brew services start postgresql@17
 ```
 
-- [ ] **Step 2: Create the live and test databases**
+- [x] **Step 2: Create the live and test databases**
 
 ```bash
-/opt/homebrew/opt/postgresql@17/bin/createdb agent_inbox
-/opt/homebrew/opt/postgresql@17/bin/createdb agent_inbox_test
+/opt/homebrew/opt/postgresql@17/bin/createdb -h localhost -p 5433 agent_inbox
+/opt/homebrew/opt/postgresql@17/bin/createdb -h localhost -p 5433 agent_inbox_test
 ```
 
-- [ ] **Step 3: Verify**
+- [x] **Step 3: Verify**
 
-Run: `/opt/homebrew/opt/postgresql@17/bin/psql -d agent_inbox -Atc 'select 1'`
+Run: `/opt/homebrew/opt/postgresql@17/bin/psql -h localhost -p 5433 -d agent_inbox -Atc 'select 1'`
 Expected: `1`
 
-Note: two other Postgres instances already run on this laptop (`am-video-db` in Docker, Paperclip's embedded one on port 54329). Do not use them. Homebrew's listens on the default local socket, port 5432; if 5432 is taken, stop and report rather than changing ports.
+Also check that 5432 is still Docker: `lsof -nP -iTCP:5432 -sTCP:LISTEN` shows `com.docker`, and `lsof -nP -iTCP:5433 -sTCP:LISTEN` shows `postgres`.
+
+Note: two other Postgres instances already run on this laptop (`am-video-db` in Docker on port 5432, Paperclip's embedded one on port 54329). Do not use them. 5432 stays Docker `am-video-db`; the Homebrew server is port 5433, and every inbox connection sets `port=5433`.
 
 ---
 
@@ -131,7 +140,7 @@ EXIT_IO = 3
 EXIT_CONFLICT = 4
 EXIT_TIMEOUT = 5
 
-DEFAULT_DSN = "dbname=agent_inbox"
+DEFAULT_DSN = "host=localhost port=5433 dbname=agent_inbox"
 NOTIFY_CHANNEL = "agent_inbox"
 
 KINDS = ("ask", "post")
@@ -650,7 +659,7 @@ import pytest
 
 from agent_inbox import db
 
-TEST_DSN = os.environ.get("AGENT_INBOX_TEST_DSN", "dbname=agent_inbox_test")
+TEST_DSN = os.environ.get("AGENT_INBOX_TEST_DSN", "host=localhost port=5433 dbname=agent_inbox_test")
 
 
 @pytest.fixture
@@ -2181,15 +2190,16 @@ Persistent inbox for AI agents to ask Tiago questions or leave him information. 
 
 ## Install
 
-Postgres 17 from Homebrew, running as a service:
+Postgres 17 from Homebrew, running as a service on port 5433 (5432 is Docker `am-video-db`, not used):
 
     HOMEBREW_NO_AUTO_UPDATE=1 brew install postgresql@17
+    sed -i '' 's/^#port = 5432/port = 5433/' /opt/homebrew/var/postgresql@17/postgresql.conf
     brew services start postgresql@17
-    /opt/homebrew/opt/postgresql@17/bin/createdb agent_inbox
+    /opt/homebrew/opt/postgresql@17/bin/createdb -h localhost -p 5433 agent_inbox
 
 Then from the repo root: `./install.sh` (creates `modules/inbox/.venv`, links `agent-inbox` / `agt inbox`). The schema is created on first connect.
 
-Store location: `AGENT_INBOX_DSN` (default `dbname=agent_inbox`).
+Store location: `AGENT_INBOX_DSN` (default `host=localhost port=5433 dbname=agent_inbox`).
 
 ## Usage
 
@@ -2237,7 +2247,7 @@ Controls: `choice` (2–6 options), `multi`, `text` (`size`: short|long), `appro
 
     cd modules/inbox && .venv/bin/python -m pytest -q
 
-Tests need a `agent_inbox_test` database (`createdb agent_inbox_test`) and drop its tables on every test. Override with `AGENT_INBOX_TEST_DSN`.
+Tests need a `agent_inbox_test` database (`createdb -h localhost -p 5433 agent_inbox_test`) and drop its tables on every test. Override with `AGENT_INBOX_TEST_DSN`.
 ```
 
 - [ ] **Step 5: Install and smoke-test through `agt`**
@@ -2264,7 +2274,7 @@ Wait-mode smoke, in two terminals: run `… | agt inbox ask --engine claude --se
 Clean up the live store afterwards so smoke entries don't show up in slice 3's UI:
 
 ```bash
-/opt/homebrew/opt/postgresql@17/bin/psql -d agent_inbox -c "DELETE FROM entries WHERE session_id LIKE 'smoke-%'"
+/opt/homebrew/opt/postgresql@17/bin/psql -h localhost -p 5433 -d agent_inbox -c "DELETE FROM entries WHERE session_id LIKE 'smoke-%'"
 ```
 
 - [ ] **Step 6: Commit**
