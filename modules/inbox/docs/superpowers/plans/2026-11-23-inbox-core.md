@@ -233,7 +233,7 @@ git commit -m "feat(inbox): module scaffold, constants and error types"
 - Create: `modules/inbox/src/agent_inbox/ids.py`
 - Test: `modules/inbox/tests/test_ids.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 from agent_inbox.ids import ALPHABET, ID_LEN, ID_PREFIX, new_id
@@ -256,12 +256,12 @@ def test_ids_vary():
     assert len({new_id() for _ in range(200)}) > 190
 ```
 
-- [ ] **Step 2: Run it to make sure it fails**
+- [x] **Step 2: Run it to make sure it fails**
 
 Run: `.venv/bin/python -m pytest tests/test_ids.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'agent_inbox.ids'`
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `modules/inbox/src/agent_inbox/ids.py`:
 
@@ -280,12 +280,12 @@ def new_id() -> str:
     return ID_PREFIX + "".join(secrets.choice(ALPHABET) for _ in range(ID_LEN))
 ```
 
-- [ ] **Step 4: Run the tests**
+- [x] **Step 4: Run the tests**
 
 Run: `.venv/bin/python -m pytest tests/test_ids.py -v`
 Expected: 3 passed.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add modules/inbox/src/agent_inbox/ids.py modules/inbox/tests/test_ids.py
