@@ -11,6 +11,18 @@ link_bin() {
   echo "linked $BIN_DIR/$name -> $src"
 }
 
+reload_agent() {
+  local label="$1" plist="$2" uid
+  uid="$(id -u)"
+  launchctl bootout "gui/$uid/$label" 2>/dev/null || true
+  if ! launchctl bootstrap "gui/$uid" "$plist"; then
+    sleep 0.5
+    launchctl bootout "gui/$uid/$label" 2>/dev/null || true
+    launchctl bootstrap "gui/$uid" "$plist"
+  fi
+  echo "reloaded $label"
+}
+
 link_bin agt "$ROOT/agt/agt"
 for s in agent-registry session-waker claude-budget session-report active-sessions \
          rename-session list-sessions agent-say agent-read agent-inbox; do
@@ -88,10 +100,7 @@ if [ -f "$INBOX_PLIST_SRC" ]; then
   sed -e "s|__ROOT__|$ROOT|g" -e "s|__HOME__|$HOME|g" \
       -e "s|__UI_ORIGIN__|$ui_origin|g" -e "s|__FRAME_ORIGIN__|$frame_origin|g" \
       "$INBOX_PLIST_SRC" > "$INBOX_PLIST_DST"
-  uid="$(id -u)"
-  launchctl bootout "gui/$uid/com.tjdsneto.agent-inbox" 2>/dev/null || true
-  launchctl bootstrap "gui/$uid" "$INBOX_PLIST_DST"
-  echo "reloaded com.tjdsneto.agent-inbox"
+  reload_agent com.tjdsneto.agent-inbox "$INBOX_PLIST_DST"
 fi
 
 BACKUP_PLIST_SRC="$ROOT/modules/inbox/launchd/com.tjdsneto.agent-inbox-backup.plist"
@@ -99,10 +108,7 @@ BACKUP_PLIST_DST="$HOME/Library/LaunchAgents/com.tjdsneto.agent-inbox-backup.pli
 if [ -f "$BACKUP_PLIST_SRC" ]; then
   mkdir -p "$(dirname "$BACKUP_PLIST_DST")"
   sed "s|__ROOT__|$ROOT|g" "$BACKUP_PLIST_SRC" > "$BACKUP_PLIST_DST"
-  uid="$(id -u)"
-  launchctl bootout "gui/$uid/com.tjdsneto.agent-inbox-backup" 2>/dev/null || true
-  launchctl bootstrap "gui/$uid" "$BACKUP_PLIST_DST"
-  echo "reloaded com.tjdsneto.agent-inbox-backup"
+  reload_agent com.tjdsneto.agent-inbox-backup "$BACKUP_PLIST_DST"
 fi
 
 # Inbox UI on the tailnet. 443 stays the existing Funnel; these are extra ports.
