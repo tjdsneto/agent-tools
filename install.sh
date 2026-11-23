@@ -33,9 +33,17 @@ link_skill() {
   done
 }
 
-for sk in session-waker agent-say agent-read glue-miner session-awareness; do
+for sk in session-waker agent-say agent-read glue-miner session-awareness agent-inbox; do
   link_skill "$sk"
 done
+
+if [ -d "$HOME/.hermes/skills" ]; then
+  mkdir -p "$HOME/.hermes/skills/inbox"
+  ln -sfn "$ROOT/skills/inbox/SKILL.md" "$HOME/.hermes/skills/inbox/SKILL.md"
+  echo "skill inbox -> $HOME/.hermes/skills/inbox"
+else
+  echo "hermes skills dir missing; inbox skill is $ROOT/skills/inbox"
+fi
 
 # Ensure module venvs exist (idempotent).
 for mod in registry say read inbox; do
