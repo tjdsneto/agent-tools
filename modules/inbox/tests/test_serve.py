@@ -61,3 +61,13 @@ def test_sweep_skips_entries_with_nothing_to_deliver(conn, monkeypatch):
     monkeypatch.setattr("agent_inbox.serve.dispatch_entry", lambda c, i: seen.append(i))
     serve.sweep(conn)
     assert sorted(seen) == sorted([answered["id"], followed["id"]])
+
+
+def test_a_follow_up_on_an_agent_post_is_swept(conn, monkeypatch):
+    post = store.create_entry(conn, "post", validate_request({"title": "run done"}, "post"), engine="codex", session_id="s-2")
+    scripted = store.create_entry(conn, "post", validate_request({"title": "cron"}, "post"), script="cron")
+    store.add_followup(conn, post["id"], "why did X fail?", via="web")
+    seen = []
+    monkeypatch.setattr("agent_inbox.serve.dispatch_entry", lambda c, i: seen.append(i))
+    serve.sweep(conn)
+    assert seen == [post["id"]]

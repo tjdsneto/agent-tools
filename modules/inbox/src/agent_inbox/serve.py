@@ -32,7 +32,7 @@ def sweep(conn: psycopg.Connection) -> None:
     rows = conn.execute(
         """
         SELECT id, delivery, priority FROM entries
-        WHERE kind = 'ask' AND state IN ('open', 'answered', 'delivered') AND (
+        WHERE session_id IS NOT NULL AND state IN ('open', 'answered', 'delivered', 'unread', 'read') AND (
             state = 'answered'
             OR delivery ? 'inflight'
             OR EXISTS (

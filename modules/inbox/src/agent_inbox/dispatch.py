@@ -129,7 +129,7 @@ def dispatch_entry(conn: psycopg.Connection, entry_id: str) -> str | None:
     is pending or a live waiter owns it.
     """
     entry = store.get_entry(conn, entry_id)
-    if entry["kind"] != "ask":
+    if not entry["asker"].get("session_id"):
         return None
     pid = entry.get("waiter_pid")
     if pid and pid_alive(pid):

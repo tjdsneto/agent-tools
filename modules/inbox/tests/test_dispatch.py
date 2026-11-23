@@ -161,3 +161,15 @@ def test_retries_count_from_the_last_success(conn, monkeypatch):
     outcome["result"] = "undelivered"
     assert _deliver(conn, e["id"]) == "retry"
     assert store.get_entry(conn, e["id"])["state"] == "open"
+
+
+def test_a_follow_up_on_an_agent_post_is_delivered(conn, monkeypatch):
+    post = store.create_entry(conn, "post", validate_request({"title": "run done"}, "post"), engine="codex", session_id="s-2")
+    store.add_followup(conn, post["id"], "why did X fail?", via="web")
+    monkeypatch.setattr("agent_inbox.dispatch.reach_for", lambda entry: _Reach("resumable"))
+    monkeypatch.setattr("agent_inbox.dispatch.pid_alive", lambda pid: False)
+    started = _fake_wake(monkeypatch, {"result": "landed", "mode": "resume"})
+    assert _deliver(conn, post["id"]) == "delivered"
+    assert "why did X fail?" in started[0]
+    got = store.get_entry(conn, post["id"])
+    assert got["state"] == "read" and got["delivery"]["delivered_seq"] > 0
