@@ -1396,7 +1396,7 @@ git commit -m "feat(inbox): follow-up thread, agent replies and control revision
 - Modify: `modules/inbox/src/agent_inbox/store.py` (append)
 - Test: `modules/inbox/tests/test_store_states.py`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 import pytest
@@ -1465,12 +1465,12 @@ def test_state_changes_are_logged(conn):
     assert types == ["state"]
 ```
 
-- [ ] **Step 2: Run them to make sure they fail**
+- [x] **Step 2: Run them to make sure they fail**
 
 Run: `.venv/bin/python -m pytest tests/test_store_states.py -v`
 Expected: FAIL with `AttributeError: module 'agent_inbox.store' has no attribute 'withdraw'`
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Append to `store.py`:
 
@@ -1520,12 +1520,12 @@ def archive(conn: psycopg.Connection, entry_id: str) -> dict:
     return _post_transition(conn, entry_id, ("unread", "read"), "archived")
 ```
 
-- [ ] **Step 4: Run the full store suite**
+- [x] **Step 4: Run the full store suite**
 
 Run: `.venv/bin/python -m pytest tests/ -v`
 Expected: all passed.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add modules/inbox/src/agent_inbox/store.py modules/inbox/tests/test_store_states.py

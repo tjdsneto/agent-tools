@@ -268,3 +268,48 @@ def revise(conn: psycopg.Connection, entry_id: str, control: Any) -> dict:
         conn.execute("UPDATE entries SET control = %s, updated_at = now() WHERE id = %s", (Jsonb(new), entry_id))
         seq = _event(conn, entry_id, "revise", "agent", {"old": row["control"], "new": new})
     return {"entry": entry_id, "event": "revise", "seq": seq}
+
+
+def withdraw(conn: psycopg.Connection, entry_id: str) -> dict:
+    with conn.transaction():
+        row = _row(conn, entry_id, lock=True)
+        if row["kind"] != "ask":
+            raise ValidationError(f"{entry_id} is not a question")
+        if row["state"] != "open":
+            raise ConflictError(_closed_message(row))
+        _set_state(conn, row, "withdrawn")
+    return {"entry": entry_id, "state": "withdrawn"}
+
+
+def supersede(conn: psycopg.Connection, entry_id: str, *, by: str) -> dict:
+    if by == entry_id:
+        raise ValidationError("an entry cannot supersede itself")
+    with conn.transaction():
+        newer = _row(conn, by)
+        if newer["kind"] != "ask":
+            raise ValidationError(f"{by} is not a question")
+        row = _row(conn, entry_id, lock=True)
+        if row["kind"] != "ask":
+            raise ValidationError(f"{entry_id} is not a question")
+        if row["state"] != "open":
+            raise ConflictError(_closed_message(row))
+        _set_state(conn, row, "superseded", superseded_by=by)
+    return {"entry": entry_id, "state": "superseded", "superseded_by": by}
+
+
+def _post_transition(conn: psycopg.Connection, entry_id: str, allowed_from: tuple[str, ...], to: str) -> dict:
+    with conn.transaction():
+        row = _row(conn, entry_id, lock=True)
+        if row["kind"] != "post":
+            raise ValidationError(f"{entry_id} is not an info entry")
+        if row["state"] in allowed_from:
+            _set_state(conn, row, to)
+    return {"entry": entry_id, "state": to if row["state"] in allowed_from else row["state"]}
+
+
+def mark_read(conn: psycopg.Connection, entry_id: str) -> dict:
+    return _post_transition(conn, entry_id, ("unread",), "read")
+
+
+def archive(conn: psycopg.Connection, entry_id: str) -> dict:
+    return _post_transition(conn, entry_id, ("unread", "read"), "archived")
