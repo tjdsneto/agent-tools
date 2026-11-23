@@ -2131,7 +2131,7 @@ git commit -m "feat(inbox): agt inbox CLI"
 - Modify: `install.sh` (link the shim, create the venv)
 - Create: `modules/inbox/README.md`
 
-- [ ] **Step 1: Add the route to `agt/agt`**
+- [x] **Step 1: Add the route to `agt/agt`**
 
 In the `case "$cmd" in` block, after the `read)` case:
 
@@ -2147,7 +2147,7 @@ In the help heredoc, after the `agt read …` line:
   agt inbox …             agent-inbox
 ```
 
-- [ ] **Step 2: Add the shim**
+- [x] **Step 2: Add the shim**
 
 `shims/agent-inbox` (then `chmod +x`):
 
@@ -2164,7 +2164,7 @@ ROOT="$(cd "$(dirname "$SOURCE")/.." && pwd)"
 exec "$ROOT/agt/agt" inbox "$@"
 ```
 
-- [ ] **Step 3: Update `install.sh`**
+- [x] **Step 3: Update `install.sh`**
 
 Add `agent-inbox` to the shim loop:
 
@@ -2179,7 +2179,7 @@ Add `inbox` to the venv loop:
 for mod in registry say read inbox; do
 ```
 
-- [ ] **Step 4: Write `modules/inbox/README.md`**
+- [x] **Step 4: Write `modules/inbox/README.md`**
 
 ```markdown
 # agent-inbox
@@ -2277,7 +2277,7 @@ Clean up the live store afterwards so smoke entries don't show up in slice 3's U
 /opt/homebrew/opt/postgresql@17/bin/psql -h localhost -p 5433 -d agent_inbox -c "DELETE FROM entries WHERE session_id LIKE 'smoke-%'"
 ```
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add agt/agt shims/agent-inbox install.sh modules/inbox/README.md

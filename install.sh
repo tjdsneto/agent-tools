@@ -13,7 +13,7 @@ link_bin() {
 
 link_bin agt "$ROOT/agt/agt"
 for s in agent-registry session-waker claude-budget session-report active-sessions \
-         rename-session list-sessions agent-say agent-read; do
+         rename-session list-sessions agent-say agent-read agent-inbox; do
   link_bin "$s" "$ROOT/shims/$s"
 done
 
@@ -38,7 +38,7 @@ for sk in session-waker agent-say agent-read glue-miner session-awareness; do
 done
 
 # Ensure module venvs exist (idempotent).
-for mod in registry say read; do
+for mod in registry say read inbox; do
   if [ -f "$ROOT/modules/$mod/requirements.txt" ] && [ ! -x "$ROOT/modules/$mod/.venv/bin/python" ]; then
     python3 -m venv "$ROOT/modules/$mod/.venv"
     "$ROOT/modules/$mod/.venv/bin/pip" install -r "$ROOT/modules/$mod/requirements.txt"

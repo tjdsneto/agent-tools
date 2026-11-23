@@ -48,6 +48,9 @@ case "$cmd" in
   read)
     exec "$ROOT/modules/read/bin/agent-read" "$@"
     ;;
+  inbox)
+    exec "$ROOT/modules/inbox/bin/agent-inbox" "$@"
+    ;;
   glue)
     sub="${1:-}"; [ $# -gt 0 ] && shift || true
     case "$sub" in
@@ -64,6 +67,7 @@ agt — agent-tools
   agt sessions report|active|rename|list …
   agt say …               agent-say
   agt read …              agent-read
+  agt inbox …             agent-inbox
   agt glue scan …         glue-miner
 EOF
     exit 0
