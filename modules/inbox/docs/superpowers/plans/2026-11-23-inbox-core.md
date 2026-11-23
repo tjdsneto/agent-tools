@@ -95,7 +95,7 @@ Note: two other Postgres instances already run on this laptop (`am-video-db` in 
 - Create: `modules/inbox/requirements.txt`, `modules/inbox/pytest.ini`, `modules/inbox/bin/agent-inbox`, `modules/inbox/src/agent_inbox/__init__.py`, `modules/inbox/src/agent_inbox/constants.py`, `modules/inbox/src/agent_inbox/errors.py`
 - Test: `modules/inbox/tests/test_errors.py`
 
-- [ ] **Step 1: Create the scaffold files**
+- [x] **Step 1: Create the scaffold files**
 
 `modules/inbox/requirements.txt`:
 
@@ -189,7 +189,7 @@ class StoreError(InboxError):
     exit_code = EXIT_IO
 ```
 
-- [ ] **Step 2: Write the test**
+- [x] **Step 2: Write the test**
 
 `modules/inbox/tests/test_errors.py`:
 
@@ -205,7 +205,7 @@ def test_each_error_carries_its_exit_code():
     assert StoreError("x").exit_code == EXIT_IO
 ```
 
-- [ ] **Step 3: Create the venv and run the test**
+- [x] **Step 3: Create the venv and run the test**
 
 ```bash
 cd modules/inbox
@@ -216,7 +216,7 @@ python3 -m venv .venv
 
 Expected: 1 passed.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 Check `git status` first: `.venv/` must not appear (the root `.gitignore` should cover it; if it does not, add `modules/inbox/.venv/` to it in this commit).
 
