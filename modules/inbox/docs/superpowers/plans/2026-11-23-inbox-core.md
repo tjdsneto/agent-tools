@@ -1749,7 +1749,7 @@ JSON on stdout, diagnostics on stderr, exit codes from `constants.py`. `ask` and
 - Create: `modules/inbox/src/agent_inbox/cli.py`
 - Test: `modules/inbox/tests/test_cli.py`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 import io
@@ -1888,12 +1888,12 @@ def test_wait_timeout_exit_code(inbox_db, monkeypatch, capsys):
     assert out(capsys)["event"] == "timeout"
 ```
 
-- [ ] **Step 2: Run them to make sure they fail**
+- [x] **Step 2: Run them to make sure they fail**
 
 Run: `.venv/bin/python -m pytest tests/test_cli.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'agent_inbox.cli'`
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `modules/inbox/src/agent_inbox/cli.py`:
 
@@ -2104,17 +2104,17 @@ if __name__ == "__main__":
     sys.exit(main())
 ```
 
-- [ ] **Step 4: Run the tests**
+- [x] **Step 4: Run the tests**
 
 Run: `.venv/bin/python -m pytest tests/test_cli.py -v`
 Expected: all passed. If `argparse --help` or `-h` now raises instead of printing help: `--help` calls `exit`, not `error`, so it still works — confirm with `bin/agent-inbox --help` (exit 0).
 
-- [ ] **Step 5: Run the whole suite**
+- [x] **Step 5: Run the whole suite**
 
 Run: `.venv/bin/python -m pytest -q`
 Expected: all passed.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add modules/inbox/src/agent_inbox/cli.py modules/inbox/tests/test_cli.py
