@@ -578,7 +578,7 @@ git commit -m "feat(inbox): validate requests, controls and answers"
 - Create: `modules/inbox/src/agent_inbox/schema.sql`, `modules/inbox/src/agent_inbox/db.py`, `modules/inbox/tests/conftest.py`
 - Test: `modules/inbox/tests/test_db.py`
 
-- [ ] **Step 1: Write the schema**
+- [x] **Step 1: Write the schema**
 
 `modules/inbox/src/agent_inbox/schema.sql`:
 
@@ -645,7 +645,7 @@ CREATE OR REPLACE TRIGGER events_notify AFTER INSERT ON events
     FOR EACH ROW EXECUTE FUNCTION agent_inbox_notify('entry_id');
 ```
 
-- [ ] **Step 2: Write the test fixtures**
+- [x] **Step 2: Write the test fixtures**
 
 `modules/inbox/tests/conftest.py`:
 
@@ -682,7 +682,7 @@ def conn(inbox_db):
     c.close()
 ```
 
-- [ ] **Step 3: Write the failing tests**
+- [x] **Step 3: Write the failing tests**
 
 `modules/inbox/tests/test_db.py`:
 
@@ -725,12 +725,12 @@ def test_unreachable_store_is_a_store_error(monkeypatch):
         db.connect()
 ```
 
-- [ ] **Step 4: Run them to make sure they fail**
+- [x] **Step 4: Run them to make sure they fail**
 
 Run: `.venv/bin/python -m pytest tests/test_db.py -v`
 Expected: FAIL with `ImportError: cannot import name 'db'`
 
-- [ ] **Step 5: Implement**
+- [x] **Step 5: Implement**
 
 `modules/inbox/src/agent_inbox/db.py`:
 
@@ -777,12 +777,12 @@ def ensure_schema(conn: psycopg.Connection) -> None:
         conn.execute("SELECT pg_advisory_unlock(%s)", (SCHEMA_LOCK,))
 ```
 
-- [ ] **Step 6: Run the tests**
+- [x] **Step 6: Run the tests**
 
 Run: `.venv/bin/python -m pytest tests/test_db.py -v`
 Expected: 4 passed.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add modules/inbox/src/agent_inbox/schema.sql modules/inbox/src/agent_inbox/db.py modules/inbox/tests/conftest.py modules/inbox/tests/test_db.py
