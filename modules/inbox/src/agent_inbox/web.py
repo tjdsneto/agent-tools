@@ -60,9 +60,13 @@ def _frame_origin(host_header: str | None = None) -> str:
 
 
 def _authorized(handler: BaseHTTPRequestHandler) -> bool:
+    """Direct localhost has no Tailscale header. The port is bound to 127.0.0.1,
+    and Tailscale Serve adds the header on every proxied request."""
     if os.environ.get("INBOX_ALLOW_INSECURE") == "1":
         return True
-    login = handler.headers.get("Tailscale-User-Login", "")
+    login = handler.headers.get("Tailscale-User-Login")
+    if not login:
+        return True
     return login.startswith("tjdsneto@")
 
 

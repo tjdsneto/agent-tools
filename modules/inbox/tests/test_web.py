@@ -68,9 +68,9 @@ def test_entry_layers(conn, http):
     assert "Reference only. Answer below." in body
 
 
-def test_anonymous_request_is_forbidden(conn, http, monkeypatch):
+def test_a_foreign_tailscale_login_is_forbidden(conn, http, monkeypatch):
     monkeypatch.delenv("INBOX_ALLOW_INSECURE", raising=False)
-    assert _get(http, "/")[0] == 403
+    assert _get(http, "/")[0] == 200
     assert _get(http, "/", {"Tailscale-User-Login": "tjdsneto@example.com"})[0] == 200
     assert _get(http, "/", {"Tailscale-User-Login": "someone@example.com"})[0] == 403
 

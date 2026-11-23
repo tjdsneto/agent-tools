@@ -63,7 +63,7 @@ Controls: `choice` (2–6 options), `multi`, `text` (`size`: short|long), `appro
 
 `agt inbox serve` also listens on `127.0.0.1:8797` (the feed) and `127.0.0.1:8798` (the HTML frame). On the tailnet those are `https://<machine>.ts.net:8444` and `:8445`. Port 443 is not used: it is the existing public Funnel. `8787` is the chrome bridge and `8788` is another local service.
 
-Requests need a `Tailscale-User-Login` header starting with `tjdsneto@`. Anything else is 403. The LaunchAgent does not set `INBOX_ALLOW_INSECURE`. The frame is a different origin, sandboxed to scripts and popups, and labelled reference only. Links in it open in a new tab. It cannot submit an answer.
+A browser on this machine can open the localhost URL directly. A request that carries `Tailscale-User-Login` must start with `tjdsneto@`, otherwise it is 403. The LaunchAgent does not set `INBOX_ALLOW_INSECURE`. The frame is a different origin, sandboxed to scripts and popups, and labelled reference only. Links in it open in a new tab. It cannot submit an answer.
 
 ## Delivery
 
