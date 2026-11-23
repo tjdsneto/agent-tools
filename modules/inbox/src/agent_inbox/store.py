@@ -207,6 +207,12 @@ def answer(
             raise ValidationError(f"{entry_id} is not a question")
         if row["state"] != "open":
             raise ConflictError(_closed_message(row))
+        from agent_inbox.reach import for_entry
+        asker = {k: row[k] for k in ("engine", "model", "session_id", "cwd", "project", "script")}
+        reach = for_entry({"asker": asker, "delivery": row.get("delivery") or {}})
+        if reach.status in ("held", "unreachable"):
+            when = f" until {reach.reachable_at}" if reach.reachable_at else ""
+            raise ConflictError(f"{entry_id} is {reach.status}{when}")
         clean = validate_answer(row["control"], value, comment)
         payload = {"value": clean, "comment": (comment or "").strip() or None, "via": via, "at": _now_iso()}
         conn.execute(

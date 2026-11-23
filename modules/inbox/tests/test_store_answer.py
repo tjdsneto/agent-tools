@@ -74,3 +74,14 @@ def test_concurrent_answers_exactly_one_wins(inbox_db, conn):
     for t in threads:
         t.join()
     assert sorted(results) == ["lost", "won"]
+
+
+def test_answer_refuses_when_the_session_cannot_hear(conn, monkeypatch):
+    e = make_ask(conn)
+    monkeypatch.setattr(
+        "agent_inbox.reach.for_entry",
+        lambda entry: type("R", (), {"status": "held", "reachable_at": "19:00"})(),
+    )
+    with pytest.raises(ConflictError, match="held"):
+        store.answer(conn, e["id"], "a", via="web")
+    assert store.get_entry(conn, e["id"])["state"] == "open"

@@ -6,6 +6,13 @@ import psycopg
 import pytest
 
 from agent_inbox import db
+from agent_inbox.reach import Reach
+
+
+@pytest.fixture(autouse=True)
+def reachable(monkeypatch):
+    """Answers in tests must not shell out to registry or claude-budget."""
+    monkeypatch.setattr("agent_inbox.reach.for_entry", lambda entry: Reach("resumable"))
 
 TEST_DSN = os.environ.get("AGENT_INBOX_TEST_DSN", "host=localhost port=5433 dbname=agent_inbox_test")
 
