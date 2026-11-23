@@ -24,12 +24,15 @@ _HEAD = """<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{title}</title>
 <style>
-body {{ font-family: system-ui, sans-serif; margin: 16px; background: #fff; color: #1a1a1a; }}
+body {{ font-family: system-ui, sans-serif; margin: 16px; background: #fff; color: #1a1a1a; overflow-wrap: anywhere; }}
 a {{ color: #0645ad; }}
 article {{ padding: 12px; border: 1px solid #ccc; margin-bottom: 12px; }}
-a, button, input, select, textarea {{ min-height: 44px; box-sizing: border-box; }}
+a, button, input, select, textarea {{ min-height: 44px; box-sizing: border-box; max-width: 100%; }}
 a {{ display: inline-block; }}
-iframe {{ width: 100%; min-height: 240px; border: 1px solid #ccc; }}
+pre {{ white-space: pre-wrap; }}
+form label {{ display: block; padding: 6px 0; }}
+form input[name="comment"], form input[name="text"] {{ display: block; width: 100%; margin: 6px 0; }}
+iframe {{ width: 100%; min-height: 240px; border: 1px solid #ccc; box-sizing: border-box; }}
 </style>
 </head>
 <body>
@@ -196,20 +199,25 @@ def _control_fields(control: dict) -> str:
         fields = []
         for opt in control.get("options") or []:
             rec = " (recommended)" if opt.get("recommended") else ""
+            checked = " checked" if opt.get("default") else ""
+            desc = f"<br><small>{_esc(opt['description'])}</small>" if opt.get("description") else ""
             fields.append(
-                f'<label><input type="{kind}" name="value" value="{_esc(opt["id"])}"> {_esc(opt["label"])}{rec}</label>'
+                f'<label><input type="{kind}" name="value" value="{_esc(opt["id"])}"{checked}> '
+                f'{_esc(opt["label"])}{rec}{desc}</label>'
             )
-        fields.append("<button type=\"submit\">answer</button>")
         return "".join(fields)
     if ctype == "text":
-        field = "<textarea name=\"value\"></textarea>" if control.get("size") == "long" else "<input name=\"value\">"
-        return field + "<button type=\"submit\">answer</button>"
-    if ctype == "approve":
+        return "<textarea name=\"value\"></textarea>" if control.get("size") == "long" else "<input name=\"value\">"
+    return ""
+
+
+def _control_buttons(control: dict) -> str:
+    if control.get("type") == "approve":
         return (
             '<button type="submit" name="value" value="approve">approve</button>'
             '<button type="submit" name="value" value="revise">revise</button>'
         )
-    return ""
+    return "<button type=\"submit\">answer</button>" if control.get("type") else ""
 
 
 def _entry_page(entry: dict, error: str | None = None, frame_origin: str | None = None) -> str:
@@ -235,8 +243,8 @@ def _entry_page(entry: dict, error: str | None = None, frame_origin: str | None 
     if entry["kind"] == "ask" and entry["state"] == "open":
         parts.append(
             f'<form method="post" action="/e/{eid}/answer">{_control_fields(entry.get("control") or {})}'
-            '<input name="comment" placeholder="comment">'
-            '</form>'
+            '<input name="comment" placeholder="comment (a reason is required to revise)">'
+            f'{_control_buttons(entry.get("control") or {})}</form>'
         )
     if (entry.get("asker") or {}).get("session_id"):
         parts.append(

@@ -148,3 +148,13 @@ def test_the_form_cannot_choose_its_surface(conn, http):
     e = _open_ask(conn)
     _post(http, f"/e/{e['id']}/answer", "value=b&via=telegram")
     assert store.get_entry(conn, e["id"])["answer"]["via"] == "web"
+
+
+def test_entry_page_fits_a_phone_and_puts_the_comment_before_submit(conn, http):
+    opts = [{"id": "a", "label": "A", "description": "the safe one", "default": True}, {"id": "b", "label": "B"}]
+    req = validate_request({"title": "Q", "detail": "x" * 300, "control": {"type": "choice", "options": opts}}, "ask")
+    e = store.create_entry(conn, "ask", req, engine="claude", session_id="s-1")
+    _, body = _get(http, f"/e/{e['id']}")
+    assert "pre { white-space: pre-wrap; }" in body
+    assert body.index('name="comment"') < body.index('type="submit">answer')
+    assert 'value="a" checked' in body and "the safe one" in body
