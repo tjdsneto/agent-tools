@@ -25,3 +25,23 @@ def test_sweep_dispatches_answered_entries(conn, monkeypatch):
     monkeypatch.setattr("agent_inbox.serve.dispatch_entry", lambda c, i: seen.append(i) or "delivered")
     serve.sweep(conn)
     assert seen == [e["id"]]
+
+
+def test_one_failing_entry_does_not_stop_the_sweep(conn, monkeypatch):
+    ids = []
+    for _ in range(2):
+        req = validate_request({"title": "t", "control": CHOICE}, "ask")
+        e = store.create_entry(conn, "ask", req, engine="claude", session_id="s-1")
+        store.answer(conn, e["id"], "a", via="cli")
+        ids.append(e["id"])
+    seen = []
+
+    def flaky(c, entry_id):
+        seen.append(entry_id)
+        if entry_id == ids[0]:
+            raise RuntimeError("boom")
+        return "started"
+
+    monkeypatch.setattr("agent_inbox.serve.dispatch_entry", flaky)
+    serve.sweep(conn)
+    assert seen == ids

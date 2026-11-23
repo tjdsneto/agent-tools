@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 import threading
 
 import psycopg
@@ -39,7 +40,11 @@ def sweep(conn: psycopg.Connection) -> None:
     freed_urgent = False
     for row in rows:
         before = (row["delivery"] or {}).get("reachability")
-        dispatch_entry(conn, row["id"])
+        try:
+            dispatch_entry(conn, row["id"])
+        except Exception as exc:  # one bad entry must not stop delivery for the rest
+            print(f"dispatch {row['id']} failed: {exc!r}", file=sys.stderr)
+            continue
         after_row = conn.execute("SELECT delivery FROM entries WHERE id = %s", (row["id"],)).fetchone()
         after = ((after_row or {}).get("delivery") or {}).get("reachability")
         if before == "held" and after in ("live", "resumable"):
