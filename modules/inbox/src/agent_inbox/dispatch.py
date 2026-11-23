@@ -104,6 +104,8 @@ def _record(conn, entry_id: str, delivery: dict, inflight: dict, result: dict) -
     event = inflight["event"]
     ok = result.get("result") in {"landed", "already_awake"}
     delivery["attempts"] = delivery["attempts"] + 1
+    # Failures since the last success: an entry's answer and each follow-up get their own retries.
+    delivery["failures"] = 0 if ok else delivery.get("failures", 0) + 1
     delivery["results"] = [
         *delivery["results"],
         {"at": store._now_iso(), "result": result.get("result"), "mode": result.get("mode")},
@@ -114,7 +116,7 @@ def _record(conn, entry_id: str, delivery: dict, inflight: dict, result: dict) -
         delivery["headless"] = bool(inflight.get("headless"))
         _save(conn, entry_id, delivery, state="delivered" if event["event"] == "answer" else None)
         return "delivered"
-    state = "undelivered" if delivery["attempts"] >= MAX_ATTEMPTS else None
+    state = "undelivered" if delivery["failures"] >= MAX_ATTEMPTS else None
     _save(conn, entry_id, delivery, state=state)
     return "undelivered" if state else "retry"
 

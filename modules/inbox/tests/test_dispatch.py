@@ -141,3 +141,23 @@ def test_start_wake_returns_before_a_slow_wake_finishes(tmp_path, monkeypatch):
     assert not dispatch.pid_alive(inflight["pid"])
     assert dispatch.wake_result(inflight) == {"result": "landed", "mode": "resume"}
     assert not os.path.exists(inflight["msg"]) and not os.path.exists(inflight["out"])
+
+
+def test_retries_count_from_the_last_success(conn, monkeypatch):
+    e = _ask(conn)
+    monkeypatch.setattr("agent_inbox.dispatch.reach_for", lambda entry: _Reach("live"))
+    monkeypatch.setattr("agent_inbox.dispatch.pid_alive", lambda pid: False)
+    outcome = {"result": "undelivered", "mode": "nudge"}
+    monkeypatch.setattr(
+        "agent_inbox.dispatch.start_wake", lambda entry_id, sid, message: {"pid": 424242, "msg": "m", "out": "o"}
+    )
+    monkeypatch.setattr("agent_inbox.dispatch.wake_result", lambda inflight: dict(outcome))
+    store.add_followup(conn, e["id"], "first?", via="web")
+    for _ in range(2):
+        _deliver(conn, e["id"])
+    outcome["result"] = "landed"
+    assert _deliver(conn, e["id"]) == "delivered"
+    store.add_followup(conn, e["id"], "second?", via="web")
+    outcome["result"] = "undelivered"
+    assert _deliver(conn, e["id"]) == "retry"
+    assert store.get_entry(conn, e["id"])["state"] == "open"
