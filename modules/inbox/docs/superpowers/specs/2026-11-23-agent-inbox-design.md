@@ -120,7 +120,7 @@ Each question shows whether its session can hear a message now:
 |---|---|---|
 | 🟢 live | The session is running and can take a message. | allowed |
 | 🔵 resumable | The session has exited and can be resumed. | allowed |
-| 🟡 held | The session has no tokens: the Claude window is saturated, or the session's last turn hit a rate limit (Codex, Cursor). Shows "answerable at ~HH:MM" when the reset time is known. | disabled |
+| 🟡 held | The session has no tokens: the Claude window is saturated (`claude-budget`). Codex and Cursor have no token reader (the registry's rate-limit detection reads Claude transcripts only), so they count as held only when their last wake came back held. Shows "answerable at ~HH:MM" when the reset time is known. | disabled |
 | 🔴 unreachable | No transport, the session is gone, or delivery gave up. | disabled; dismiss only |
 
 When the window resets, entries that were 🟡 become answerable again, and one batched push says so ("3 entries are answerable again"), at the entries' priority and within quiet hours.
