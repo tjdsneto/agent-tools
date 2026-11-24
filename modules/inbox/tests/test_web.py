@@ -259,3 +259,15 @@ def test_an_answered_entry_still_marks_itself_in_the_pane(conn, http):
     _, body = _get(http, f"/e/{e['id']}")
     pane = body[body.index('class="pane"'):body.index("<main>")]
     assert f'href="/e/{e["id"]}" aria-current="page"' in pane
+
+
+def test_a_read_report_leaves_the_default_view_for_history(conn, http):
+    fresh = store.create_entry(conn, "post", validate_request({"title": "Fresh"}, "post"), script="cron")
+    seen = store.create_entry(conn, "post", validate_request({"title": "Seen"}, "post"), script="cron")
+    store.mark_read(conn, seen["id"])
+    _, feed = _get(http, "/")
+    assert fresh["id"] in feed and seen["id"] not in feed
+    _, history = _get(http, "/?history=1")
+    assert seen["id"] in history
+    _, info = _get(http, "/?kind=post&state=read")
+    assert seen["id"] in info

@@ -16,9 +16,10 @@ from agent_inbox import db, store
 from agent_inbox.constants import FRAME_PORT, HTTP_PORT, NOTIFY_CHANNEL
 from agent_inbox.errors import ConflictError, NotFoundError, StoreError, ValidationError
 
-HISTORY_STATES = ("answered", "delivered", "expired", "withdrawn", "superseded", "undelivered", "archived")
-# Answered questions are done from the visitor's side; the default view leaves them to History.
-DONE_STATES = {"answered", "delivered"}
+HISTORY_STATES = ("answered", "delivered", "read", "expired", "withdrawn", "superseded", "undelivered", "archived")
+# Answered questions and read reports are done from the visitor's side; the
+# default view leaves them to History.
+DONE_STATES = {"answered", "delivered", "read"}
 HIDDEN_STATES = {"archived", "withdrawn", "superseded"}
 FRAME_ORIGIN = f"http://127.0.0.1:{FRAME_PORT}"
 

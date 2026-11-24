@@ -471,7 +471,7 @@ Softly rounded rectangles for anything you type into or press (10px), slightly s
 
 ### Tabs
 - **Style:** pills on Cool Surface, ink text, 15px/550, 36px tall with a 44px hit area.
-- **State:** hover fills with Hairline grey; the current view is Action Blue with white text. Views are Active (the default: everything not yet done; answered questions leave it), Needs answer, Info, History (answered, delivered and closed entries).
+- **State:** hover fills with Hairline grey; the current view is Action Blue with white text. Views are Active (the default: everything not yet done; answered questions and read reports leave it), Needs answer, Info, History (answered, delivered, read and closed entries).
 - **Filters:** below the tabs, engine and state selects (44px, 10px radius, field stroke) and a secondary Filter button, wrapping on narrow screens.
 
 ### Chips
