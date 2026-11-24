@@ -120,6 +120,7 @@ def _prepare_command(op: str, params: Any):
             "socket": params.get("socket"),
             "pid": params.get("pid"),
             "peer_status": params.get("peer_status"),
+            "record_launch": bool(params.get("record_launch")),
         }
 
         def run() -> tuple[int, Any, str | None]:

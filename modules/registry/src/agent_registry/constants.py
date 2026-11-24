@@ -4,6 +4,7 @@ ACTIVE_GAP_SECONDS = 300  # max gap still counted as active continuation; overri
 STATUSES = frozenset({"idle", "working", "reviewing", "blocked"})
 ARCHIVE_REASONS = frozenset({"unregister", "prune", "replace"})
 DASHBOARD_DEFAULT_PORT = 8765
+WAKE_ENV = "AGENT_REGISTRY_WAKE"  # set on sessions wake starts; their launch flags are not recorded
 DAEMON_SERVICE = "agent-registry"
 DAEMON_START_TIMEOUT = 5.0
 EXIT_OK = 0

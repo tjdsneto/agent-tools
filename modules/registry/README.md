@@ -91,6 +91,10 @@ agent-registry end --type claude --session-id "$SESSION_ID"
 - `heartbeat` — skips if no sidecar or within throttle window; otherwise pings and updates sidecar `last_heartbeat_at`. Optional `--model` / `--title`: when either **changed**, bypasses throttle so mid-session switches/renames stick.
 - `end` — unregisters (if known) and deletes sidecar; idempotent when already gone.
 
+For a Claude session with a pid, `ensure` also saves the permission flags the process was launched with (`--permission-mode`, `--dangerously-skip-permissions`, `--allowedTools`, `--disallowedTools`, `--tools`, `--add-dir`) to `launch/claude/<session_id>.json` next to the registry. `end` keeps that file. A session that `wake` started carries `AGENT_REGISTRY_WAKE=1`, so its flags are not saved over the original ones.
+
+**Resume permissions.** `wake` talks to a live session through SendMessage, so the session keeps its own permissions. An exited Claude session is resumed with `claude -p --resume`, which gets only the flags of the new command. Resume replays the saved launch flags. When none were saved (the session predates this, or its argv could not be read), resume uses `--dangerously-skip-permissions`; set `AGENT_REGISTRY_RESUME_BYPASS_UNKNOWN=0` in the environment of the process that runs `wake` to resume with no flags instead. Inline `--settings` permissions are not replayed; settings files still load because resume runs in the session's directory.
+
 `model` is the active LLM slug. `title` is the session display name (Claude `session_title` from `--name` / `/rename`; Cursor composer `name` from `state.vscdb` on ensure/heartbeat/live, since Cursor hooks omit a title). A changed Cursor title bypasses the heartbeat throttle. `summary` remains the agent-written focus line (and later, optional cheap/local auto-summary) — never promoted to `title`.
 
 ### self

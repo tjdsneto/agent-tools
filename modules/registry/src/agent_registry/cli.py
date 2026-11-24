@@ -1,6 +1,7 @@
 from __future__ import annotations
 import argparse
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -15,6 +16,7 @@ from agent_registry.constants import (
     EXIT_IO,
     EXIT_OK,
     EXIT_USAGE,
+    WAKE_ENV,
 )
 from agent_registry.format import format_archive_list, format_list
 
@@ -248,6 +250,8 @@ def _build_command(args: argparse.Namespace) -> tuple[str, dict]:
             "model": args.model,
             "title": args.title,
             "no_replace": args.no_replace,
+            # The hook runs inside the agent's process tree, so a session wake started carries WAKE_ENV.
+            "record_launch": os.environ.get(WAKE_ENV) != "1",
             **_address(args),
         }
     if cmd == "heartbeat":

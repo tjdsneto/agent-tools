@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from datetime import datetime, timezone
 
-from agent_registry import ops, session_state, store, usage
+from agent_registry import launch, ops, session_state, store, usage
 from agent_registry.constants import HEARTBEAT_SECONDS
 from agent_registry.models import normalize_text, now_iso
 
@@ -109,13 +109,20 @@ def ensure(
     pid: int | None = None,
     peer_status: str | None = None,
     replace: bool = True,
+    record_launch: bool = False,
 ) -> dict:
     """Register if needed; always refresh sidecar. Default replace=True for resume/crash.
 
     When replace=False, an existing sidecar must reference a live registry row; stale or
     missing registry_id raises UnknownRegistryIdError instead of re-registering.
     Optional model/title are recorded on register and refreshed when provided.
+    record_launch saves a Claude process's permission flags for a later resume.
     """
+    if record_launch and agent_type == "claude" and pid:
+        try:
+            launch.record(session_id, ops.require_pid(pid))
+        except Exception:
+            pass
     model = normalize_text(model)
     title = _resolve_title(agent_type, session_id, title)
     peer_name = normalize_text(peer_name)

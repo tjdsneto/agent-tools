@@ -18,7 +18,8 @@ import time
 import uuid
 from pathlib import Path
 
-from agent_registry import store
+from agent_registry import launch, store
+from agent_registry.constants import WAKE_ENV
 from agent_registry.models import normalize_text, parse_pid
 from agent_registry.ops import ValidationError
 
@@ -423,13 +424,33 @@ def nudge_argv(
     ]
 
 
-def resume_argv(session_id: str, message: str, claude: str = "claude") -> list[str]:
+def bypass_unknown() -> bool:
+    """Resume with full permissions when the launch flags were never recorded.
+
+    On by default; AGENT_REGISTRY_RESUME_BYPASS_UNKNOWN=0 resumes with no flags instead.
+    """
+    return os.environ.get("AGENT_REGISTRY_RESUME_BYPASS_UNKNOWN", "1").strip() != "0"
+
+
+def resume_argv(
+    session_id: str,
+    message: str,
+    claude: str = "claude",
+    permissions: list[str] | None = None,
+) -> list[str]:
+    """Resume with the permission flags the session launched with.
+
+    permissions None means none were recorded. --settings follows them so a variadic
+    flag like --allowedTools cannot take the message as one more tool.
+    """
+    if permissions is None:
+        permissions = ["--dangerously-skip-permissions"] if bypass_unknown() else []
     return [
         claude,
         "-p",
         "--resume",
         session_id,
-        "--dangerously-skip-permissions",
+        *permissions,
         "--settings",
         CLAUDE_INBOUND_ACCEPT,
         message,
@@ -480,11 +501,13 @@ def cursor_resume_argv(
 
 
 def run_claude(argv: list[str], cwd: str | None) -> tuple[str, int]:
+    # WAKE_ENV tells the started session's hook not to record wake's own flags as its launch flags.
     proc = subprocess.run(
         argv,
         cwd=cwd or None,
         capture_output=True,
         text=True,
+        env={**os.environ, WAKE_ENV: "1"},
     )
     return (proc.stdout or "") + (proc.stderr or ""), proc.returncode
 
@@ -597,7 +620,7 @@ def wake(
             stdout, dialer_id, projects_dir=projects_dir, code=code,
         )
     else:
-        argv = resume_argv(session_id, message)
+        argv = resume_argv(session_id, message, permissions=launch.load(session_id))
         mode = "resume"
         stdout, code = run(argv, view.get("directory"))
         result = _exit_result(code)

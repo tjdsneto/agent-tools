@@ -204,7 +204,8 @@ def test_classify_requires_explicit_landed():
     assert classify_delivery("") == "undelivered"
 
 
-def test_resume_argv_accepts_inbound_and_skips_prompts():
+def test_resume_argv_accepts_inbound_and_skips_prompts(monkeypatch):
+    monkeypatch.delenv("AGENT_REGISTRY_RESUME_BYPASS_UNKNOWN", raising=False)
     argv = resume_argv("uuid-1", "continue", claude="claude")
     assert argv[:3] == ["claude", "-p", "--resume"]
     assert "uuid-1" in argv
