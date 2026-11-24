@@ -471,12 +471,13 @@ Softly rounded rectangles for anything you type into or press (10px), slightly s
 
 ### Tabs
 - **Style:** pills on Cool Surface, ink text, 15px/550, 36px tall with a 44px hit area.
-- **State:** hover fills with Hairline grey; the current view is Action Blue with white text. Views are All, Needs answer, Info, History.
+- **State:** hover fills with Hairline grey; the current view is Action Blue with white text. Views are Active (the default: everything not yet done; answered questions leave it), Needs answer, Info, History (answered, delivered and closed entries).
 - **Filters:** below the tabs, engine and state selects (44px, 10px radius, field stroke) and a secondary Filter button, wrapping on narrow screens.
 
 ### Chips
 - **Style:** 26px pills, 13px/600, 10px side padding, tint background and ink text per tone.
-- **Tones:** green Live / Delivered; blue Resumable / Needs answer / Answered / Unread / delivering; amber Held; red Unreachable / Not delivered / Urgent; grey finished states.
+- **Tones:** green Live, and Answered once delivered; blue Resumable / Needs answer / Unread, and Answered while sending; amber Held; red Unreachable / Answered, not delivered / Urgent; grey finished states.
+- **Answered:** an answered question's chip carries delivery ticks in place of the dot: one tick while sending (blue), two once the session has it (green).
 - **Dot:** a 7px dot in the tone's `-d` colour precedes the label on green, amber and red chips that report a state. Blue and grey chips, and the Urgent label, carry no dot.
 - **The Dot Means State Rule.** The dot marks a session's or a delivery's live state. A label that is not a state (Urgent) never gets one.
 
@@ -484,7 +485,7 @@ Softly rounded rectangles for anything you type into or press (10px), slightly s
 - **Style:** a circle with the project's initial, 40px (16px/650) in feed rows, 28px (13px) in the entry's meta line, in the project's fixed tint-and-ink pair. Decorative: hidden from assistive tech, because the meta line names the project.
 
 ### Feed rows
-- **Style:** a 44px checkbox column, then the row: avatar, 600-weight title, right-aligned 13px time, a 14px Grey Meta line "project · engine · id", and the chips. 72px minimum, hairline below.
+- **Style:** a 44px checkbox column, then the row: avatar, 600-weight title, right-aligned 13px time, a 14px Grey Meta line "project · engine · You: <answer> · id" (the answer part only once answered, like a chat preview), and the chips. 72px minimum, hairline below.
 - **States:** hover fills with Cool Surface. An unread post shows an 8px Action Blue dot before the title. Order is open questions, then unread posts, then the rest.
 - **Empty:** centred Grey Meta text under a 17px ink "Nothing here".
 
