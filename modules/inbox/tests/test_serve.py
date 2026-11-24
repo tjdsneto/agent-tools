@@ -128,14 +128,13 @@ def test_an_unchanged_reachability_is_not_written(conn, monkeypatch):
     assert before == after
 
 
-def test_a_held_question_that_frees_up_is_pushed_once(conn, monkeypatch):
+def test_an_urgent_held_question_that_frees_up_is_pushed_once(conn, monkeypatch):
     monkeypatch.setattr(serve, "_checked", {})
-    monkeypatch.setattr("agent_inbox.notify.quiet", lambda now: False)
     monkeypatch.setattr("agent_inbox.notify.push_pending", lambda c: None)
     monkeypatch.setenv("AGENT_INBOX_TELEGRAM_TO", "telegram:1")
     sent = []
     monkeypatch.setattr("agent_inbox.notify.hermes_send", lambda to, text: sent.append(text))
-    e = _open_ask(conn)
+    e = _open_ask(conn, priority="urgent")
     _reach_seq(monkeypatch, [("held", None), ("resumable", None)])
     serve.sweep(conn)
     assert sent == []
@@ -143,20 +142,19 @@ def test_a_held_question_that_frees_up_is_pushed_once(conn, monkeypatch):
     serve.sweep(conn)
     serve._checked.clear()
     serve.sweep(conn)
-    assert sent == [f"1 question is answerable again\n• Which? ({e['id']})"]
+    assert sent == [f"1 urgent question is answerable again\n• Which? ({e['id']})"]
 
 
-def test_a_normal_answerable_push_waits_out_quiet_hours(conn, monkeypatch):
-    from agent_inbox import notify
+def test_a_normal_question_that_frees_up_is_not_pushed(conn, monkeypatch):
+    monkeypatch.setattr(serve, "_checked", {})
+    monkeypatch.setattr("agent_inbox.notify.push_pending", lambda c: None)
     monkeypatch.setenv("AGENT_INBOX_TELEGRAM_TO", "telegram:1")
     sent = []
     monkeypatch.setattr("agent_inbox.notify.hermes_send", lambda to, text: sent.append(text))
-    e = _open_ask(conn)
-    night = datetime(2026, 11, 24, 2, 0, tzinfo=notify.LOCAL)
-    morning = datetime(2026, 11, 24, 9, 0, tzinfo=notify.LOCAL)
-    notify.push_answerable(conn, [e["id"]], "normal", now=night)
+    _open_ask(conn)
+    _reach_seq(monkeypatch, [("held", None), ("resumable", None)])
+    serve.sweep(conn)
+    serve._checked.clear()
+    serve.sweep(conn)
     assert sent == []
-    notify.push_answerable(conn, [], "normal", now=morning)
-    assert len(sent) == 1 and e["id"] in sent[0]
-    notify.push_answerable(conn, [], "normal", now=morning)
-    assert len(sent) == 1
+

@@ -229,7 +229,7 @@ def answer(
     if via != "telegram":
         try:
             from agent_inbox.notify import note_answered
-            note_answered(entry_id, via, clean)
+            note_answered(entry_id, via, clean, row["priority"])
         except OSError as exc:
             print(f"telegram note failed: {exc}", file=sys.stderr)
     return {"entry": entry_id, "state": state, **payload}

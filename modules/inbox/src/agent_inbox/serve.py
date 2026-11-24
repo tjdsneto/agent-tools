@@ -93,7 +93,6 @@ def sweep(conn: psycopg.Connection) -> None:
         """
     ).fetchall()
     freed: list[str] = []
-    freed_urgent = False
     for row in rows:
         before = (row["delivery"] or {}).get("reachability")
         try:
@@ -105,12 +104,10 @@ def sweep(conn: psycopg.Connection) -> None:
         after = ((after_row or {}).get("delivery") or {}).get("reachability")
         if before == "held" and after in ("live", "resumable"):
             freed.append(row["id"])
-            freed_urgent = freed_urgent or row["priority"] == "urgent"
     for row in refresh_reach(conn):
         freed.append(row["id"])
-        freed_urgent = freed_urgent or row["priority"] == "urgent"
     from agent_inbox.notify import push_answerable, push_pending
-    push_answerable(conn, freed, "urgent" if freed_urgent else "normal")
+    push_answerable(conn, freed)
     push_pending(conn)
     purge_html(conn)
 

@@ -4,26 +4,15 @@ import json
 import os
 import subprocess
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from psycopg.types.json import Jsonb
 
 LOCAL = ZoneInfo("America/Sao_Paulo")
-QUIET = (22, 8)
-NORMAL_GAP = timedelta(minutes=15)
 
-
-def quiet(now: datetime) -> bool:
-    hour = now.astimezone(LOCAL).hour
-    return hour >= QUIET[0] or hour < QUIET[1]
-
-
-def due(entries: list[dict], *, now: datetime, last_normal_at: datetime | None) -> list[dict]:
-    send_normal = not quiet(now) and (last_normal_at is None or now - last_normal_at >= NORMAL_GAP)
-    urgent = [entry for entry in entries if entry["priority"] == "urgent"]
-    normal = [entry for entry in entries if entry["priority"] == "normal" and send_normal]
-    return urgent + normal
+# Telegram is for emergencies: only urgent entries push. Everything else waits in the inbox.
+PUSHED = "urgent"
 
 
 def buttons(entry: dict) -> list[list[str]] | None:
@@ -154,13 +143,6 @@ def _mark_notified(conn, ids: list[str]) -> None:
     _ops_put(conn, "notified", {"ids": merged})
 
 
-def _last_normal(conn) -> datetime | None:
-    raw = (_ops_get(conn, "last_normal_push") or {}).get("at")
-    if not raw:
-        return None
-    return datetime.fromisoformat(raw)
-
-
 def _link(entry: dict, ui: str) -> str:
     if ui.rstrip("/").endswith(str(entry["id"])):
         return ui
@@ -199,27 +181,18 @@ def _send_card(to: str, entry: dict, ui: str) -> None:
 def push_new(conn, entries: list[dict], *, now: datetime, ui: str) -> None:
     seen = _notified(conn)
     fresh = [entry for entry in entries if _visible(entry) and entry["id"] not in seen]
-    batch = due(fresh, now=now, last_normal_at=_last_normal(conn))
-    if not batch:
-        return
+    urgent = [entry for entry in fresh if entry["priority"] == PUSHED]
     target = _target()
-    urgent = [entry for entry in batch if entry["priority"] == "urgent"]
-    normal = [entry for entry in batch if entry["priority"] == "normal"]
-    if target:
-        # A card with buttons is its own message; the rest of a normal batch is one message.
-        for entry in urgent + [entry for entry in normal if buttons(entry)]:
+    if urgent and target:
+        for entry in urgent:
             _send_card(target, entry, ui)
-        plain = [entry for entry in normal if not buttons(entry)]
-        if plain:
-            _send(target, "\n\n".join(card(entry, ui=_link(entry, ui)) for entry in plain))
-    else:
+    elif urgent:
         _warn_unset()
     for entry in urgent:
         notify_mac(entry["title"], entry["title"])
         say(entry["title"])
-    _mark_notified(conn, [entry["id"] for entry in batch])
-    if normal:
-        _ops_put(conn, "last_normal_push", {"at": now.isoformat()})
+    # Marked even when not pushed, so raising one to urgent later does not replay old ones.
+    _mark_notified(conn, [entry["id"] for entry in fresh])
 
 
 def push_pending(conn, *, now: datetime | None = None, ui: str | None = None) -> None:
@@ -231,41 +204,31 @@ def push_pending(conn, *, now: datetime | None = None, ui: str | None = None) ->
     push_new(conn, asks + posts, now=when, ui=origin)
 
 
-def push_answerable(conn, ids: list[str], priority: str, *, now: datetime | None = None) -> None:
-    """One batched push for questions whose session can hear an answer again.
-
-    A normal batch in quiet hours is kept in ops and sent with the first sweep after.
-    """
-    pending = _ops_get(conn, "answerable") or {}
-    ids = sorted(set(pending.get("ids") or []) | set(ids))
+def push_answerable(conn, ids: list[str]) -> None:
+    """One push for urgent questions whose session can hear an answer again."""
     if not ids:
         return
-    urgent = priority == "urgent" or bool(pending.get("urgent"))
-    if not urgent and quiet(now or datetime.now(LOCAL)):
-        _ops_put(conn, "answerable", {"ids": ids, "urgent": False})
-        return
-    _ops_put(conn, "answerable", {"ids": [], "urgent": False})
     rows = conn.execute(
-        "SELECT id, title FROM entries WHERE id = ANY(%s) AND state = 'open' ORDER BY created_at",
-        (ids,),
+        "SELECT id, title FROM entries WHERE id = ANY(%s) AND state = 'open' AND priority = %s ORDER BY created_at",
+        (ids, PUSHED),
     ).fetchall()
     if not rows:
         return
     noun = "question is" if len(rows) == 1 else "questions are"
-    text = f"{len(rows)} {noun} answerable again\n" + "\n".join(f"• {row['title']} ({row['id']})" for row in rows)
+    text = f"{len(rows)} urgent {noun} answerable again\n" + "\n".join(f"• {row['title']} ({row['id']})" for row in rows)
     target = _target()
     if target:
         _send(target, text)
     else:
         _warn_unset()
-    if urgent:
-        notify_mac("answerable again", text)
-        say(text)
+    notify_mac("answerable again", text)
+    say(text)
 
 
-def note_answered(entry_id: str, via: str, value) -> None:
+def note_answered(entry_id: str, via: str, value, priority: str = "normal") -> None:
+    """Close the loop on Telegram for an urgent question answered somewhere else."""
     target = _target()
-    if not target:
+    if not target or priority != PUSHED:
         return
     shown = ", ".join(value) if isinstance(value, list) else value
     _send(target, f"{entry_id} answered via {via}: {shown}")

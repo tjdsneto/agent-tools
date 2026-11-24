@@ -2,7 +2,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from agent_inbox import store
-from agent_inbox.notify import card, due, push_new, quiet
+from agent_inbox.notify import card, push_new
 from agent_inbox.validate import validate_request
 
 LOCAL = ZoneInfo("America/Sao_Paulo")
@@ -32,25 +32,32 @@ def test_approve_card_tells_him_the_words():
     assert text.startswith("🚨 Urgent: *Ship it?*")
 
 
-def test_quiet_hours():
-    assert quiet(datetime(2026, 11, 23, 22, 0, tzinfo=LOCAL))
-    assert quiet(datetime(2026, 11, 23, 7, 59, tzinfo=LOCAL))
-    assert not quiet(datetime(2026, 11, 23, 8, 0, tzinfo=LOCAL))
-    assert not quiet(datetime(2026, 11, 23, 21, 59, tzinfo=LOCAL))
+def test_only_urgent_entries_reach_telegram(conn, monkeypatch):
+    """Telegram is for emergencies: normal and low entries wait in the inbox."""
+    monkeypatch.setenv("AGENT_INBOX_TELEGRAM_TO", "telegram:1")
+    sent = []
+    monkeypatch.setattr("agent_inbox.notify.hermes_card", lambda to, text, pairs: sent.append(text) or True)
+    monkeypatch.setattr("agent_inbox.notify.hermes_send", lambda to, text: sent.append(text))
+    monkeypatch.setattr("agent_inbox.notify.notify_mac", lambda title, body: None)
+    noon = datetime(2026, 11, 23, 12, 0, tzinfo=LOCAL)
+    push_new(conn, [_choice_entry("ib-1", "normal"), _choice_entry("ib-2", "low")], now=noon, ui="https://x")
+    assert sent == []
+    push_new(conn, [_choice_entry("ib-3", "urgent")], now=noon, ui="https://x")
+    assert len(sent) == 1 and "ib-3" in sent[0]
+    # A normal entry later raised to urgent does not replay: it was already seen.
+    push_new(conn, [_choice_entry("ib-1", "urgent")], now=noon, ui="https://x")
+    assert len(sent) == 1
 
 
-def test_due_batches_normal_and_always_sends_urgent():
-    entries = [
-        {"id": "a", "priority": "normal", "created_at": "t"},
-        {"id": "b", "priority": "low", "created_at": "t"},
-        {"id": "c", "priority": "urgent", "created_at": "t"},
-    ]
-    night = datetime(2026, 11, 23, 23, 0, tzinfo=LOCAL)
-    assert [e["id"] for e in due(entries, now=night, last_normal_at=None)] == ["c"]
-    day = datetime(2026, 11, 23, 12, 0, tzinfo=LOCAL)
-    recent = datetime(2026, 11, 23, 11, 50, tzinfo=LOCAL)
-    assert [e["id"] for e in due(entries, now=day, last_normal_at=recent)] == ["c"]
-    assert [e["id"] for e in due(entries, now=day, last_normal_at=None)] == ["c", "a"]
+def test_an_answer_note_goes_to_telegram_only_for_urgent(monkeypatch):
+    from agent_inbox import notify
+    monkeypatch.setenv("AGENT_INBOX_TELEGRAM_TO", "telegram:1")
+    sent = []
+    monkeypatch.setattr(notify, "hermes_send", lambda to, text: sent.append(text))
+    notify.note_answered("ib-1", "chat", "a", "normal")
+    assert sent == []
+    notify.note_answered("ib-2", "chat", "a", "urgent")
+    assert sent == ["ib-2 answered via chat: a"]
 
 
 def test_push_uses_hermes_and_records_the_batch(conn, monkeypatch):
@@ -129,7 +136,7 @@ def test_choice_cards_go_out_with_buttons_one_per_message(conn, monkeypatch):
     monkeypatch.setattr("agent_inbox.notify.hermes_card", lambda to, text, pairs: cards.append((to, pairs)) or True)
     monkeypatch.setattr("agent_inbox.notify.hermes_send", lambda to, text: plain.append(text))
     text_q = {**_choice_entry("ib-3"), "control": {"type": "text"}}
-    push_new(conn, [_choice_entry("ib-1"), _choice_entry("ib-2"), text_q], now=datetime(2026, 11, 23, 12, 0, tzinfo=LOCAL), ui="https://x")
+    push_new(conn, [_choice_entry("ib-1", "urgent"), _choice_entry("ib-2", "urgent"), {**text_q, "priority": "urgent"}], now=datetime(2026, 11, 23, 12, 0, tzinfo=LOCAL), ui="https://x")
     assert [pairs[0][1] for _, pairs in cards] == ["ib:ib-1:a", "ib:ib-2:a"]
     assert len(plain) == 1 and "ib-3" in plain[0]
 
@@ -139,5 +146,5 @@ def test_a_failed_button_send_falls_back_to_text(conn, monkeypatch):
     plain = []
     monkeypatch.setattr("agent_inbox.notify.hermes_card", lambda to, text, pairs: False)
     monkeypatch.setattr("agent_inbox.notify.hermes_send", lambda to, text: plain.append(text))
-    push_new(conn, [_choice_entry()], now=datetime(2026, 11, 23, 12, 0, tzinfo=LOCAL), ui="https://x")
+    push_new(conn, [_choice_entry(priority="urgent")], now=datetime(2026, 11, 23, 12, 0, tzinfo=LOCAL), ui="https://x")
     assert len(plain) == 1 and "1. Tauri" in plain[0]
