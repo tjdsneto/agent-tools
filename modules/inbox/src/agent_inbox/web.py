@@ -7,6 +7,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, urlparse
 
+from markdown_it import MarkdownIt
 from psycopg.types.json import Jsonb
 
 from agent_inbox import db, store
@@ -30,6 +31,9 @@ article {{ padding: 12px; border: 1px solid #ccc; margin-bottom: 12px; }}
 a, button, input, select, textarea {{ min-height: 44px; box-sizing: border-box; max-width: 100%; }}
 a {{ display: inline-block; }}
 pre {{ white-space: pre-wrap; }}
+.md a {{ display: inline; min-height: 0; }}
+.md table {{ border-collapse: collapse; display: block; overflow-x: auto; }}
+.md th, .md td {{ border: 1px solid #ccc; padding: 4px 8px; }}
 form label {{ display: block; padding: 6px 0; }}
 form input[name="comment"], form input[name="text"] {{ display: block; width: 100%; margin: 6px 0; }}
 fieldset {{ border: 0; padding: 0; margin: 0; min-width: 0; }}
@@ -50,6 +54,16 @@ es.onmessage = () => { if (open) location.reload(); open = true; };
 
 def _esc(value: object) -> str:
     return html.escape("" if value is None else str(value), quote=True)
+
+
+# Agents write summary and detail as Markdown. Raw HTML stays escaped (html=False), and
+# markdown-it drops javascript:, vbscript: and file: links. The sandboxed frame is the
+# only place agent HTML runs.
+_MD = MarkdownIt("commonmark", {"html": False, "linkify": False}).enable("table").enable("strikethrough")
+
+
+def _md(text: str) -> str:
+    return _MD.render(text)
 
 
 def _frame_origin(host_header: str | None = None) -> str:
@@ -233,13 +247,13 @@ def _entry_page(entry: dict, error: str | None = None, frame_origin: str | None 
         parts.append(f"<p>{_esc(error)}</p>")
     parts.append(f"<h1>{_esc(entry['title'])}</h1><p>{_esc(entry['state'])}</p>")
     if entry.get("summary"):
-        parts.append(f"<p>{_esc(entry['summary'])}</p>")
+        parts.append(f'<div class="md">{_md(entry["summary"])}</div>')
     if entry.get("html"):
         src = f"{(frame_origin or _frame_origin()).rstrip('/')}/h/{eid}"
         parts.append(f'<iframe sandbox="allow-scripts allow-popups" src="{src}"></iframe>')
         parts.append("<p>Reference only. Answer below.</p>")
     if entry.get("detail"):
-        parts.append(f"<pre>{_esc(entry['detail'])}</pre>")
+        parts.append(f'<div class="md">{_md(entry["detail"])}</div>')
     source = entry.get("source") or {}
     if source.get("url"):
         parts.append(f'<p><a href="{_esc(source["url"])}" target="_blank" rel="noopener">source</a></p>')

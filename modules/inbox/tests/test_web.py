@@ -179,3 +179,14 @@ def test_a_resumable_question_can_be_answered(conn, http):
     _, body = _get(http, f"/e/{e['id']}")
     assert "🔵 resumable" in body
     assert "<fieldset>" in body
+
+
+def test_summary_and_detail_render_markdown_without_raw_html(conn, http):
+    detail = "## Why\n\n- **fast**\n- `agt inbox`\n\n[docs](https://example.com) [bad](javascript:alert(1))\n\n<script>alert(1)</script>"
+    e = store.create_entry(conn, "post", validate_request({"title": "I", "summary": "Run **done**", "detail": detail}, "post"), script="cron")
+    _, body = _get(http, f"/e/{e['id']}")
+    assert "Run <strong>done</strong>" in body
+    assert "<h2>Why</h2>" in body and "<li><strong>fast</strong></li>" in body and "<code>agt inbox</code>" in body
+    assert '<a href="https://example.com">docs</a>' in body
+    assert 'href="javascript:' not in body
+    assert "<script>alert(1)</script>" not in body and "&lt;script&gt;alert(1)&lt;/script&gt;" in body
