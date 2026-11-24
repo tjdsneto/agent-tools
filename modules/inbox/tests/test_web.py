@@ -271,3 +271,10 @@ def test_a_read_report_leaves_the_default_view_for_history(conn, http):
     assert seen["id"] in history
     _, info = _get(http, "/?kind=post&state=read")
     assert seen["id"] in info
+
+
+def test_an_answered_script_ask_says_it_waits_for_the_script(conn, http):
+    e = store.create_entry(conn, "ask", validate_request({"title": "Ship?", "control": CHOICE}, "ask"), script="autopilot")
+    store.answer(conn, e["id"], "a", via="web")
+    _, body = _get(http, f"/e/{e['id']}")
+    assert "Saved for autopilot to pick up" in body and 'data-state="saved"' in body

@@ -52,6 +52,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_request_args(ask)
     _add_asker_args(ask)
     ask.add_argument("--wait", action="store_true")
+    ask.add_argument("--script", help="ask with no session: never woken, read the answer with `get`")
     ask.add_argument("--timeout", type=float, default=WAIT_TIMEOUT_SEC)
 
     post = sub.add_parser("post")
@@ -154,7 +155,9 @@ def _dispatch(args: argparse.Namespace) -> tuple[Any, int]:
     with db.connect() as conn:
         if cmd == "ask":
             req = validate_request(_read_request(args), "ask")
-            entry = store.create_entry(conn, "ask", req, mode="wait" if args.wait else "resume", **_asker(args))
+            entry = store.create_entry(
+                conn, "ask", req, mode="wait" if args.wait else "resume", script=args.script, **_asker(args),
+            )
             url = entry_url(entry["id"])
             if not args.wait:
                 return {"entry": entry["id"], "state": entry["state"], "url": url}, EXIT_OK

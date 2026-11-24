@@ -607,6 +607,9 @@ def _answered(entry: dict) -> str:
     elif entry["state"] == "delivered":
         words = "Delivered" + (", the session resumed to read it" if delivery.get("headless") else " to the session")
         mark, state = f'<span class="sent delivered">{_ticks("delivered")}{_esc(words)}</span>', "delivered"
+    elif not (entry.get("asker") or {}).get("session_id"):
+        words = f"Saved for {_who(entry) or 'the asker'} to pick up"
+        mark, state = f'<span class="sent">{_ticks("sent")}{_esc(words)}</span>', "saved"
     else:
         words = "Delivering to the session" if delivery.get("inflight") else "Sent, waiting to deliver"
         mark, state = f'<span class="sent">{_ticks("sent")}{_esc(words)}</span>', "sent"

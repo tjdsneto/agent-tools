@@ -102,3 +102,26 @@ def test_a_chat_answer_is_delivered_at_once_and_skips_reachability(conn, monkeyp
     # The inbox and Telegram then refuse a second answer, naming the chat one.
     with pytest.raises(ConflictError, match="already answered via chat: b"):
         store.answer(conn, e["id"], "a", via="telegram")
+
+
+def test_a_script_ask_is_answerable_and_never_dispatched(conn, monkeypatch):
+    """No session: nothing to wake, so no reachability gate; the script reads the answer itself."""
+    from agent_inbox import dispatch
+    req = validate_request({"title": "Ship it?", "control": CHOICE}, "ask")
+    e = store.create_entry(conn, "ask", req, script="autopilot")
+    assert e["state"] == "open" and e["asker"]["session_id"] is None
+
+    def no_lookup(entry):
+        raise AssertionError("a script ask must not look up reachability")
+
+    monkeypatch.setattr("agent_inbox.reach.for_entry", no_lookup)
+    store.answer(conn, e["id"], "a", via="telegram")
+    assert dispatch.dispatch_entry(conn, e["id"]) is None
+    got = store.get_entry(conn, e["id"])
+    assert got["state"] == "answered" and got["answer"]["value"] == "a"
+
+
+def test_an_ask_needs_a_session_or_a_script(conn):
+    req = validate_request({"title": "Q", "control": CHOICE}, "ask")
+    with pytest.raises(ValidationError, match="--script"):
+        store.create_entry(conn, "ask", req, engine="claude")

@@ -155,3 +155,10 @@ def test_the_link_falls_back_to_localhost_without_tailscale(monkeypatch):
 
     monkeypatch.setattr(links.subprocess, "run", no_tailscale)
     assert links.entry_url("ib-abcd") == "http://127.0.0.1:8797/e/ib-abcd"
+
+
+def test_ask_with_a_script_needs_no_session(inbox_db, monkeypatch, capsys):
+    stdin(monkeypatch, {"title": "t", "control": CHOICE})
+    assert main(["ask", "--script", "autopilot"]) == EXIT_OK
+    eid = out(capsys)["entry"]
+    assert main(["get", eid]) == EXIT_OK and out(capsys)["asker"]["script"] == "autopilot"

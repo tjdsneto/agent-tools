@@ -109,8 +109,9 @@ def create_entry(
 ) -> dict:
     """Insert a validated request (see validate.validate_request) and return the full entry."""
     if kind == "ask":
-        if not engine or not session_id:
-            raise ValidationError("ask needs --engine and --session-id")
+        # A script asker has no session: it is never woken and reads its answer with `get`.
+        if not script and (not engine or not session_id):
+            raise ValidationError("ask needs --engine and --session-id, or --script for an asker that reads its own answer")
         mode, state = mode or "resume", "open"
     else:
         if not session_id and not script:
@@ -210,7 +211,7 @@ def answer(
             raise ConflictError(_closed_message(row))
         # A chat answer is recorded by the asker itself: it is running and already
         # has the answer, so there is no reachability to check and nothing to deliver.
-        if via != "chat":
+        if via != "chat" and row["session_id"]:
             from agent_inbox.reach import for_entry
             asker = {k: row[k] for k in ("engine", "model", "session_id", "cwd", "project", "script")}
             reach = for_entry({"asker": asker, "delivery": row.get("delivery") or {}})
