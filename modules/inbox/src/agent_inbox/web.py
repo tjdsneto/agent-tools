@@ -165,6 +165,7 @@ fieldset:disabled .opt, fieldset:disabled legend {{ color: var(--mute); cursor: 
 .answered b {{ display: block; font-size: 17px; }}
 .answered p {{ margin: 6px 0 0; color: var(--grey-i); font-size: 15px; }}
 .answered .status {{ display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: 10px; }}
+.answered .status .chip {{ white-space: normal; line-height: 1.3; padding-block: 4px; }}
 .thread {{ display: flex; flex-direction: column; gap: 8px; margin: 24px 0 0; padding-top: 16px; border-top: 1px solid var(--line); }}
 .thread h2, .follow h2 {{ margin: 0 0 4px; font-size: 16px; }}
 .msg {{ max-width: 85%; padding: 8px 12px; border-radius: 16px; background: var(--surf); }}
