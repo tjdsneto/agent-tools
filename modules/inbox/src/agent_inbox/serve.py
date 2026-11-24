@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import sys
 import threading
+import time
+from typing import Callable
 
 import psycopg
 from psycopg.types.json import Jsonb
 
-from agent_inbox import db
+from agent_inbox import db, reach, store
 from agent_inbox.constants import NOTIFY_CHANNEL
 from agent_inbox.dispatch import dispatch_entry
 
@@ -25,6 +27,52 @@ def expire_due(conn: psycopg.Connection) -> int:
             (row["id"], Jsonb({"from": "open", "to": "expired"})),
         )
     return len(rows)
+
+
+REACH_EVERY = 300.0
+HELD_EVERY = 60.0
+# Last check per open question. In memory: persisting it would update the row, and every
+# update NOTIFYs the web page, which reloads and drops a half-typed comment.
+_checked: dict[str, float] = {}
+
+
+def refresh_reach(conn: psycopg.Connection, now: Callable[[], float] = time.monotonic) -> list[dict]:
+    """Recompute reachability for open questions, so the UI can show it before an answer
+    and a held session that gets its tokens back is noticed. Each check shells out to
+    the registry (and for Claude to claude-budget), so it runs on a slow cadence and
+    writes only when the status changes. Returns the questions that stopped being held."""
+    global _checked
+    rows = conn.execute(
+        """
+        SELECT id, priority, delivery FROM entries
+        WHERE kind = 'ask' AND state = 'open' AND session_id IS NOT NULL
+        ORDER BY created_at
+        """
+    ).fetchall()
+    _checked = {row["id"]: _checked[row["id"]] for row in rows if row["id"] in _checked}
+    freed = []
+    for row in rows:
+        delivery = row["delivery"] or {}
+        before = delivery.get("reachability")
+        every = HELD_EVERY if before == "held" else REACH_EVERY
+        last = _checked.get(row["id"])
+        if last is not None and now() - last < every:
+            continue
+        _checked[row["id"]] = now()
+        try:
+            found = reach.for_entry(store.get_entry(conn, row["id"]))
+        except Exception as exc:
+            print(f"reach {row['id']} failed: {exc!r}", file=sys.stderr)
+            continue
+        if (found.status, found.reachable_at) == (before, delivery.get("reachable_at")):
+            continue
+        conn.execute(
+            "UPDATE entries SET delivery = delivery || %s WHERE id = %s",
+            (Jsonb({"reachability": found.status, "reachable_at": found.reachable_at}), row["id"]),
+        )
+        if before == "held" and found.status in ("live", "resumable"):
+            freed.append(row)
+    return freed
 
 
 def sweep(conn: psycopg.Connection) -> None:
@@ -58,9 +106,11 @@ def sweep(conn: psycopg.Connection) -> None:
         if before == "held" and after in ("live", "resumable"):
             freed.append(row["id"])
             freed_urgent = freed_urgent or row["priority"] == "urgent"
+    for row in refresh_reach(conn):
+        freed.append(row["id"])
+        freed_urgent = freed_urgent or row["priority"] == "urgent"
     from agent_inbox.notify import push_answerable, push_pending
-    if freed:
-        push_answerable(conn, freed, "urgent" if freed_urgent else "normal")
+    push_answerable(conn, freed, "urgent" if freed_urgent else "normal")
     push_pending(conn)
     purge_html(conn)
 

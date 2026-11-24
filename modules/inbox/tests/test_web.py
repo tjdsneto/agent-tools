@@ -158,3 +158,24 @@ def test_entry_page_fits_a_phone_and_puts_the_comment_before_submit(conn, http):
     assert "pre { white-space: pre-wrap; }" in body
     assert body.index('name="comment"') < body.index('type="submit">answer')
     assert 'value="a" checked' in body and "the safe one" in body
+
+
+def test_a_held_question_shows_when_and_cannot_be_answered(conn, http):
+    e = store.create_entry(conn, "ask", validate_request({"title": "Q", "control": CHOICE}, "ask"), engine="claude", session_id="s-1")
+    conn.execute(
+        """UPDATE entries SET delivery = delivery || '{"reachability": "held", "reachable_at": "2026-11-24T02:10:00"}' WHERE id = %s""",
+        (e["id"],),
+    )
+    _, body = _get(http, f"/e/{e['id']}")
+    assert "🟡 held, answerable at ~02:10" in body
+    assert "<fieldset disabled>" in body
+    _, feed = _get(http, "/")
+    assert "🟡 held, answerable at ~02:10" in feed
+
+
+def test_a_resumable_question_can_be_answered(conn, http):
+    e = store.create_entry(conn, "ask", validate_request({"title": "Q", "control": CHOICE}, "ask"), engine="claude", session_id="s-1")
+    conn.execute("""UPDATE entries SET delivery = delivery || '{"reachability": "resumable"}' WHERE id = %s""", (e["id"],))
+    _, body = _get(http, f"/e/{e['id']}")
+    assert "🔵 resumable" in body
+    assert "<fieldset>" in body

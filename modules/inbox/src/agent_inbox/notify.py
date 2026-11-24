@@ -179,16 +179,34 @@ def push_pending(conn, *, now: datetime | None = None, ui: str | None = None) ->
     push_new(conn, asks + posts, now=when, ui=origin)
 
 
-def push_answerable(conn, ids: list[str], priority: str) -> None:
+def push_answerable(conn, ids: list[str], priority: str, *, now: datetime | None = None) -> None:
+    """One batched push for questions whose session can hear an answer again.
+
+    A normal batch in quiet hours is kept in ops and sent with the first sweep after.
+    """
+    pending = _ops_get(conn, "answerable") or {}
+    ids = sorted(set(pending.get("ids") or []) | set(ids))
     if not ids:
         return
-    target = _target()
-    text = f"{len(ids)} entries are answerable again\n" + "\n".join(ids)
-    if not target:
-        _warn_unset()
+    urgent = priority == "urgent" or bool(pending.get("urgent"))
+    if not urgent and quiet(now or datetime.now(LOCAL)):
+        _ops_put(conn, "answerable", {"ids": ids, "urgent": False})
         return
-    _send(target, text)
-    if priority == "urgent":
+    _ops_put(conn, "answerable", {"ids": [], "urgent": False})
+    rows = conn.execute(
+        "SELECT id, title FROM entries WHERE id = ANY(%s) AND state = 'open' ORDER BY created_at",
+        (ids,),
+    ).fetchall()
+    if not rows:
+        return
+    noun = "question is" if len(rows) == 1 else "questions are"
+    text = f"{len(rows)} {noun} answerable again\n" + "\n".join(f"• {row['title']} ({row['id']})" for row in rows)
+    target = _target()
+    if target:
+        _send(target, text)
+    else:
+        _warn_unset()
+    if urgent:
         notify_mac("answerable again", text)
         say(text)
 

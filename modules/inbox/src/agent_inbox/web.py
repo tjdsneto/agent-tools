@@ -32,6 +32,7 @@ a {{ display: inline-block; }}
 pre {{ white-space: pre-wrap; }}
 form label {{ display: block; padding: 6px 0; }}
 form input[name="comment"], form input[name="text"] {{ display: block; width: 100%; margin: 6px 0; }}
+fieldset {{ border: 0; padding: 0; margin: 0; min-width: 0; }}
 iframe {{ width: 100%; min-height: 240px; border: 1px solid #ccc; box-sizing: border-box; }}
 </style>
 </head>
@@ -129,16 +130,21 @@ def load_feed(conn, qs: dict) -> list[dict]:
     return opened + unread + rest
 
 
+REACH_MARK = {"live": "🟢", "resumable": "🔵", "held": "🟡", "unreachable": "🔴"}
+CLOSED_REACH = ("held", "unreachable")
+
+
 def _reach(delivery: dict) -> str:
     word = delivery.get("reachability")
     if not word:
         return ""
+    mark = REACH_MARK.get(word, "")
     when = delivery.get("reachable_at")
     if word == "held" and when:
         raw = str(when)
         clock = raw.split("T", 1)[1][:5] if "T" in raw else raw
-        return f"{word} answerable at ~{clock}"
-    return str(word)
+        return f"{mark} {word}, answerable at ~{clock}"
+    return f"{mark} {word}".strip()
 
 
 def _card(row: dict) -> str:
@@ -241,10 +247,16 @@ def _entry_page(entry: dict, error: str | None = None, frame_origin: str | None 
         kind = "follow-up" if event.get("type") == "followup" else "reply"
         parts.append(f"<p>{kind}: {_esc(event.get('text') or '')}</p>")
     if entry["kind"] == "ask" and entry["state"] == "open":
+        delivery = entry.get("delivery") or {}
+        if delivery.get("reachability"):
+            parts.append(f"<p>session: {_esc(_reach(delivery))}</p>")
+        # The store refuses these answers anyway; the fieldset says so before a submit.
+        closed = " disabled" if delivery.get("reachability") in CLOSED_REACH else ""
         parts.append(
-            f'<form method="post" action="/e/{eid}/answer">{_control_fields(entry.get("control") or {})}'
+            f'<form method="post" action="/e/{eid}/answer"><fieldset{closed}>'
+            f'{_control_fields(entry.get("control") or {})}'
             '<input name="comment" placeholder="comment (a reason is required to revise)">'
-            f'{_control_buttons(entry.get("control") or {})}</form>'
+            f'{_control_buttons(entry.get("control") or {})}</fieldset></form>'
         )
     if (entry.get("asker") or {}).get("session_id"):
         parts.append(
