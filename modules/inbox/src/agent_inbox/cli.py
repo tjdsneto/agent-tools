@@ -19,6 +19,7 @@ from agent_inbox.constants import (
     WAIT_TIMEOUT_SEC,
 )
 from agent_inbox.errors import InboxError, ValidationError
+from agent_inbox.links import entry_url
 from agent_inbox.validate import validate_request
 
 WAIT_EXIT = {"answer": EXIT_OK, "followup": EXIT_OK, "timeout": EXIT_TIMEOUT}
@@ -154,12 +155,15 @@ def _dispatch(args: argparse.Namespace) -> tuple[Any, int]:
         if cmd == "ask":
             req = validate_request(_read_request(args), "ask")
             entry = store.create_entry(conn, "ask", req, mode="wait" if args.wait else "resume", **_asker(args))
+            url = entry_url(entry["id"])
             if not args.wait:
-                return {"entry": entry["id"], "state": entry["state"]}, EXIT_OK
+                return {"entry": entry["id"], "state": entry["state"], "url": url}, EXIT_OK
+            # The answer is the only stdout in wait mode; the link goes to stderr now.
+            print(json.dumps({"entry": entry["id"], "url": url}), file=sys.stderr, flush=True)
         elif cmd == "post":
             req = validate_request(_read_request(args), "post")
             entry = store.create_entry(conn, "post", req, script=args.script, **_asker(args))
-            return {"entry": entry["id"], "state": entry["state"]}, EXIT_OK
+            return {"entry": entry["id"], "state": entry["state"], "url": entry_url(entry["id"])}, EXIT_OK
         elif cmd == "get":
             return store.get_entry(conn, args.id), EXIT_OK
         elif cmd == "list":

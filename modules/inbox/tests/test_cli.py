@@ -132,3 +132,26 @@ def test_wait_timeout_exit_code(inbox_db, monkeypatch, capsys):
     eid = out(capsys)["entry"]
     assert main(["wait", eid, "--timeout", "1"]) == EXIT_TIMEOUT
     assert out(capsys)["event"] == "timeout"
+
+
+def test_ask_and_post_print_the_entry_link(inbox_db, monkeypatch, capsys):
+    monkeypatch.setenv("INBOX_UI_ORIGIN", "https://inbox.example:8444/")
+    stdin(monkeypatch, {"title": "t", "control": CHOICE})
+    assert main(["ask", "--engine", "claude", "--session-id", "s-1"]) == EXIT_OK
+    asked = out(capsys)
+    assert asked["url"] == f"https://inbox.example:8444/e/{asked['entry']}"
+    stdin(monkeypatch, {"title": "report"})
+    assert main(["post", "--script", "nightly"]) == EXIT_OK
+    posted = out(capsys)
+    assert posted["url"] == f"https://inbox.example:8444/e/{posted['entry']}"
+
+
+def test_the_link_falls_back_to_localhost_without_tailscale(monkeypatch):
+    from agent_inbox import links
+    monkeypatch.delenv("INBOX_UI_ORIGIN", raising=False)
+
+    def no_tailscale(*args, **kwargs):
+        raise OSError("no tailscale")
+
+    monkeypatch.setattr(links.subprocess, "run", no_tailscale)
+    assert links.entry_url("ib-abcd") == "http://127.0.0.1:8797/e/ib-abcd"
