@@ -24,7 +24,6 @@ The inbox is a standalone, persistent place where any agent can ask Tiago anythi
 
 - Extending `agt say`. It is the agent's voice and stays separate.
 - Slack.
-- Telegram buttons in v1 (see Parked).
 - Multi-field forms. One question per entry.
 - Number, date, or file-upload controls.
 - Inferring the asking session from process or working directory.
@@ -88,12 +87,12 @@ Info entries cover anything an agent or script wants Tiago to see without a ques
 
 One control per question, plus an optional comment box on every question.
 
-| Type | Value returned | Telegram (v1) |
+| Type | Value returned | Telegram |
 |---|---|---|
-| `choice` | one option id (2–6 options) | numbered list, reply with the number |
+| `choice` | one option id (2–6 options) | one button per option (⭐ marks the recommended one) |
 | `multi` | list of option ids | numbered list, reply with numbers |
 | `text` | string (`short` or `long`) | reply with the text |
-| `approve` | `approve`, or `revise` plus a required reason | reply "approve" or "revise: …" |
+| `approve` | `approve`, or `revise` plus a required reason | an Approve button; reply "revise: …" |
 
 Each option has `id`, `label`, optional `description`, and may be marked `recommended` or `default`.
 
@@ -185,6 +184,7 @@ Quiet hours are 22:00–08:00: only `urgent` gets through. Any agent may set `ur
 ## Hermes and Telegram
 
 - The notifier pushes the card with `hermes send`: the title, priority, project, numbered options, and a link to the entry in the UI.
+- Choice and approve cards go out instead through `hermes inbox-card`, from the `inbox-buttons` Hermes plugin (`modules/inbox/hermes-plugin/`), one message per question with inline buttons. The plugin sends with the gateway's own bot token, so the inbox never holds it. A tap with callback data `ib:<id>:<value>` runs `agt inbox answer … --via telegram` without a model call, after the plugin checks the sender against the gateway's allowlist. The store's answer rules still apply: a refused tap shows the reason, and a held question keeps its buttons. When the plugin send fails, the card falls back to `hermes send` with a numbered list.
 - Tiago replies in the Hermes chat ("1", "approve ib-7k3q", "? why not C"). A Hermes `inbox` skill turns the reply into `agt inbox answer … --via telegram` or `agt inbox followup … --via telegram`.
 - When an entry is answered on another surface, Telegram gets a short note: "ib-7k3q answered via web: b".
 - Hermes runs on this laptop and calls the CLI directly, with no network auth.
@@ -232,7 +232,6 @@ Exit codes and JSON output follow the conventions of `agt registry` and `agt say
 
 ## Parked
 
-- Telegram buttons instead of numbered replies. A code read on 2026-11-23 found this is feasible without a model call. Gateway hooks cannot do it, but a Hermes plugin can: `ctx.register_telegram_handler` hands the plugin the gateway's own bot app, and a `CallbackQueryHandler` on an `ib:` prefix runs `agt inbox answer`. The keyboard itself is sent with Telegram's `sendMessage` and `reply_markup`, because `hermes send` has no buttons. The plugin must check the sender's id itself, and callback data is capped at 64 bytes. Nothing has been prototyped yet.
 - Moving the store and UI to an always-on host.
 
 ## Defaults this design locks

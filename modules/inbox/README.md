@@ -73,6 +73,8 @@ Open questions show 🟢 live, 🔵 resumable, 🟡 held (with the reset time wh
 
 Pushes go through `hermes send` to Hermes's home Telegram channel (`telegram`). Set `AGENT_INBOX_TELEGRAM_TO` to another Hermes target, or to an empty string to turn pushes off.
 
+Choice and approve cards carry tap-to-answer buttons through the `inbox-buttons` Hermes plugin in `hermes-plugin/`. `./install.sh` links it into `~/.hermes/plugins`; turn it on once with `hermes plugins enable inbox-buttons`. Without it, cards fall back to numbered text replies.
+
 ## Tests
 
     cd modules/inbox && .venv/bin/python -m pytest -q
