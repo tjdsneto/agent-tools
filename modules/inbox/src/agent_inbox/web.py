@@ -3,9 +3,11 @@ from __future__ import annotations
 import html
 import os
 import re
+from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, urlparse
+from zoneinfo import ZoneInfo
 
 from markdown_it import MarkdownIt
 from psycopg.types.json import Jsonb
@@ -19,37 +21,178 @@ HIDDEN_STATES = {"archived", "withdrawn", "superseded"}
 FRAME_ORIGIN = f"http://127.0.0.1:{FRAME_PORT}"
 
 _HEAD = """<!doctype html>
-<html>
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
 <title>{title}</title>
 <style>
-body {{ font-family: system-ui, sans-serif; margin: 16px; background: #fff; color: #1a1a1a; overflow-wrap: anywhere; }}
-a {{ color: #0645ad; }}
-article {{ padding: 12px; border: 1px solid #ccc; margin-bottom: 12px; }}
-a, button, input, select, textarea {{ min-height: 44px; box-sizing: border-box; max-width: 100%; }}
-a {{ display: inline-block; }}
-pre {{ white-space: pre-wrap; }}
-.md a {{ display: inline; min-height: 0; }}
+:root {{
+  --bg: #ffffff; --ink: #111827; --mute: #6b7280; --surf: #f3f4f6; --line: #e5e7eb; --field: #d1d5db;
+  --accent: #2563eb; --accent-press: #1d4ed8; --link: #2563eb;
+  --blue-t: #dbeafe; --blue-i: #1d4ed8; --green-t: #dcfce7; --green-i: #166534; --green-d: #16a34a;
+  --amber-t: #fef3c7; --amber-i: #92400e; --amber-d: #d97706; --red-t: #fee2e2; --red-i: #991b1b; --red-d: #dc2626;
+  --grey-t: #f3f4f6; --grey-i: #4b5563; --me: #dbeafe; --code: #ffffff;
+}}
+@media (prefers-color-scheme: dark) {{
+  :root {{
+    --bg: #111418; --ink: #e5e7eb; --mute: #9ca3af; --surf: #1c2027; --line: #2a2f37; --field: #3d434d;
+    --link: #60a5fa;
+    --blue-t: #1e3a5f; --blue-i: #bfdbfe; --green-t: #14351f; --green-i: #86efac; --green-d: #22c55e;
+    --amber-t: #3a2a0a; --amber-i: #fcd34d; --amber-d: #f59e0b; --red-t: #3b1414; --red-i: #fca5a5; --red-d: #ef4444;
+    --grey-t: #23272e; --grey-i: #c3c8cf; --me: #1e3a5f; --code: #111418;
+  }}
+}}
+* {{ box-sizing: border-box; }}
+html {{ -webkit-text-size-adjust: 100%; scrollbar-color: var(--field) transparent; }}
+body {{ margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased; overflow-wrap: anywhere; }}
+::selection {{ background: var(--blue-t); color: var(--ink); }}
+a {{ color: var(--link); text-underline-offset: 2px; }}
+:focus-visible {{ outline: 2px solid var(--accent); outline-offset: 2px; }}
+input, textarea, select, button {{ font: inherit; color: inherit; caret-color: var(--accent); }}
+.bar {{ position: sticky; top: 0; z-index: 2; background: var(--bg); border-bottom: 1px solid var(--line); }}
+.bar-in {{ max-width: 720px; margin: 0 auto; height: 56px; display: flex; align-items: center; justify-content: space-between; padding: 0 16px; }}
+.bar h1 {{ margin: 0; font-size: 20px; line-height: 1.2; font-weight: 650; }}
+.back {{ display: inline-flex; align-items: center; gap: 4px; min-height: 44px; margin-left: -10px; padding: 0 10px;
+  border-radius: 10px; font-weight: 550; text-decoration: none; }}
+.back svg {{ width: 20px; height: 20px; }}
+.back:hover {{ background: var(--surf); }}
+.count {{ color: var(--mute); font-size: 15px; font-variant-numeric: tabular-nums; }}
+main {{ max-width: 720px; margin: 0 auto; padding: 20px 16px 48px; }}
+.notice {{ margin: 0 0 16px; padding: 12px 14px; border-radius: 12px; background: var(--blue-t); color: var(--blue-i); }}
+.notice.err {{ background: var(--red-t); color: var(--red-i); }}
+.notice.warn {{ background: var(--amber-t); color: var(--amber-i); }}
+.notice a {{ color: inherit; font-weight: 600; }}
+.chip {{ display: inline-flex; align-items: center; gap: 6px; min-height: 26px; padding: 0 10px; border-radius: 13px;
+  font-size: 13px; font-weight: 600; line-height: 1; white-space: nowrap; background: var(--grey-t); color: var(--grey-i); }}
+.chip i {{ width: 7px; height: 7px; border-radius: 50%; background: currentColor; }}
+.chip.green {{ background: var(--green-t); color: var(--green-i); }} .chip.green i {{ background: var(--green-d); }}
+.chip.blue {{ background: var(--blue-t); color: var(--blue-i); }}
+.chip.amber {{ background: var(--amber-t); color: var(--amber-i); }} .chip.amber i {{ background: var(--amber-d); }}
+.chip.red {{ background: var(--red-t); color: var(--red-i); }} .chip.red i {{ background: var(--red-d); }}
+.av {{ flex: none; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; font-size: 16px; font-weight: 650; }}
+.av.sm {{ width: 28px; height: 28px; font-size: 13px; }}
+.av0 {{ background: #fde2e1; color: #9f1c1c; }} .av1 {{ background: #feebc8; color: #8a4b08; }} .av2 {{ background: #dcfce7; color: #166534; }}
+.av3 {{ background: #dbeafe; color: #1d4ed8; }} .av4 {{ background: #e0f2fe; color: #075985; }} .av5 {{ background: #ccfbf1; color: #115e59; }}
+.av6 {{ background: #fce7f3; color: #9d174d; }}
+.id {{ font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; }}
+.tabs {{ display: flex; gap: 8px; overflow-x: auto; margin: 0 -16px 12px; padding: 0 16px; scrollbar-width: none; }}
+.tabs a {{ flex: none; display: inline-flex; align-items: center; min-height: 36px; padding: 0 14px; border-radius: 18px;
+  background: var(--surf); color: var(--ink); font-size: 15px; font-weight: 550; text-decoration: none; }}
+.tabs a:hover {{ background: var(--line); }}
+.tabs a[aria-current="page"] {{ background: var(--accent); color: #fff; }}
+.tabs a {{ position: relative; }}
+.tabs a::after {{ content: ""; position: absolute; inset: -4px 0; }}
+.filters {{ display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 8px; }}
+select {{ min-height: 44px; padding: 0 12px; border: 1px solid var(--field); border-radius: 10px; background: var(--bg); }}
+.btn {{ display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 0 16px; border-radius: 10px;
+  border: 1px solid var(--field); background: var(--bg); font-weight: 600; cursor: pointer; text-decoration: none; }}
+.btn:hover {{ background: var(--surf); }}
+.btn:active {{ transform: translateY(1px); }}
+.btn.primary {{ width: 100%; min-height: 50px; border: 0; background: var(--accent); color: #fff; }}
+.btn.primary:hover {{ background: var(--accent-press); }}
+.btn.danger {{ color: var(--red-i); }}
+.btn:disabled, fieldset:disabled .btn {{ opacity: .45; cursor: not-allowed; transform: none; }}
+.list {{ list-style: none; margin: 0 -16px; padding: 0; }}
+.item {{ display: flex; align-items: center; border-bottom: 1px solid var(--line); }}
+.pick {{ flex: none; display: grid; place-items: center; width: 44px; min-height: 72px; padding-left: 8px; cursor: pointer; }}
+.pick input {{ width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }}
+.row {{ flex: 1; min-width: 0; display: grid; grid-template-columns: 40px minmax(0, 1fr) auto; grid-template-areas: "av title time" "av meta meta" "av chips chips";
+  column-gap: 12px; row-gap: 2px; align-items: center; min-height: 72px; padding: 12px 16px 12px 4px; color: inherit; text-decoration: none; }}
+.row:hover {{ background: var(--surf); }}
+.row .av {{ grid-area: av; align-self: center; }}
+.row b {{ grid-area: title; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
+.row.unread b::before {{ content: ""; display: inline-block; width: 8px; height: 8px; margin: 0 8px 2px 0; border-radius: 50%; background: var(--accent); }}
+.row small {{ grid-area: meta; color: var(--mute); font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
+.row time {{ grid-area: time; justify-self: end; color: var(--mute); font-size: 13px; font-variant-numeric: tabular-nums; }}
+.row .chips {{ grid-area: chips; display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }}
+.empty {{ padding: 48px 0; text-align: center; color: var(--mute); }}
+.empty b {{ display: block; color: var(--ink); font-size: 17px; margin-bottom: 4px; }}
+.actions {{ position: sticky; bottom: 0; display: flex; gap: 8px; margin: 0 -16px; padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+  background: var(--bg); border-top: 1px solid var(--line); }}
+.actions .btn {{ flex: 1; }}
+.title {{ margin: 0 0 12px; font-size: 22px; line-height: 1.3; font-weight: 650; letter-spacing: -0.01em; text-wrap: balance; }}
+.meta {{ display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; margin: 0 0 8px; color: var(--mute); font-size: 15px; }}
+.meta.sub {{ margin-bottom: 16px; }}
+.sum {{ margin: 0 0 20px; padding: 14px 16px; border-radius: 12px; background: var(--surf); }}
+.sum > :first-child {{ margin-top: 0; }} .sum > :last-child {{ margin-bottom: 0; }}
+.md {{ max-width: 68ch; }}
+.md code {{ font: 14px ui-monospace, SFMono-Regular, Menlo, monospace; padding: 1px 5px; border-radius: 4px; background: var(--code); }}
+.md pre {{ white-space: pre-wrap; padding: 12px; border-radius: 10px; background: var(--surf); }}
+.md pre code {{ padding: 0; background: none; }}
 .md table {{ border-collapse: collapse; display: block; overflow-x: auto; }}
-.md th, .md td {{ border: 1px solid #ccc; padding: 4px 8px; }}
-form label {{ display: block; padding: 6px 0; }}
-form input[name="comment"], form input[name="text"] {{ display: block; width: 100%; margin: 6px 0; }}
-fieldset {{ border: 0; padding: 0; margin: 0; min-width: 0; }}
-iframe {{ width: 100%; min-height: 240px; border: 1px solid #ccc; box-sizing: border-box; }}
+.md th, .md td {{ border: 1px solid var(--line); padding: 6px 10px; text-align: left; }}
+.detail {{ margin: 0 0 20px; }}
+.frame {{ margin: 0 0 20px; }}
+.frame iframe {{ display: block; width: 100%; min-height: 280px; border: 1px solid var(--line); border-radius: 12px; background: #fff; }}
+.frame p {{ margin: 6px 0 0; color: var(--mute); font-size: 14px; }}
+.source {{ margin: 0 0 20px; }}
+fieldset {{ border: 0; margin: 0; padding: 0; min-width: 0; }}
+legend {{ padding: 0; margin: 0 0 4px; font-weight: 600; }}
+.opt {{ display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 8px 0; border-bottom: 1px solid var(--line); cursor: pointer; }}
+.opt:last-of-type {{ border-bottom: 0; }}
+.opt input {{ flex: none; width: 20px; height: 20px; margin: 0; accent-color: var(--accent); }}
+.opt span {{ flex: 1; }}
+.opt small {{ display: block; color: var(--mute); font-size: 14px; }}
+.opt em {{ flex: none; font-style: normal; font-size: 14px; font-weight: 600; color: var(--blue-i); }}
+.field {{ display: block; width: 100%; min-height: 48px; margin: 8px 0 12px; padding: 12px 14px; border: 1px solid var(--field);
+  border-radius: 10px; background: var(--bg); line-height: 1.4; }}
+textarea.field {{ min-height: 112px; resize: vertical; }}
+.field::placeholder {{ color: var(--mute); opacity: 1; }}
+.field:focus {{ outline: 2px solid var(--accent); outline-offset: -1px; border-color: var(--accent); }}
+.pair {{ display: flex; gap: 8px; }} .pair .btn {{ flex: 1; min-height: 50px; }}
+.answered {{ margin: 0 0 20px; padding: 14px 16px; border-radius: 12px; background: var(--surf); }}
+.answered b {{ display: block; font-size: 17px; }}
+.answered p {{ margin: 6px 0 0; color: var(--mute); font-size: 15px; }}
+.thread {{ display: flex; flex-direction: column; gap: 8px; margin: 24px 0 0; padding-top: 16px; border-top: 1px solid var(--line); }}
+.thread h2, .follow h2 {{ margin: 0 0 4px; font-size: 16px; }}
+.msg {{ max-width: 85%; padding: 8px 12px; border-radius: 16px; background: var(--surf); }}
+.msg.me {{ align-self: flex-end; background: var(--me); border-bottom-right-radius: 4px; }}
+.msg.agent {{ align-self: flex-start; border-bottom-left-radius: 4px; }}
+.msg time {{ display: block; margin-top: 2px; color: var(--mute); font-size: 12px; text-align: right; font-variant-numeric: tabular-nums; }}
+.msg.me time {{ color: var(--blue-i); }}
+.follow {{ margin: 24px 0 0; padding-top: 16px; border-top: 1px solid var(--line); }}
+.follow .pair {{ align-items: flex-start; }}
+.follow .field {{ margin: 0; flex: 1; min-height: 48px; }}
+.follow .btn {{ flex: none; min-height: 48px; }}
+#stale {{ position: fixed; left: 50%; bottom: 20px; z-index: 3; transform: translateX(-50%); margin: 0; padding: 10px 16px;
+  border-radius: 20px; background: var(--ink); color: var(--bg); box-shadow: 0 4px 16px rgba(0,0,0,.18); white-space: nowrap; }}
+#stale a {{ color: inherit; font-weight: 650; }}
+@media (min-width: 760px) {{
+  .row {{ grid-template-areas: "av title time" "av meta chips"; }}
+  .row .chips {{ justify-content: flex-end; margin-top: 0; }}
+  .list {{ margin: 0; border-top: 1px solid var(--line); }}
+  .actions {{ margin: 0; }}
+  .title {{ font-size: 26px; }}
+}}
+@media (prefers-reduced-motion: reduce) {{ .btn:active {{ transform: none; }} }}
 </style>
 </head>
 <body>
 """
 
-_SCRIPT = """<script>
+# A reload on every store change used to wipe a half-typed answer. Once the
+# visitor has touched a field the page offers the reload instead of forcing it.
+_SCRIPT = """<p id="stale" role="status" hidden>This page changed. <a href="">Reload</a></p>
+<script>
 const es = new EventSource("/events");
-let open = false;
-es.onmessage = () => { if (open) location.reload(); open = true; };
+let open = false, dirty = false;
+document.addEventListener("input", () => { dirty = true; });
+es.onmessage = () => {
+  if (!open) { open = true; return; }
+  if (dirty) { document.getElementById("stale").hidden = false; return; }
+  location.reload();
+};
 </script>
 </body></html>
 """
+
+_BACK = (
+    '<a class="back" href="/"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" '
+    'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.5 4.5 7 10l5.5 5.5"/></svg>Inbox</a>'
+)
 
 
 def _esc(value: object) -> str:
@@ -144,70 +287,170 @@ def load_feed(conn, qs: dict) -> list[dict]:
     return opened + unread + rest
 
 
-REACH_MARK = {"live": "🟢", "resumable": "🔵", "held": "🟡", "unreachable": "🔴"}
+LOCAL = ZoneInfo("America/Sao_Paulo")
 CLOSED_REACH = ("held", "unreachable")
+REACH_CHIP = {"live": ("Live", "green"), "resumable": ("Resumable", "blue"), "held": ("Held", "amber"), "unreachable": ("Unreachable", "red")}
+STATE_CHIP = {
+    "answered": ("Answered", "blue"), "delivered": ("Delivered", "green"), "undelivered": ("Not delivered", "red"),
+    "expired": ("Expired", "grey"), "withdrawn": ("Withdrawn", "grey"), "superseded": ("Superseded", "grey"),
+    "unread": ("Unread", "blue"), "read": ("Read", "grey"), "archived": ("Archived", "grey"),
+}
+
+
+def _local(value) -> datetime | None:
+    if not value:
+        return None
+    try:
+        when = value if isinstance(value, datetime) else datetime.fromisoformat(str(value))
+    except ValueError:
+        return None
+    return when.astimezone(LOCAL) if when.tzinfo else when
+
+
+def _clock(value) -> str:
+    """09:38 today, "Nov 23" before today."""
+    when = _local(value)
+    if when is None:
+        return ""
+    if when.date() == datetime.now(LOCAL).date():
+        return when.strftime("%H:%M")
+    return f"{when.strftime('%b')} {when.day}"
+
+
+def _ago(value) -> str:
+    when = _local(value)
+    if when is None:
+        return ""
+    minutes = int((datetime.now(LOCAL) - when).total_seconds() // 60)
+    if minutes < 1:
+        return "just now"
+    if minutes < 60:
+        return f"{minutes} min ago"
+    if minutes < 60 * 24:
+        return f"{minutes // 60} h ago"
+    return f"{minutes // (60 * 24)} d ago"
 
 
 def _reach(delivery: dict) -> str:
     word = delivery.get("reachability")
     if not word:
         return ""
-    mark = REACH_MARK.get(word, "")
+    label = REACH_CHIP.get(word, (word.capitalize(), ""))[0]
     when = delivery.get("reachable_at")
     if word == "held" and when:
         raw = str(when)
         clock = raw.split("T", 1)[1][:5] if "T" in raw else raw
-        return f"{mark} {word}, answerable at ~{clock}"
-    return f"{mark} {word}".strip()
+        return f"{label}, answerable at ~{clock}"
+    return label
+
+
+def _chip(row: dict) -> str:
+    state = row["state"]
+    delivery = row.get("delivery") or {}
+    if row["kind"] == "ask" and state == "open":
+        word = delivery.get("reachability")
+        label, tone = (_reach(delivery), REACH_CHIP[word][1]) if word in REACH_CHIP else ("Needs answer", "blue")
+    else:
+        label, tone = STATE_CHIP.get(state, (state.capitalize(), "grey"))
+    dot = "<i></i>" if tone in ("green", "amber", "red") else ""
+    return f'<span class="chip {tone}">{dot}{_esc(label)}</span>'
+
+
+def _urgent(row: dict) -> str:
+    return '<span class="chip red">Urgent</span>' if row.get("priority") == "urgent" else ""
+
+
+def _who(row: dict) -> str:
+    asker = row.get("asker") or {}
+    project = asker.get("project")
+    return Path(project).name if project else (asker.get("script") or "")
+
+
+def _avatar(row: dict, small: bool = False) -> str:
+    name = _who(row) or (row.get("asker") or {}).get("engine") or "?"
+    tone = sum(name.encode()) % 7
+    size = " sm" if small else ""
+    return f'<span class="av av{tone}{size}" aria-hidden="true">{_esc(name[:1].upper())}</span>'
+
+
+def _bar(left: str, count: int | None) -> str:
+    right = f'<span class="count">{count} waiting</span>' if count else ""
+    return f'<header class="bar"><div class="bar-in">{left}{right}</div></header>'
 
 
 def _card(row: dict) -> str:
-    project = (row.get("asker") or {}).get("project")
-    base = Path(project).name if project else ""
-    bits = [row["id"], row["title"], row["priority"], base, row["state"], _reach(row.get("delivery") or {})]
-    label = " · ".join(_esc(bit) for bit in bits if bit)
+    engine = (row.get("asker") or {}).get("engine") or ""
+    meta = " · ".join(_esc(bit) for bit in (_who(row), engine) if bit)
+    unread = " unread" if row["kind"] == "post" and row["state"] == "unread" else ""
     return (
-        "<article>"
-        f'<input type="checkbox" name="id" value="{_esc(row["id"])}">'
-        f' <a href="/e/{_esc(row["id"])}">{label}</a>'
-        "</article>"
+        '<li class="item">'
+        f'<label class="pick"><input type="checkbox" name="id" value="{_esc(row["id"])}" aria-label="Select {_esc(row["id"])}"></label>'
+        f'<a class="row{unread}" href="/e/{_esc(row["id"])}">{_avatar(row)}<b>{_esc(row["title"])}</b>'
+        f'<time>{_esc(_clock(row.get("created_at")))}</time>'
+        f'<small>{meta} · <span class="id">{_esc(row["id"])}</span></small>'
+        f'<span class="chips">{_urgent(row)}{_chip(row)}</span></a>'
+        "</li>"
     )
+
+
+TABS = (("All", "/", {}), ("Needs answer", "/?kind=ask&state=open", {"kind": "ask", "state": "open"}),
+        ("Info", "/?kind=post", {"kind": "post"}), ("History", "/?history=1", {"history": "1"}))
 
 
 def _nav(qs: dict) -> str:
     project = _query_value(qs, "project")
     hidden = f'<input type="hidden" name="project" value="{_esc(project)}">' if project else ""
-    engines = "".join(f'<option value="{name}">{name}</option>' for name in ("claude", "codex", "cursor"))
-    states = "".join(f'<option value="{name}">{name}</option>' for name in ("open", "unread", "answered", "delivered", "undelivered", "expired", "read"))
+    current = {key: _query_value(qs, key) for key in ("kind", "state", "history") if _query_value(qs, key)}
+    mark = ' aria-current="page"'
+    tabs = "".join(
+        f'<a href="{href}"{mark if want == current else ""}>{label}</a>' for label, href, want in TABS
+    )
+
+    def options(label: str, key: str, names: tuple[str, ...]) -> str:
+        chosen = _query_value(qs, key)
+        opts = "".join(
+            f'<option value="{name}"{" selected" if name == chosen else ""}>{name}</option>' for name in names
+        )
+        return f'<select name="{key}" aria-label="{label}"><option value="">Any {label.lower()}</option>{opts}</select>'
+
     return (
-        "<nav>"
-        '<a href="/">all</a> '
-        '<a href="/?kind=ask&state=open">needs answer</a> '
-        '<a href="/?kind=post">info</a> '
-        '<a href="/?history=1">history</a>'
-        "</nav>"
-        '<form method="get" action="/">'
+        f'<nav class="tabs" aria-label="Views">{tabs}</nav>'
+        '<form class="filters" method="get" action="/">'
         + hidden
-        + f'<select name="engine"><option value="">engine</option>{engines}</select>'
-        + f'<select name="state"><option value="">state</option>{states}</select>'
-        + '<button type="submit">filter</button></form>'
+        + options("Engine", "engine", ("claude", "codex", "cursor"))
+        + options("State", "state", ("open", "unread", "answered", "delivered", "undelivered", "expired", "read"))
+        + '<button class="btn" type="submit">Filter</button></form>'
     )
 
 
-def _feed_page(rows: list[dict], qs: dict, error: str | None = None, banner: str = "") -> str:
-    err = f"<p>{_esc(error)}</p>" if error else ""
-    line = f"<p>{_esc(banner)}</p>" if banner else ""
-    cards = "".join(_card(row) for row in rows)
+def _waiting(rows: list[dict]) -> int:
+    return sum(1 for row in rows if row["kind"] == "ask" and row["state"] == "open")
+
+
+def _feed_page(rows: list[dict], qs: dict, error: str | None = None, banner: str = "", waiting: int | None = None) -> str:
+    err = f'<p class="notice err" role="alert">{_esc(error)}</p>' if error else ""
+    line = f'<p class="notice warn">{_esc(banner)}</p>' if banner else ""
+    if rows:
+        body = (
+            '<form method="post" action="/batch"><ul class="list">'
+            + "".join(_card(row) for row in rows)
+            + '</ul><div class="actions">'
+            '<button class="btn danger" type="submit" name="action" value="withdraw">Withdraw</button>'
+            '<button class="btn" type="submit" name="action" value="dismiss">Dismiss</button>'
+            "</div></form>"
+        )
+    else:
+        body = '<p class="empty"><b>Nothing here</b>Agents\' questions and reports land here as they arrive.</p>'
+    count = _waiting(rows) if waiting is None else waiting
     return (
-        _HEAD.format(title="feed")
+        _HEAD.format(title="Inbox")
+        + _bar("<h1>Inbox</h1>", count)
+        + "<main>"
         + _nav(qs)
         + line
         + err
-        + '<form method="post" action="/batch">'
-        + cards
-        + '<button type="submit" name="action" value="withdraw">withdraw</button>'
-        + '<button type="submit" name="action" value="dismiss">dismiss</button>'
-        + "</form>"
+        + body
+        + "</main>"
         + _SCRIPT
     )
 
@@ -218,67 +461,137 @@ def _control_fields(control: dict) -> str:
         kind = "radio" if ctype == "choice" else "checkbox"
         fields = []
         for opt in control.get("options") or []:
-            rec = " (recommended)" if opt.get("recommended") else ""
+            rec = "<em>Recommended</em>" if opt.get("recommended") else ""
             checked = " checked" if opt.get("default") else ""
-            desc = f"<br><small>{_esc(opt['description'])}</small>" if opt.get("description") else ""
+            desc = f"<small>{_esc(opt['description'])}</small>" if opt.get("description") else ""
             fields.append(
-                f'<label><input type="{kind}" name="value" value="{_esc(opt["id"])}"{checked}> '
-                f'{_esc(opt["label"])}{rec}{desc}</label>'
+                f'<label class="opt"><input type="{kind}" name="value" value="{_esc(opt["id"])}"{checked}>'
+                f'<span>{_esc(opt["label"])}{desc}</span>{rec}</label>'
             )
         return "".join(fields)
     if ctype == "text":
-        return "<textarea name=\"value\"></textarea>" if control.get("size") == "long" else "<input name=\"value\">"
+        if control.get("size") == "long":
+            return '<textarea class="field" name="value" placeholder="Type your answer" aria-label="Your answer"></textarea>'
+        return '<input class="field" name="value" placeholder="Type your answer" aria-label="Your answer">'
     return ""
 
 
 def _control_buttons(control: dict) -> str:
     if control.get("type") == "approve":
         return (
-            '<button type="submit" name="value" value="approve">approve</button>'
-            '<button type="submit" name="value" value="revise">revise</button>'
+            '<div class="pair"><button class="btn primary" type="submit" name="value" value="approve">Approve</button>'
+            '<button class="btn" type="submit" name="value" value="revise">Revise</button></div>'
         )
-    return "<button type=\"submit\">answer</button>" if control.get("type") else ""
+    return '<button class="btn primary" type="submit">Send answer</button>' if control.get("type") else ""
 
 
-def _entry_page(entry: dict, error: str | None = None, frame_origin: str | None = None) -> str:
+def _closed_notice(delivery: dict) -> str:
+    word = delivery.get("reachability")
+    if word == "held":
+        when = _reach(delivery).partition("answerable at ")[2]
+        later = f" at {when}" if when else " later"
+        return f'<p class="notice warn">This session is out of tokens. You can answer{_esc(later)}.</p>'
+    if word == "unreachable":
+        return '<p class="notice err">This session can\'t be reached, so an answer can\'t be delivered.</p>'
+    return ""
+
+
+def _shown(entry: dict, value) -> str:
+    labels = {opt["id"]: opt["label"] for opt in (entry.get("control") or {}).get("options") or []}
+    values = value if isinstance(value, list) else [value]
+    return ", ".join(labels.get(item, str(item)) for item in values)
+
+
+def _answered(entry: dict) -> str:
+    answer = entry.get("answer")
+    if not answer:
+        return ""
+    delivery = entry.get("delivery") or {}
+    if entry["state"] == "delivered":
+        status = "Delivered to the session" + (", which resumed to read it" if delivery.get("headless") else "")
+    elif entry["state"] == "undelivered":
+        status = "Not delivered: the session never picked it up"
+    elif delivery.get("inflight"):
+        status = "Delivering to the session"
+    else:
+        status = "Waiting to deliver"
+    comment = f"<p>{_esc(answer['comment'])}</p>" if answer.get("comment") else ""
+    via = " · ".join(bit for bit in (f"via {answer.get('via')}" if answer.get("via") else "", _clock(answer.get("at"))) if bit)
+    return (
+        f'<section class="answered" aria-label="Your answer"><b>{_esc(_shown(entry, answer.get("value")))}</b>{comment}'
+        f"<p>{_esc(status)} · {_esc(via)}</p></section>"
+    )
+
+
+def _thread(entry: dict) -> str:
+    events = entry.get("thread") or []
+    if not events:
+        return ""
+    bubbles = "".join(
+        f'<div class="msg {"me" if event.get("type") == "followup" else "agent"}">{_esc(event.get("text") or "")}'
+        f'<time>{_esc(_clock(event.get("at")))}</time></div>'
+        for event in events
+    )
+    return f'<section class="thread" aria-label="Conversation"><h2>Conversation</h2>{bubbles}</section>'
+
+
+def _entry_page(entry: dict, error: str | None = None, frame_origin: str | None = None, waiting: int | None = None) -> str:
     eid = _esc(entry["id"])
-    parts = [_HEAD.format(title=_esc(entry["title"]))]
+    engine = (entry.get("asker") or {}).get("engine") or ""
+    created = entry.get("created_at")
+    when = " · ".join(bit for bit in (_clock(created), _ago(created)) if bit)
+    meta = " · ".join(_esc(bit) for bit in (_who(entry), engine, when) if bit)
+    # An urgent entry already carries the Urgent chip.
+    kind = "Report" if entry["kind"] == "post" else ("Question" if entry.get("priority") == "urgent" else "Normal priority")
+    parts = [_HEAD.format(title=_esc(entry["title"])), _bar(_BACK, waiting), "<main>"]
     if error:
-        parts.append(f"<p>{_esc(error)}</p>")
-    parts.append(f"<h1>{_esc(entry['title'])}</h1><p>{_esc(entry['state'])}</p>")
+        parts.append(f'<p class="notice err" role="alert">{_esc(error)}</p>')
+    parts.append(
+        f'<h1 class="title">{_esc(entry["title"])}</h1>'
+        f'<p class="meta">{_avatar(entry, small=True)}<span>{meta}</span></p>'
+        f'<p class="meta sub">{_urgent(entry)}{_chip(entry)}<span>{_esc(kind)} · <span class="id">{eid}</span></span></p>'
+    )
     if entry.get("summary"):
-        parts.append(f'<div class="md">{_md(entry["summary"])}</div>')
+        parts.append(f'<div class="md sum">{_md(entry["summary"])}</div>')
     if entry.get("html"):
         src = f"{(frame_origin or _frame_origin()).rstrip('/')}/h/{eid}"
-        parts.append(f'<iframe sandbox="allow-scripts allow-popups" src="{src}"></iframe>')
-        parts.append("<p>Reference only. Answer below.</p>")
+        parts.append(
+            f'<div class="frame"><iframe sandbox="allow-scripts allow-popups" src="{src}" title="Agent attachment"></iframe>'
+            "<p>Reference only. Answer below.</p></div>"
+        )
     if entry.get("detail"):
-        parts.append(f'<div class="md">{_md(entry["detail"])}</div>')
+        parts.append(f'<div class="md detail">{_md(entry["detail"])}</div>')
     source = entry.get("source") or {}
     if source.get("url"):
-        parts.append(f'<p><a href="{_esc(source["url"])}" target="_blank" rel="noopener">source</a></p>')
-    for event in entry.get("thread") or []:
-        kind = "follow-up" if event.get("type") == "followup" else "reply"
-        parts.append(f"<p>{kind}: {_esc(event.get('text') or '')}</p>")
+        parts.append(f'<p class="source"><a href="{_esc(source["url"])}" target="_blank" rel="noopener">Open source</a></p>')
+    parts.append(_answered(entry))
     if entry["kind"] == "ask" and entry["state"] == "open":
         delivery = entry.get("delivery") or {}
-        if delivery.get("reachability"):
-            parts.append(f"<p>session: {_esc(_reach(delivery))}</p>")
+        parts.append(_closed_notice(delivery))
         # The store refuses these answers anyway; the fieldset says so before a submit.
         closed = " disabled" if delivery.get("reachability") in CLOSED_REACH else ""
+        control = entry.get("control") or {}
+        hint = "Comment (a reason is required to revise)" if control.get("type") == "approve" else "Comment (optional)"
         parts.append(
-            f'<form method="post" action="/e/{eid}/answer"><fieldset{closed}>'
-            f'{_control_fields(entry.get("control") or {})}'
-            '<input name="comment" placeholder="comment (a reason is required to revise)">'
-            f'{_control_buttons(entry.get("control") or {})}</fieldset></form>'
+            f'<form method="post" action="/e/{eid}/answer"><fieldset{closed}><legend>Your answer</legend>'
+            f"{_control_fields(control)}"
+            f'<input class="field" name="comment" placeholder="{hint}" aria-label="Comment">'
+            f"{_control_buttons(control)}</fieldset></form>"
         )
+    parts.append(_thread(entry))
     if (entry.get("asker") or {}).get("session_id"):
         parts.append(
-            f'<form method="post" action="/e/{eid}/followup"><input name="text">'
-            '<button type="submit">follow up</button></form>'
+            f'<form class="follow" method="post" action="/e/{eid}/followup"><h2>Follow up</h2><div class="pair">'
+            '<textarea class="field" name="text" rows="1" placeholder="Message the agent" aria-label="Follow-up message"></textarea>'
+            '<button class="btn" type="submit">Send</button></div></form>'
         )
-    parts.append(f'<p><a href="/">feed</a></p>{_SCRIPT}')
+    parts.append(f"</main>{_SCRIPT}")
     return "".join(parts)
+
+
+def open_count(conn) -> int:
+    row = conn.execute("SELECT count(*) AS n FROM entries WHERE kind = 'ask' AND state = 'open'").fetchone()
+    return row["n"]
 
 
 def dismiss(conn, entry_id: str) -> None:
@@ -336,7 +649,7 @@ class InboxHandler(BaseHTTPRequestHandler):
         if method == "GET" and path == "/":
             with db.connect() as conn:
                 from agent_inbox.notify import urgent_counts
-                self._html(200, _feed_page(load_feed(conn, qs), qs, banner=urgent_counts(conn)))
+                self._html(200, _feed_page(load_feed(conn, qs), qs, banner=urgent_counts(conn), waiting=open_count(conn)))
             return
         match = re.fullmatch(r"/e/([^/]+)", path)
         if method == "GET" and match:
@@ -357,7 +670,7 @@ class InboxHandler(BaseHTTPRequestHandler):
             if entry["kind"] == "post" and entry["state"] in ("unread", "read"):
                 store.mark_read(conn, entry_id)
                 entry = store.get_entry(conn, entry_id)
-            self._html(status, _entry_page(entry, error, _frame_origin(self.headers.get("Host"))))
+            self._html(status, _entry_page(entry, error, _frame_origin(self.headers.get("Host")), open_count(conn)))
 
     def _post_entry(self, entry_id: str, action: str) -> None:
         form = self._form()
@@ -406,7 +719,7 @@ class InboxHandler(BaseHTTPRequestHandler):
             if applied == 0:
                 message = errors[0] if errors else "nothing selected"
                 from agent_inbox.notify import urgent_counts
-                self._html(409, _feed_page(load_feed(conn, {}), {}, message, banner=urgent_counts(conn)))
+                self._html(409, _feed_page(load_feed(conn, {}), {}, message, banner=urgent_counts(conn), waiting=open_count(conn)))
                 return
         self._redirect("/")
 

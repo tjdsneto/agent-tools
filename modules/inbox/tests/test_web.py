@@ -47,10 +47,11 @@ def test_feed_pins_open_questions_above_unread_info(conn, http):
     store.archive(conn, old["id"])
     status, body = _get(http, "/")
     assert status == 200
-    assert body.index("Q") < body.index("I")
+    assert body.index(f'href="/e/{q["id"]}"') < body.index(f'href="/e/{info["id"]}"')
     assert "Old" not in body
     assert q["id"] in body and info["id"] in body
-    assert "if (open) location.reload()" in body
+    # Live reload, except once a field was touched: then the page offers it.
+    assert "if (dirty)" in body and "location.reload()" in body
 
 
 def test_entry_layers(conn, http):
@@ -155,8 +156,8 @@ def test_entry_page_fits_a_phone_and_puts_the_comment_before_submit(conn, http):
     req = validate_request({"title": "Q", "detail": "x" * 300, "control": {"type": "choice", "options": opts}}, "ask")
     e = store.create_entry(conn, "ask", req, engine="claude", session_id="s-1")
     _, body = _get(http, f"/e/{e['id']}")
-    assert "pre { white-space: pre-wrap; }" in body
-    assert body.index('name="comment"') < body.index('type="submit">answer')
+    assert "white-space: pre-wrap" in body
+    assert body.index('name="comment"') < body.index('type="submit">Send answer')
     assert 'value="a" checked' in body and "the safe one" in body
 
 
@@ -167,17 +168,18 @@ def test_a_held_question_shows_when_and_cannot_be_answered(conn, http):
         (e["id"],),
     )
     _, body = _get(http, f"/e/{e['id']}")
-    assert "🟡 held, answerable at ~02:10" in body
+    assert "Held, answerable at ~02:10" in body
+    assert "out of tokens" in body
     assert "<fieldset disabled>" in body
     _, feed = _get(http, "/")
-    assert "🟡 held, answerable at ~02:10" in feed
+    assert "Held, answerable at ~02:10" in feed
 
 
 def test_a_resumable_question_can_be_answered(conn, http):
     e = store.create_entry(conn, "ask", validate_request({"title": "Q", "control": CHOICE}, "ask"), engine="claude", session_id="s-1")
     conn.execute("""UPDATE entries SET delivery = delivery || '{"reachability": "resumable"}' WHERE id = %s""", (e["id"],))
     _, body = _get(http, f"/e/{e['id']}")
-    assert "🔵 resumable" in body
+    assert '<span class="chip blue">Resumable</span>' in body
     assert "<fieldset>" in body
 
 
