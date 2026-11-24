@@ -1392,7 +1392,7 @@
       "name": "Secondary Button",
       "kind": "button",
       "refersTo": "button",
-      "description": "Bordered white button for Filter, Revise, Send (follow-up), Dismiss; danger variant tints the text red for Withdraw.",
+      "description": "Bordered white button for Clear, Revise, Send (follow-up), Dismiss; danger variant tints the text red for Withdraw.",
       "html": "<div class=\"ds-btn-row\"><button class=\"ds-btn\" type=\"button\">Revise</button><button class=\"ds-btn ds-btn-danger\" type=\"button\">Withdraw</button></div>",
       "css": ".ds-btn-row { display: flex; gap: 8px; } .ds-btn { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 0 16px; border: 1px solid var(--field, #d1d5db); border-radius: 10px; background: var(--bg, #ffffff); color: var(--ink, #111827); font: 600 16px/1.5 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; cursor: pointer; } .ds-btn:hover { background: var(--surf, #f3f4f6); } .ds-btn:active { transform: translateY(1px); } .ds-btn:focus-visible { outline: 2px solid var(--accent, #2563eb); outline-offset: 2px; } .ds-btn-danger { color: var(--red-i, #991b1b); }"
     },

@@ -36,7 +36,7 @@ _HEAD = """<!doctype html>
   --accent: #2563eb; --accent-press: #1d4ed8; --link: #2563eb;
   --blue-t: #dbeafe; --blue-i: #1d4ed8; --green-t: #dcfce7; --green-i: #166534; --green-d: #16a34a;
   --amber-t: #fef3c7; --amber-i: #92400e; --amber-d: #d97706; --red-t: #fee2e2; --red-i: #991b1b; --red-d: #dc2626;
-  --grey-t: #f3f4f6; --grey-i: #4b5563; --me: #dbeafe; --code: #ffffff;
+  --grey-t: #f3f4f6; --grey-i: #4b5563; --me: #dbeafe; --code: #ffffff; --pop: #ffffff;
 }}
 @media (prefers-color-scheme: dark) {{
   :root {{
@@ -44,7 +44,7 @@ _HEAD = """<!doctype html>
     --link: #60a5fa;
     --blue-t: #1e3a5f; --blue-i: #bfdbfe; --green-t: #14351f; --green-i: #86efac; --green-d: #22c55e;
     --amber-t: #3a2a0a; --amber-i: #fcd34d; --amber-d: #f59e0b; --red-t: #3b1414; --red-i: #fca5a5; --red-d: #ef4444;
-    --grey-t: #23272e; --grey-i: #c3c8cf; --me: #1e3a5f; --code: #111418;
+    --grey-t: #23272e; --grey-i: #c3c8cf; --me: #1e3a5f; --code: #111418; --pop: #1c2027;
   }}
 }}
 * {{ box-sizing: border-box; }}
@@ -94,7 +94,28 @@ main {{ max-width: 720px; margin: 0 auto; padding: 20px 16px 48px; }}
 .tabs a[aria-current="page"] {{ background: var(--accent); color: #fff; }}
 .tabs a {{ position: relative; }}
 .tabs a::after {{ content: ""; position: absolute; inset: -4px 0; }}
-.filters {{ display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 8px; }}
+.tabs {{ padding-block: 4px; margin-top: -4px; mask-image: linear-gradient(to left, transparent, #000 16px);
+  -webkit-mask-image: linear-gradient(to left, transparent, #000 16px); }}
+@media (max-width: 479px) {{ .tabs {{ gap: 6px; }} .tabs a {{ padding: 0 12px; }} }}
+@media (max-width: 379px) {{ .tabs a {{ padding: 0 10px; }} }}
+.tools {{ display: flex; align-items: center; gap: 12px; }}
+.filt {{ position: relative; flex: none; }}
+.filt summary {{ position: relative; display: grid; place-items: center; width: 44px; height: 36px; border-radius: 18px;
+  background: var(--surf); list-style: none; cursor: pointer; }}
+.filt summary::-webkit-details-marker {{ display: none; }}
+.filt summary::after {{ content: ""; position: absolute; inset: -4px 0; }}
+.filt summary:hover, .filt[open] summary {{ background: var(--line); }}
+.filt.on summary {{ background: var(--blue-t); color: var(--blue-i); }}
+.filt summary svg {{ width: 18px; height: 18px; }}
+.filt summary b {{ position: absolute; top: -5px; right: -5px; display: grid; place-items: center; min-width: 20px; height: 20px; padding: 0 5px;
+  border: 2px solid var(--bg); border-radius: 10px; background: var(--accent); color: #fff; font-size: 11px; font-weight: 700; line-height: 1; }}
+.filt form {{ position: absolute; top: calc(100% + 8px); right: 0; z-index: 3; display: grid; gap: 14px; width: min(300px, calc(100vw - 32px));
+  padding: 16px; border-radius: 14px; background: var(--pop); box-shadow: 0 10px 30px rgb(0 0 0 / .16), 0 2px 6px rgb(0 0 0 / .08); }}
+.filt label {{ display: grid; gap: 6px; color: var(--mute); font-size: 13px; font-weight: 600; }}
+.filt select {{ width: 100%; color: var(--ink); font-size: 16px; font-weight: 400; }}
+.filt .pair .btn {{ min-height: 44px; color: var(--ink); }}
+.js .filt .go {{ display: none; }}
+.js .filt .pair:not(:has(a)) {{ display: none; }}
 select {{ min-height: 44px; padding: 0 12px; border: 1px solid var(--field); border-radius: 10px; background: var(--bg); }}
 .btn {{ display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 0 16px; border-radius: 10px;
   border: 1px solid var(--field); background: var(--bg); font-weight: 600; cursor: pointer; text-decoration: none; }}
@@ -232,7 +253,17 @@ _SCRIPT = """<p id="stale" role="status" hidden>This page changed. <a href="">Re
 <script>
 const es = new EventSource("/events");
 let open = false, dirty = false, leaving = false;
+document.documentElement.classList.add("js");
 document.addEventListener("input", () => { dirty = true; });
+// Filters apply as soon as one changes; the panel closes on Escape or a click outside it.
+document.querySelectorAll(".filt select").forEach((el) => el.addEventListener("change", () => el.form.requestSubmit()));
+const filt = document.querySelector(".filt");
+if (filt) {
+  document.addEventListener("click", (e) => { if (filt.open && !filt.contains(e.target)) filt.open = false; });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && filt.open) { filt.open = false; filt.querySelector("summary").focus(); }
+  });
+}
 addEventListener("beforeunload", () => { leaving = true; es.close(); });
 // A mark that showed "sent" on the last visit and "delivered" now just landed.
 document.querySelectorAll("[data-ticks]").forEach((el) => {
@@ -244,12 +275,17 @@ document.querySelectorAll("[data-ticks]").forEach((el) => {
 es.onmessage = () => {
   if (leaving) return;
   if (!open) { open = true; return; }
-  if (dirty) { document.getElementById("stale").hidden = false; return; }
+  if (dirty || (filt && filt.open)) { document.getElementById("stale").hidden = false; return; }
   location.reload();
 };
 </script>
 </body></html>
 """
+
+_FUNNEL = (
+    '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" '
+    'aria-hidden="true"><path d="M3.5 6h13M6 10h8M8.5 14h3"/></svg>'
+)
 
 _BACK = (
     '<a class="back" href="/"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" '
@@ -439,8 +475,10 @@ def _avatar(row: dict, small: bool = False) -> str:
     return f'<span class="av av{tone}{size}" aria-hidden="true">{_esc(name[:1].upper())}</span>'
 
 
-def _bar(left: str, count: int | None) -> str:
+def _bar(left: str, count: int | None, tools: str = "") -> str:
     right = f'<span class="count">{count} waiting</span>' if count else ""
+    if tools:
+        right = f'<div class="tools">{right}{tools}</div>'
     return f'<header class="bar"><div class="bar-in">{left}{right}</div></header>'
 
 
@@ -469,30 +507,52 @@ TABS = (("Active", "/", {}), ("Needs answer", "/?kind=ask&state=open", {"kind": 
         ("Info", "/?kind=post", {"kind": "post"}), ("History", "/?history=1", {"history": "1"}))
 
 
-def _nav(qs: dict) -> str:
+def _tab(current: dict) -> tuple[str, dict]:
+    """The tab a view belongs to: an exact match, else the tab with the same kind and history, else Active."""
+    for _, href, want in TABS:
+        if want == current:
+            return href, want
+    for _, href, want in TABS[1:]:
+        if all(current.get(key) == value for key, value in want.items() if key != "state"):
+            return href, want
+    return TABS[0][1], TABS[0][2]
+
+
+def _nav(qs: dict) -> tuple[str, str]:
+    """The view tabs, and the filter button and panel that sit in the header bar."""
     project = _query_value(qs, "project")
     hidden = f'<input type="hidden" name="project" value="{_esc(project)}">' if project else ""
     current = {key: _query_value(qs, key) for key in ("kind", "state", "history") if _query_value(qs, key)}
+    home, want = _tab(current)
     mark = ' aria-current="page"'
-    tabs = "".join(
-        f'<a href="{href}"{mark if want == current else ""}>{label}</a>' for label, href, want in TABS
-    )
+    tabs = "".join(f'<a href="{href}"{mark if href == home else ""}>{label}</a>' for label, href, _ in TABS)
+    # The filter panel narrows the current tab: it keeps the tab's kind and history, and
+    # counts only what differs from the tab.
+    for key in ("kind", "history"):
+        if current.get(key):
+            hidden += f'<input type="hidden" name="{key}" value="{_esc(current[key])}">'
+    on = sum(1 for key in ("engine", "state") if _query_value(qs, key) != want.get(key))
 
     def options(label: str, key: str, names: tuple[str, ...]) -> str:
         chosen = _query_value(qs, key)
         opts = "".join(
             f'<option value="{name}"{" selected" if name == chosen else ""}>{name}</option>' for name in names
         )
-        return f'<select name="{key}" aria-label="{label}"><option value="">Any {label.lower()}</option>{opts}</select>'
+        return f'<label>{label}<select name="{key}"><option value="">Any {label.lower()}</option>{opts}</select></label>'
 
-    return (
-        f'<nav class="tabs" aria-label="Views">{tabs}</nav>'
-        '<form class="filters" method="get" action="/">'
+    badge = f"<b>{on}</b>" if on else ""
+    said = f", {on} on" if on else ""
+    clear = f'<a class="btn" href="{home}">Clear</a>' if on else ""
+    filters = (
+        f'<details class="filt{" on" if on else ""}"><summary aria-label="Filters{said}" title="Filters">{_FUNNEL}{badge}</summary>'
+        '<form method="get" action="/">'
         + hidden
         + options("Engine", "engine", ("claude", "codex", "cursor"))
         + options("State", "state", ("open", "unread", "answered", "delivered", "undelivered", "expired", "read"))
-        + '<button class="btn" type="submit">Filter</button></form>'
+        + f'<div class="pair">{clear}<button class="btn go" type="submit">Apply</button></div>'
+        "</form></details>"
     )
+    return f'<nav class="tabs" aria-label="Views">{tabs}</nav>', filters
 
 
 def _waiting(rows: list[dict]) -> int:
@@ -520,11 +580,12 @@ def _feed_page(rows: list[dict], qs: dict, error: str | None = None, banner: str
                 'Answered questions and read reports are in <a href="/?history=1">History</a>.</p>'
             )
     count = _waiting(rows) if waiting is None else waiting
+    tabs, filters = _nav(qs)
     return (
         _HEAD.format(title="Inbox", body="")
-        + _bar("<h1>Inbox</h1>", count)
+        + _bar("<h1>Inbox</h1>", count, filters)
         + "<main>"
-        + _nav(qs)
+        + tabs
         + line
         + err
         + body

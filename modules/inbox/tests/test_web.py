@@ -51,7 +51,7 @@ def test_feed_pins_open_questions_above_unread_info(conn, http):
     assert "Old" not in body
     assert q["id"] in body and info["id"] in body
     # Live reload, except once a field was touched: then the page offers it.
-    assert "if (dirty)" in body and "location.reload()" in body
+    assert "if (dirty ||" in body and "location.reload()" in body
     # Leaving the page stops the stream, so a read mark cannot cancel the navigation.
     assert 'addEventListener("beforeunload", () => { leaving = true; es.close(); })' in body
 
@@ -278,3 +278,19 @@ def test_an_answered_script_ask_says_it_waits_for_the_script(conn, http):
     store.answer(conn, e["id"], "a", via="web")
     _, body = _get(http, f"/e/{e['id']}")
     assert "Saved for autopilot to pick up" in body and 'data-state="saved"' in body
+
+
+def test_filters_narrow_the_current_tab_and_count_what_they_change(conn, http):
+    _, plain = _get(http, "/")
+    assert '<a href="/" aria-current="page">Active</a>' in plain
+    assert 'class="filt"' in plain and 'aria-label="Filters"' in plain
+    _, info = _get(http, "/?kind=post&engine=codex")
+    assert '<a href="/?kind=post" aria-current="page">Info</a>' in info
+    assert '<input type="hidden" name="kind" value="post">' in info
+    assert 'class="filt on"' in info and 'aria-label="Filters, 1 on"' in info
+    assert '<a class="btn" href="/?kind=post">Clear</a>' in info
+    # A tab's own state is not a filter; a different one is.
+    _, needs = _get(http, "/?kind=ask&state=open")
+    assert '<a href="/?kind=ask&state=open" aria-current="page">Needs answer</a>' in needs and 'class="filt"' in needs
+    _, other = _get(http, "/?kind=ask&state=expired")
+    assert 'aria-current="page">Needs answer</a>' in other and 'Filters, 1 on' in other

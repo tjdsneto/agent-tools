@@ -437,7 +437,7 @@ Seven fixed tint-and-ink pairs (`av0` to `av6`: rose, orange, green, blue, sky, 
 
 A single centred column, 720px wide, with a 16px gutter on every screen size; the bar's inner row shares the same width. The bar is 56px and sticky at the top. The main area pads 20px top and 48px bottom. Vertical rhythm is built from 4, 8, 12, 16, 20 and 24px steps: 8px between chips and tabs, 12px under the title, 16px under the chip line, 20px between content blocks, 24px above the conversation and follow-up sections.
 
-The feed list bleeds to the screen edges on a phone (the 16px gutter is cancelled) and gains a top hairline and stays inside the column from 760px up. Feed rows are a three-area grid: avatar on the left spanning, title and time on top, meta below, chips below that. From 760px the chips move up beside the meta and align right, the title holds one line with an ellipsis, and the id appears in the meta line; below 760px the title clamps to two lines and the id is hidden. The tabs scroll sideways at narrow widths rather than wrapping.
+The feed list bleeds to the screen edges on a phone (the 16px gutter is cancelled) and gains a top hairline and stays inside the column from 760px up. Feed rows are a three-area grid: avatar on the left spanning, title and time on top, meta below, chips below that. From 760px the chips move up beside the meta and align right, the title holds one line with an ellipsis, and the id appears in the meta line; below 760px the title clamps to two lines and the id is hidden. The tabs sit on one row, tightening their gap and padding below 480px and 380px; below about 360px they scroll sideways under a right-edge fade rather than wrapping.
 
 When any feed row is selected, a batch tray (Withdraw, Dismiss) appears sticky at the bottom, above the safe-area inset, with a top hairline.
 
@@ -472,7 +472,7 @@ Softly rounded rectangles for anything you type into or press (10px), slightly s
 ### Tabs
 - **Style:** pills on Cool Surface, ink text, 15px/550, 36px tall with a 44px hit area.
 - **State:** hover fills with Hairline grey; the current view is Action Blue with white text. Views are Active (the default: everything not yet done; answered questions and read reports leave it), Needs answer, Info, History (answered, delivered, read and closed entries).
-- **Filters:** below the tabs, engine and state selects (44px, 10px radius, field stroke) and a secondary Filter button, wrapping on narrow screens.
+- **Filters:** a 44×36 pill button with a three-line filter icon in the header bar, right of the waiting count. It opens a popover panel (14px radius, `pop` fill, soft shadow, no border) holding the engine and state selects; a change applies at once (the Apply button shows only without JS), and Clear returns to the current tab. The filters narrow the current tab rather than replacing it. When a filter differs from the tab, the button takes the blue tint and an accent count badge. Escape or a click outside closes it.
 
 ### Chips
 - **Style:** 26px pills, 13px/600, 10px side padding, tint background and ink text per tone.
