@@ -175,12 +175,16 @@ textarea.field {{ min-height: 112px; resize: vertical; }}
 
 # A reload on every store change used to wipe a half-typed answer. Once the
 # visitor has touched a field the page offers the reload instead of forcing it.
+# Opening an unread post marks it read, which is a store change: the page being
+# left must stop listening first, or its reload cancels the navigation.
 _SCRIPT = """<p id="stale" role="status" hidden>This page changed. <a href="">Reload</a></p>
 <script>
 const es = new EventSource("/events");
-let open = false, dirty = false;
+let open = false, dirty = false, leaving = false;
 document.addEventListener("input", () => { dirty = true; });
+addEventListener("beforeunload", () => { leaving = true; es.close(); });
 es.onmessage = () => {
+  if (leaving) return;
   if (!open) { open = true; return; }
   if (dirty) { document.getElementById("stale").hidden = false; return; }
   location.reload();

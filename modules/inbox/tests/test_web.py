@@ -52,6 +52,8 @@ def test_feed_pins_open_questions_above_unread_info(conn, http):
     assert q["id"] in body and info["id"] in body
     # Live reload, except once a field was touched: then the page offers it.
     assert "if (dirty)" in body and "location.reload()" in body
+    # Leaving the page stops the stream, so a read mark cannot cancel the navigation.
+    assert 'addEventListener("beforeunload", () => { leaving = true; es.close(); })' in body
 
 
 def test_entry_layers(conn, http):
