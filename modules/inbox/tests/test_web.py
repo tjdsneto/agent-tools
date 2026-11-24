@@ -231,3 +231,31 @@ def test_entry_page_lists_the_feed_beside_it_and_marks_the_current_one(conn, htt
     # The pane is navigation only: batch checkboxes stay on the feed.
     pane = body[body.index('class="pane"'):body.index("<main>")]
     assert 'type="checkbox"' not in pane
+
+
+def test_answered_questions_leave_the_default_view_for_history(conn, http):
+    done = store.create_entry(conn, "ask", validate_request({"title": "Done one", "control": CHOICE}, "ask"), engine="claude", session_id="s-1")
+    sent = store.create_entry(conn, "ask", validate_request({"title": "Sent one", "control": CHOICE}, "ask"), engine="claude", session_id="s-2")
+    waiting = store.create_entry(conn, "ask", validate_request({"title": "Waiting one", "control": CHOICE}, "ask"), engine="claude", session_id="s-3")
+    conn.execute("""UPDATE entries SET state = 'delivered', answer = '{"value": "a", "via": "telegram"}' WHERE id = %s""", (done["id"],))
+    conn.execute("""UPDATE entries SET state = 'answered', answer = '{"value": "a", "via": "web"}' WHERE id = %s""", (sent["id"],))
+    _, feed = _get(http, "/")
+    assert waiting["id"] in feed and done["id"] not in feed and sent["id"] not in feed
+    _, history = _get(http, "/?history=1")
+    assert done["id"] in history and sent["id"] in history
+    # The row says it was answered, and what with, like a chat preview.
+    label = next(o["label"] for o in CHOICE["options"] if o["id"] == "a")
+    assert f"You: {label}" in history
+    assert 'aria-label="Delivered"></svg>' not in history  # ticks are drawn, not empty
+    assert '<span class="chip green"><svg class="ticks"' in history and "Answered</span>" in history
+    # An explicit state filter still finds them.
+    _, filtered = _get(http, "/?state=delivered")
+    assert done["id"] in filtered
+
+
+def test_an_answered_entry_still_marks_itself_in_the_pane(conn, http):
+    e = store.create_entry(conn, "ask", validate_request({"title": "Done", "control": CHOICE}, "ask"), engine="claude", session_id="s-1")
+    conn.execute("""UPDATE entries SET state = 'delivered', answer = '{"value": "a", "via": "web"}' WHERE id = %s""", (e["id"],))
+    _, body = _get(http, f"/e/{e['id']}")
+    pane = body[body.index('class="pane"'):body.index("<main>")]
+    assert f'href="/e/{e["id"]}" aria-current="page"' in pane

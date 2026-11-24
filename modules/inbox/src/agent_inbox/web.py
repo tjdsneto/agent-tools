@@ -16,7 +16,9 @@ from agent_inbox import db, store
 from agent_inbox.constants import FRAME_PORT, HTTP_PORT, NOTIFY_CHANNEL
 from agent_inbox.errors import ConflictError, NotFoundError, StoreError, ValidationError
 
-HISTORY_STATES = ("delivered", "expired", "withdrawn", "superseded", "undelivered", "archived")
+HISTORY_STATES = ("answered", "delivered", "expired", "withdrawn", "superseded", "undelivered", "archived")
+# Answered questions are done from the visitor's side; the default view leaves them to History.
+DONE_STATES = {"answered", "delivered"}
 HIDDEN_STATES = {"archived", "withdrawn", "superseded"}
 FRAME_ORIGIN = f"http://127.0.0.1:{FRAME_PORT}"
 
@@ -72,6 +74,7 @@ main {{ max-width: 720px; margin: 0 auto; padding: 20px 16px 48px; }}
 .chip.blue {{ background: var(--blue-t); color: var(--blue-i); }}
 .chip.amber {{ background: var(--amber-t); color: var(--amber-i); }} .chip.amber i {{ background: var(--amber-d); }}
 .chip.red {{ background: var(--red-t); color: var(--red-i); }} .chip.red i {{ background: var(--red-d); }}
+.chip .ticks {{ width: 15px; height: 14px; margin-left: -2px; }}
 .av {{ flex: none; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; font-size: 16px; font-weight: 650; }}
 .av.sm {{ width: 28px; height: 28px; font-size: 13px; }}
 .av0 {{ background: #fde2e1; color: #9f1c1c; }} .av1 {{ background: #feebc8; color: #8a4b08; }} .av2 {{ background: #dcfce7; color: #166534; }}
@@ -337,7 +340,8 @@ def load_feed(conn, qs: dict) -> list[dict]:
         states = [state] if state else list(HISTORY_STATES)
         return store.list_entries(conn, states=states, **common)
     rows = store.list_entries(conn, states=[state] if state else None, **common)
-    visible = [row for row in rows if row["state"] not in HIDDEN_STATES and not _dismissed(row)]
+    hidden = HIDDEN_STATES if state else HIDDEN_STATES | DONE_STATES
+    visible = [row for row in rows if row["state"] not in hidden and not _dismissed(row)]
     opened = [row for row in visible if row["kind"] == "ask" and row["state"] == "open"]
     unread = [row for row in visible if row["kind"] == "post" and row["state"] == "unread"]
     seen = {row["id"] for row in opened + unread}
@@ -349,7 +353,7 @@ LOCAL = ZoneInfo("America/Sao_Paulo")
 CLOSED_REACH = ("held", "unreachable")
 REACH_CHIP = {"live": ("Live", "green"), "resumable": ("Resumable", "blue"), "held": ("Held", "amber"), "unreachable": ("Unreachable", "red")}
 STATE_CHIP = {
-    "answered": ("Answered", "blue"), "delivered": ("Delivered", "green"), "undelivered": ("Not delivered", "red"),
+    "answered": ("Answered", "blue"), "delivered": ("Answered", "green"), "undelivered": ("Answered, not delivered", "red"),
     "expired": ("Expired", "grey"), "withdrawn": ("Withdrawn", "grey"), "superseded": ("Superseded", "grey"),
     "unread": ("Unread", "blue"), "read": ("Read", "grey"), "archived": ("Archived", "grey"),
 }
@@ -410,6 +414,9 @@ def _chip(row: dict) -> str:
         label, tone = (_reach(delivery), REACH_CHIP[word][1]) if word in REACH_CHIP else ("Needs answer", "blue")
     else:
         label, tone = STATE_CHIP.get(state, (state.capitalize(), "grey"))
+    if row["kind"] == "ask" and state in DONE_STATES:
+        # The answer's own delivery mark: one tick sent, two once the session has it.
+        return f'<span class="chip {tone}">{_ticks("delivered" if state == "delivered" else "sent")}{_esc(label)}</span>'
     dot = "<i></i>" if tone in ("green", "amber", "red") else ""
     return f'<span class="chip {tone}">{dot}{_esc(label)}</span>'
 
@@ -438,7 +445,9 @@ def _bar(left: str, count: int | None) -> str:
 
 def _card(row: dict, *, pick: bool = True, current: bool = False) -> str:
     engine = (row.get("asker") or {}).get("engine") or ""
-    meta = " · ".join(_esc(bit) for bit in (_who(row), engine) if bit)
+    answer = row.get("answer") or {}
+    said = f"You: {_shown(row, answer.get('value'))}" if row["kind"] == "ask" and answer else ""
+    meta = " · ".join(_esc(bit) for bit in (_who(row), engine, said) if bit)
     unread = " unread" if row["kind"] == "post" and row["state"] == "unread" else ""
     box = (
         f'<label class="pick"><input type="checkbox" name="id" value="{_esc(row["id"])}" aria-label="Select {_esc(row["id"])}"></label>'
@@ -455,7 +464,7 @@ def _card(row: dict, *, pick: bool = True, current: bool = False) -> str:
     )
 
 
-TABS = (("All", "/", {}), ("Needs answer", "/?kind=ask&state=open", {"kind": "ask", "state": "open"}),
+TABS = (("Active", "/", {}), ("Needs answer", "/?kind=ask&state=open", {"kind": "ask", "state": "open"}),
         ("Info", "/?kind=post", {"kind": "post"}), ("History", "/?history=1", {"history": "1"}))
 
 
@@ -637,10 +646,12 @@ def _entry_page(
     meta = " · ".join(f'<span class="nw">{_esc(bit)}</span>' for bit in bits if bit)
     # An urgent entry already carries the Urgent chip.
     kind = "Report" if entry["kind"] == "post" else ("Question" if entry.get("priority") == "urgent" else "Normal priority")
-    body = ' class="split"' if sidebar else ""
+    body = ' class="split"' if sidebar is not None else ""
     parts = [_HEAD.format(title=_esc(entry["title"]), body=body), _bar(_BACK, waiting)]
-    if sidebar:
-        rows = "".join(_card(row, pick=False, current=row["id"] == entry["id"]) for row in sidebar)
+    if sidebar is not None:
+        # An answered entry has left the default feed; keep it in the pane so the page says where you are.
+        listed = sidebar if any(row["id"] == entry["id"] for row in sidebar) else [entry, *sidebar]
+        rows = "".join(_card(row, pick=False, current=row["id"] == entry["id"]) for row in listed)
         parts.append(f'<div class="split-body"><nav class="pane" aria-label="Inbox entries"><ul class="list">{rows}</ul></nav>')
     parts.append("<main>")
     if error:
@@ -684,7 +695,7 @@ def _entry_page(
             '<textarea class="field" name="text" rows="1" placeholder="Message the agent" aria-label="Follow-up message"></textarea>'
             '<button class="btn" type="submit">Send</button></div></form>'
         )
-    parts.append("</main>" + ("</div>" if sidebar else "") + _SCRIPT)
+    parts.append("</main>" + ("</div>" if sidebar is not None else "") + _SCRIPT)
     return "".join(parts)
 
 
