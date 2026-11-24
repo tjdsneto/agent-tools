@@ -512,7 +512,13 @@ def _feed_page(rows: list[dict], qs: dict, error: str | None = None, banner: str
             "</div></form>"
         )
     else:
-        body = '<p class="empty"><b>Nothing here</b>Agents\' questions and reports land here as they arrive.</p>'
+        if qs:
+            body = '<p class="empty"><b>Nothing here</b>Nothing matches this view.</p>'
+        else:
+            body = (
+                '<p class="empty"><b>All caught up</b>New questions and reports land here. '
+                'Answered questions and read reports are in <a href="/?history=1">History</a>.</p>'
+            )
     count = _waiting(rows) if waiting is None else waiting
     return (
         _HEAD.format(title="Inbox", body="")
