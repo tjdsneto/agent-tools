@@ -15,7 +15,7 @@ Audience and job: one person answering agent questions fast, then reading report
 
 THESIS: The category standard, played straight: a clean light inbox that reads like Telegram's own screens. It refuses themed worlds and the debug-page look of the current build (bordered boxes, a pipe-joined id line, default blue links).
 
-OWN-WORLD: White ground, near-black ink #111827, grey meta #6b7280, cool grey surfaces #f3f4f6 and hairlines #e5e7eb, one blue #2563eb for actions, links and selection. System font stack, one family. Soft 10-12px radii, pill status chips (green live, blue resumable, amber held, red unreachable), round initial avatars per engine. Dark mode follows the system with the same roles.
+OWN-WORLD: White ground, near-black ink #111827, grey meta #6b7280, cool grey surfaces #f3f4f6 and hairlines #e5e7eb, one blue #2563eb for actions, links and selection. System font stack, one family. Soft 10-12px radii, pill status chips (green live, blue resumable, amber held, red unreachable), round initial avatars per project with a fixed colour per project (PRODUCT principle 3: which agent and project asked is always clear; the engine is named in the meta line). Dark mode follows the system with the same roles.
 
 STORY: He sees what is asked, which agent asked and whether it can hear him, picks an answer and sends it in one move; afterwards the page says it was sent and delivered.
 

@@ -77,6 +77,11 @@ main {{ max-width: 720px; margin: 0 auto; padding: 20px 16px 48px; }}
 .av0 {{ background: #fde2e1; color: #9f1c1c; }} .av1 {{ background: #feebc8; color: #8a4b08; }} .av2 {{ background: #dcfce7; color: #166534; }}
 .av3 {{ background: #dbeafe; color: #1d4ed8; }} .av4 {{ background: #e0f2fe; color: #075985; }} .av5 {{ background: #ccfbf1; color: #115e59; }}
 .av6 {{ background: #fce7f3; color: #9d174d; }}
+@media (prefers-color-scheme: dark) {{
+  .av0 {{ background: #4a1d1f; color: #fecaca; }} .av1 {{ background: #45290d; color: #fed7aa; }} .av2 {{ background: #14351f; color: #bbf7d0; }}
+  .av3 {{ background: #1e3a5f; color: #bfdbfe; }} .av4 {{ background: #0c3448; color: #bae6fd; }} .av5 {{ background: #0f3a36; color: #99f6e4; }}
+  .av6 {{ background: #46162f; color: #fbcfe8; }}
+}}
 .id {{ font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; }}
 .tabs {{ display: flex; gap: 8px; overflow-x: auto; margin: 0 -16px 12px; padding: 0 16px; scrollbar-width: none; }}
 .tabs a {{ flex: none; display: inline-flex; align-items: center; min-height: 36px; padding: 0 14px; border-radius: 18px;
@@ -107,19 +112,29 @@ select {{ min-height: 44px; padding: 0 12px; border: 1px solid var(--field); bor
 .row.unread b::before {{ content: ""; display: inline-block; width: 8px; height: 8px; margin: 0 8px 2px 0; border-radius: 50%; background: var(--accent); }}
 .row small {{ grid-area: meta; color: var(--mute); font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
 .row time {{ grid-area: time; justify-self: end; color: var(--mute); font-size: 13px; font-variant-numeric: tabular-nums; }}
+@media (max-width: 759px) {{
+  .row b {{ white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }}
+  .row .rid {{ display: none; }}
+}}
 .row .chips {{ grid-area: chips; display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }}
 .empty {{ padding: 48px 0; text-align: center; color: var(--mute); }}
 .empty b {{ display: block; color: var(--ink); font-size: 17px; margin-bottom: 4px; }}
-.actions {{ position: sticky; bottom: 0; display: flex; gap: 8px; margin: 0 -16px; padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+.actions {{ position: sticky; bottom: 0; display: none; gap: 8px; margin: 0 -16px; padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
   background: var(--bg); border-top: 1px solid var(--line); }}
 .actions .btn {{ flex: 1; }}
+form:has(.pick input:checked) .actions {{ display: flex; }}
 .title {{ margin: 0 0 12px; font-size: 22px; line-height: 1.3; font-weight: 650; letter-spacing: -0.01em; text-wrap: balance; }}
 .meta {{ display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; margin: 0 0 8px; color: var(--mute); font-size: 15px; }}
+.meta.who {{ flex-wrap: nowrap; align-items: flex-start; }}
+.meta.who > span:last-child {{ flex: 1; min-width: 0; padding-top: 3px; }}
+.meta .nw {{ white-space: nowrap; }}
 .meta.sub {{ margin-bottom: 16px; }}
 .sum {{ margin: 0 0 20px; padding: 14px 16px; border-radius: 12px; background: var(--surf); }}
 .sum > :first-child {{ margin-top: 0; }} .sum > :last-child {{ margin-bottom: 0; }}
-.md {{ max-width: 68ch; }}
-.md code {{ font: 14px ui-monospace, SFMono-Regular, Menlo, monospace; padding: 1px 5px; border-radius: 4px; background: var(--code); }}
+.md > * {{ max-width: 68ch; }}
+.md :is(h1, h2, h3, h4) {{ margin: 20px 0 6px; font-size: 17px; line-height: 1.35; font-weight: 650; }}
+.md code {{ font: 14px ui-monospace, SFMono-Regular, Menlo, monospace; padding: 1px 5px; border-radius: 4px; background: var(--surf); }}
+.sum code {{ background: var(--code); }}
 .md pre {{ white-space: pre-wrap; padding: 12px; border-radius: 10px; background: var(--surf); }}
 .md pre code {{ padding: 0; background: none; }}
 .md table {{ border-collapse: collapse; display: block; overflow-x: auto; }}
@@ -142,16 +157,20 @@ legend {{ padding: 0; margin: 0 0 4px; font-weight: 600; }}
 textarea.field {{ min-height: 112px; resize: vertical; }}
 .field::placeholder {{ color: var(--mute); opacity: 1; }}
 .field:focus {{ outline: 2px solid var(--accent); outline-offset: -1px; border-color: var(--accent); }}
+fieldset:disabled .field {{ background: var(--surf); color: var(--mute); cursor: not-allowed; }}
+fieldset:disabled .opt, fieldset:disabled legend {{ color: var(--mute); cursor: not-allowed; }}
 .pair {{ display: flex; gap: 8px; }} .pair .btn {{ flex: 1; min-height: 50px; }}
 .answered {{ margin: 0 0 20px; padding: 14px 16px; border-radius: 12px; background: var(--surf); }}
+.answered h2 {{ margin: 0 0 2px; color: var(--grey-i); font-size: 14px; font-weight: 600; }}
 .answered b {{ display: block; font-size: 17px; }}
-.answered p {{ margin: 6px 0 0; color: var(--mute); font-size: 15px; }}
+.answered p {{ margin: 6px 0 0; color: var(--grey-i); font-size: 15px; }}
+.answered .status {{ display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: 10px; }}
 .thread {{ display: flex; flex-direction: column; gap: 8px; margin: 24px 0 0; padding-top: 16px; border-top: 1px solid var(--line); }}
 .thread h2, .follow h2 {{ margin: 0 0 4px; font-size: 16px; }}
 .msg {{ max-width: 85%; padding: 8px 12px; border-radius: 16px; background: var(--surf); }}
 .msg.me {{ align-self: flex-end; background: var(--me); border-bottom-right-radius: 4px; }}
 .msg.agent {{ align-self: flex-start; border-bottom-left-radius: 4px; }}
-.msg time {{ display: block; margin-top: 2px; color: var(--mute); font-size: 12px; text-align: right; font-variant-numeric: tabular-nums; }}
+.msg time {{ display: block; margin-top: 2px; color: var(--grey-i); font-size: 12px; text-align: right; font-variant-numeric: tabular-nums; }}
 .msg.me time {{ color: var(--blue-i); }}
 .follow {{ margin: 24px 0 0; padding-top: 16px; border-top: 1px solid var(--line); }}
 .follow .pair {{ align-items: flex-start; }}
@@ -164,7 +183,7 @@ textarea.field {{ min-height: 112px; resize: vertical; }}
   .row {{ grid-template-areas: "av title time" "av meta chips"; }}
   .row .chips {{ justify-content: flex-end; margin-top: 0; }}
   .list {{ margin: 0; border-top: 1px solid var(--line); }}
-  .actions {{ margin: 0; }}
+  .actions {{ margin: 0; padding-inline: 0; }}
   .title {{ font-size: 26px; }}
 }}
 @media (prefers-reduced-motion: reduce) {{ .btn:active {{ transform: none; }} }}
@@ -391,7 +410,7 @@ def _card(row: dict) -> str:
         f'<label class="pick"><input type="checkbox" name="id" value="{_esc(row["id"])}" aria-label="Select {_esc(row["id"])}"></label>'
         f'<a class="row{unread}" href="/e/{_esc(row["id"])}">{_avatar(row)}<b>{_esc(row["title"])}</b>'
         f'<time>{_esc(_clock(row.get("created_at")))}</time>'
-        f'<small>{meta} · <span class="id">{_esc(row["id"])}</span></small>'
+        f'<small>{meta}<span class="rid"> · <span class="id">{_esc(row["id"])}</span></span></small>'
         f'<span class="chips">{_urgent(row)}{_chip(row)}</span></a>'
         "</li>"
     )
@@ -506,24 +525,29 @@ def _shown(entry: dict, value) -> str:
     return ", ".join(labels.get(item, str(item)) for item in values)
 
 
+VIA = {"telegram": "Telegram", "web": "the web", "cli": "the CLI", "say": "voice"}
+
+
 def _answered(entry: dict) -> str:
     answer = entry.get("answer")
     if not answer:
         return ""
     delivery = entry.get("delivery") or {}
     if entry["state"] == "delivered":
-        status = "Delivered to the session" + (", which resumed to read it" if delivery.get("headless") else "")
+        tone, status = "green", "Delivered" + (", the session resumed to read it" if delivery.get("headless") else " to the session")
     elif entry["state"] == "undelivered":
-        status = "Not delivered: the session never picked it up"
+        tone, status = "red", "Not delivered: the session never picked it up"
     elif delivery.get("inflight"):
-        status = "Delivering to the session"
+        tone, status = "blue", "Delivering to the session"
     else:
-        status = "Waiting to deliver"
+        tone, status = "blue", "Waiting to deliver"
+    dot = "<i></i>" if tone != "blue" else ""
     comment = f"<p>{_esc(answer['comment'])}</p>" if answer.get("comment") else ""
-    via = " · ".join(bit for bit in (f"via {answer.get('via')}" if answer.get("via") else "", _clock(answer.get("at"))) if bit)
+    via = answer.get("via")
+    sent = " · ".join(bit for bit in (f"Sent from {VIA.get(via, via)}" if via else "", _clock(answer.get("at"))) if bit)
     return (
-        f'<section class="answered" aria-label="Your answer"><b>{_esc(_shown(entry, answer.get("value")))}</b>{comment}'
-        f"<p>{_esc(status)} · {_esc(via)}</p></section>"
+        f'<section class="answered"><h2>Your answer</h2><b>{_esc(_shown(entry, answer.get("value")))}</b>{comment}'
+        f'<p class="status"><span class="chip {tone}">{dot}{_esc(status)}</span><span>{_esc(sent)}</span></p></section>'
     )
 
 
@@ -543,8 +567,9 @@ def _entry_page(entry: dict, error: str | None = None, frame_origin: str | None 
     eid = _esc(entry["id"])
     engine = (entry.get("asker") or {}).get("engine") or ""
     created = entry.get("created_at")
-    when = " · ".join(bit for bit in (_clock(created), _ago(created)) if bit)
-    meta = " · ".join(_esc(bit) for bit in (_who(entry), engine, when) if bit)
+    # Each piece wraps as a unit, so a narrow screen never splits "3 min / ago".
+    bits = (_who(entry), engine, _clock(created), _ago(created))
+    meta = " · ".join(f'<span class="nw">{_esc(bit)}</span>' for bit in bits if bit)
     # An urgent entry already carries the Urgent chip.
     kind = "Report" if entry["kind"] == "post" else ("Question" if entry.get("priority") == "urgent" else "Normal priority")
     parts = [_HEAD.format(title=_esc(entry["title"])), _bar(_BACK, waiting), "<main>"]
@@ -552,7 +577,7 @@ def _entry_page(entry: dict, error: str | None = None, frame_origin: str | None 
         parts.append(f'<p class="notice err" role="alert">{_esc(error)}</p>')
     parts.append(
         f'<h1 class="title">{_esc(entry["title"])}</h1>'
-        f'<p class="meta">{_avatar(entry, small=True)}<span>{meta}</span></p>'
+        f'<p class="meta who">{_avatar(entry, small=True)}<span>{meta}</span></p>'
         f'<p class="meta sub">{_urgent(entry)}{_chip(entry)}<span>{_esc(kind)} · <span class="id">{eid}</span></span></p>'
     )
     if entry.get("summary"):
