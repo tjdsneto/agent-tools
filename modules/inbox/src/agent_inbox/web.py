@@ -580,7 +580,7 @@ def _shown(entry: dict, value) -> str:
     return ", ".join(labels.get(item, str(item)) for item in values)
 
 
-VIA = {"telegram": "Telegram", "web": "the web", "cli": "the CLI", "say": "voice"}
+VIA = {"telegram": "Telegram", "web": "the web", "cli": "the CLI", "chat": "the chat", "say": "voice"}
 
 
 def _ticks(state: str) -> str:

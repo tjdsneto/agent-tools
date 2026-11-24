@@ -85,3 +85,20 @@ def test_answer_refuses_when_the_session_cannot_hear(conn, monkeypatch):
     with pytest.raises(ConflictError, match="held"):
         store.answer(conn, e["id"], "a", via="web")
     assert store.get_entry(conn, e["id"])["state"] == "open"
+
+
+def test_a_chat_answer_is_delivered_at_once_and_skips_reachability(conn, monkeypatch):
+    """The asker records the answer Tiago gave it in chat: it has the answer, so nothing is sent back."""
+    e = make_ask(conn)
+
+    def no_lookup(entry):
+        raise AssertionError("a chat answer must not look up reachability")
+
+    monkeypatch.setattr("agent_inbox.reach.for_entry", no_lookup)
+    out = store.answer(conn, e["id"], "b", comment="said in chat", via="chat")
+    assert out["state"] == "delivered"
+    got = store.get_entry(conn, e["id"])
+    assert got["state"] == "delivered" and got["answer"]["via"] == "chat"
+    # The inbox and Telegram then refuse a second answer, naming the chat one.
+    with pytest.raises(ConflictError, match="already answered via chat: b"):
+        store.answer(conn, e["id"], "a", via="telegram")

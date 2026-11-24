@@ -17,7 +17,8 @@ ENGINES = ("claude", "codex", "cursor")
 PRIORITIES = ("urgent", "normal", "low")
 CONTROL_TYPES = ("choice", "multi", "text", "approve")
 TEXT_SIZES = ("short", "long")
-VIAS = ("web", "telegram", "cli")
+# chat: the asking agent records the answer Tiago gave it in its own chat.
+VIAS = ("web", "telegram", "cli", "chat")
 
 # Question states in which a follow-up or reply still makes sense.
 ASK_LIVE_STATES = ("open", "answered", "delivered")

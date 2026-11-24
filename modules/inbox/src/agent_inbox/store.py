@@ -208,17 +208,21 @@ def answer(
             raise ValidationError(f"{entry_id} is not a question")
         if row["state"] != "open":
             raise ConflictError(_closed_message(row))
-        from agent_inbox.reach import for_entry
-        asker = {k: row[k] for k in ("engine", "model", "session_id", "cwd", "project", "script")}
-        reach = for_entry({"asker": asker, "delivery": row.get("delivery") or {}})
-        if reach.status in ("held", "unreachable"):
-            when = f" until {reach.reachable_at}" if reach.reachable_at else ""
-            raise ConflictError(f"{entry_id} is {reach.status}{when}")
+        # A chat answer is recorded by the asker itself: it is running and already
+        # has the answer, so there is no reachability to check and nothing to deliver.
+        if via != "chat":
+            from agent_inbox.reach import for_entry
+            asker = {k: row[k] for k in ("engine", "model", "session_id", "cwd", "project", "script")}
+            reach = for_entry({"asker": asker, "delivery": row.get("delivery") or {}})
+            if reach.status in ("held", "unreachable"):
+                when = f" until {reach.reachable_at}" if reach.reachable_at else ""
+                raise ConflictError(f"{entry_id} is {reach.status}{when}")
         clean = validate_answer(row["control"], value, comment)
         payload = {"value": clean, "comment": (comment or "").strip() or None, "via": via, "at": _now_iso()}
+        state = "delivered" if via == "chat" else "answered"
         conn.execute(
-            "UPDATE entries SET state = 'answered', answer = %s, updated_at = now() WHERE id = %s",
-            (Jsonb(payload), entry_id),
+            "UPDATE entries SET state = %s, answer = %s, updated_at = now() WHERE id = %s",
+            (state, Jsonb(payload), entry_id),
         )
         _event(conn, entry_id, "answer", via, payload)
     if via != "telegram":
@@ -227,7 +231,7 @@ def answer(
             note_answered(entry_id, via, clean)
         except OSError as exc:
             print(f"telegram note failed: {exc}", file=sys.stderr)
-    return {"entry": entry_id, "state": "answered", **payload}
+    return {"entry": entry_id, "state": state, **payload}
 
 
 def _set_state(conn: psycopg.Connection, row: dict, to: str, **extra: Any) -> None:
