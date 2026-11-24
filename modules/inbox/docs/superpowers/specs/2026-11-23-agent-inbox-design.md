@@ -122,7 +122,7 @@ Each question shows whether its session can hear a message now:
 | 🟡 held | The session has no tokens: the Claude window is saturated (`claude-budget`). Codex and Cursor have no token reader (the registry's rate-limit detection reads Claude transcripts only), so they count as held only when their last wake came back held. Shows "answerable at ~HH:MM" when the reset time is known. | disabled |
 | 🔴 unreachable | No transport, the session is gone, or delivery gave up. | disabled; dismiss only |
 
-When the window resets, entries that were 🟡 become answerable again, and one batched push says so ("3 entries are answerable again"), at the entries' priority and within quiet hours.
+When the window resets, entries that were 🟡 become answerable again, and and when any of them is urgent, one push says so ("Urgent and waiting: 3 from agent-tools").
 
 ## Delivery
 
@@ -159,10 +159,10 @@ Every entry has a thread, questions and info alike.
 | Priority | Push | Channels |
 |---|---|---|
 | `urgent` | immediate, at any hour | Telegram, macOS notification; `agt read` voice if opted in (`AGENT_INBOX_SAY=1`) |
-| `normal` | batched, at most one push per 15 min, daytime only | Telegram |
+| `normal` | none | UI only; the asking agent also asks in its chat |
 | `low` | none | UI only |
 
-Quiet hours are 22:00–08:00: only `urgent` gets through. Any agent may set `urgent`. Every use is logged, and the UI shows a per-agent count.
+Telegram is for emergencies: only `urgent` entries push, so there are no quiet hours to keep (decided 2026-11-24). Any agent may set `urgent`. Every use is logged, and the UI shows a per-agent count.
 
 ## Web UI
 
@@ -183,10 +183,10 @@ Quiet hours are 22:00–08:00: only `urgent` gets through. Any agent may set `ur
 
 ## Hermes and Telegram
 
-- The notifier pushes the card with `hermes send`: the title, priority, project, numbered options, and a link to the entry in the UI.
+- The notifier pushes urgent cards only, with `hermes send`: the title, priority, project, numbered options, and a link to the entry in the UI.
 - Choice and approve cards go out instead through `hermes inbox-card`, from the `inbox-buttons` Hermes plugin (`modules/inbox/hermes-plugin/`), one message per question with inline buttons. The plugin sends with the gateway's own bot token, so the inbox never holds it. A tap with callback data `ib:<id>:<value>` runs `agt inbox answer … --via telegram` without a model call, after the plugin checks the sender against the gateway's allowlist. The store's answer rules still apply: a refused tap shows the reason, and a held question keeps its buttons. When the plugin send fails, the card falls back to `hermes send` with a numbered list.
 - Tiago replies in the Hermes chat ("1", "approve ib-7k3q", "? why not C"). A Hermes `inbox` skill turns the reply into `agt inbox answer … --via telegram` or `agt inbox followup … --via telegram`.
-- When an entry is answered on another surface, Telegram gets a short note: "ib-7k3q answered via web: b".
+- When an urgent entry is answered on another surface, Telegram gets a short note: "ib-7k3q answered via web: b".
 - Hermes runs on this laptop and calls the CLI directly, with no network auth.
 
 ## Store and operations
@@ -232,7 +232,7 @@ Exit codes and JSON output follow the conventions of `agt registry` and `agt say
 
 ## Parked
 
-- Moving the store and UI to an always-on host.
+- Moving the store and UI to an always-on host. The MacBook already stays awake (the `com.tjdsneto.caffeinate` LaunchAgent prevents idle sleep), so this only matters for a closed lid on battery and for a reboot before login.
 
 ## Defaults this design locks
 
@@ -243,6 +243,5 @@ Exit codes and JSON output follow the conventions of `agt registry` and `agt say
 | HTML size cap | 2 MB |
 | HTML retention after close | 90 days |
 | delivery retries | 3 |
-| `normal` push batching | at most one per 15 min |
-| quiet hours | 22:00–08:00 |
+| Telegram pushes | `urgent` only |
 | backups kept | 14 nightly |
