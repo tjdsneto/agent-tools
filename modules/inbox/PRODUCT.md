@@ -8,7 +8,7 @@ web
 
 ## Users
 
-One person: Tiago, a senior full-stack developer who runs many AI coding agents (Claude Code, Codex, Cursor) at once across his projects. The agents are the askers; he is the only answerer. He opens the inbox about equally on his phone, from a Telegram card's "Open details" link, and in a desktop browser on his Mac.
+One person: Tiago, a senior full-stack developer who runs many AI coding agents (Claude Code, Codex, Cursor) at once across his projects. The agents are the askers; he is the only answerer. He opens the inbox about equally on his phone and in a desktop browser on his Mac; agents also put each question's link in their chat.
 
 ## Product Purpose
 
@@ -20,7 +20,7 @@ It is not a chat and not a task manager. Every entry is either an ask (a typed q
 
 ## Operating Context
 
-- Entries arrive from `agt inbox ask` and `agt inbox post`. Telegram pushes a card for each new entry. Choice and approve questions can be answered with Telegram buttons; anything else opens the web page.
+- Entries arrive from `agt inbox ask` and `agt inbox post`. Telegram is for emergencies: only urgent entries push a card (decided 2026-11-24). Urgent choice and approve cards can be answered with Telegram buttons; anything else opens the web page. Agents also ask each question in their own chat, and an answer given there is recorded with `--via chat`.
 - Web pages: the feed (open questions first, then unread posts, then the rest; filters by kind, engine and state; a history view; batch withdraw and dismiss) and the entry page (title, state, summary and detail as Markdown, an optional sandboxed agent HTML frame, the answer form, a follow-up box, and the thread of follow-ups and replies).
 - Answer controls: choice (one option, one may be recommended), multi (several), text (short or long), approve (approve or revise with a reason).
 - Entry states: open, answered, delivered, undelivered, expired, withdrawn, superseded for asks; unread, read, archived for posts.

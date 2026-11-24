@@ -69,9 +69,9 @@ A browser on this machine can open the localhost URL directly. A request that ca
 
 `agt inbox serve` starts at login as `com.tjdsneto.agent-inbox`. While `waiter_pid` is a live process, that process's return is the delivery and the dispatcher does not wake the session. A dead waiter falls through to `agt registry wake`. Three failed wakes move the entry to `undelivered`. A held Claude session waits until `claude-budget` drops below 88 percent. An answer is refused while the session is held or unreachable.
 
-Open questions show 🟢 live, 🔵 resumable, 🟡 held (with the reset time when known) or 🔴 unreachable, and the answer form is disabled for the last two. Serve re-checks each open question every 5 minutes, every minute while held, and writes only on a change. Questions that leave held are announced in one batched push; a normal one waits until quiet hours end.
+Open questions show 🟢 live, 🔵 resumable, 🟡 held (with the reset time when known) or 🔴 unreachable, and the answer form is disabled for the last two. Serve re-checks each open question every 5 minutes, every minute while held, and writes only on a change. Urgent questions that leave held are announced in one push.
 
-Pushes go through `hermes send` to Hermes's home Telegram channel (`telegram`). Set `AGENT_INBOX_TELEGRAM_TO` to another Hermes target, or to an empty string to turn pushes off.
+Telegram is for emergencies: only urgent entries push, at once, day or night, and only urgent questions get an "answered via" note when answered elsewhere. Normal and low entries wait in the inbox. Pushes go through `hermes send` to Hermes's home Telegram channel (`telegram`). Set `AGENT_INBOX_TELEGRAM_TO` to another Hermes target, or to an empty string to turn pushes off.
 
 Choice and approve cards carry tap-to-answer buttons through the `inbox-buttons` Hermes plugin in `hermes-plugin/`. `./install.sh` links it into `~/.hermes/plugins`; turn it on once with `hermes plugins enable inbox-buttons`. Without it, cards fall back to numbered text replies.
 

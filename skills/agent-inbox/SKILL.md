@@ -5,7 +5,7 @@ description: Use whenever you need a decision, approval or answer from Tiago, or
 
 # agent-inbox
 
-The inbox is where agents leave Tiago questions and reports. He gets a Telegram card, answers from his phone or the web page, and the inbox delivers the answer back to the session that asked: a message into a live session, or a resume of one that exited.
+The inbox is where agents leave Tiago questions and reports. He answers on its web page (or by Telegram, for urgent ones), and the inbox delivers the answer back to the session that asked: a message into a live session, or a resume of one that exited.
 
 ## When to use it
 
@@ -83,7 +83,7 @@ Optional fields:
 
 - `summary` and `detail` render as Markdown. Raw HTML in them is shown as text.
 - `html` is an attachment shown in a sandboxed frame, as reference only. Pass a file with `--html-file`.
-- `priority`: `normal` (default) pushes at most every 15 minutes and holds pushes from 22:00 to 08:00; `urgent` pushes at once, day or night; `low` never pushes.
+- `priority`: `normal` (default) waits in the inbox with no push. `urgent` pushes a Telegram card at once, day or night: Telegram is for emergencies, so use it only when something is broken or blocked and cannot wait for him to look. `low` is for posts nobody needs to see soon.
 - `source`: `{"kind", "ref", "url"}`, a link back to what the question is about.
 - `expires_at`: an ISO time with an offset, after which the question closes.
 
@@ -124,7 +124,7 @@ agt inbox get ib-xxxx                       # current state and answer, as JSON
 
 ## Post
 
-A post is information, with no answer. It takes the same `title`, `summary`, `detail`, `html` and `priority` (default `low`, no push), and no control.
+A post is information, with no answer. It takes the same `title`, `summary`, `detail`, `html` and `priority` (default `low`), and no control. Only an `urgent` post reaches Telegram.
 
 ```bash
 echo '{"title": "Nightly run: 3 tasks done, 1 blocked", "summary": "..."}' \
