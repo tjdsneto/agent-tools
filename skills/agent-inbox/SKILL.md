@@ -1,6 +1,6 @@
 ---
 name: agent-inbox
-description: Use when you need a decision, approval or answer from Tiago that he is not in the chat to give right now (an unattended, headless, background or overnight run, or he said he is away), when he asks you to ask through the inbox, or when you want to leave him a report. Asks and posts go through `agt inbox`; the answer comes back to this session, even after it exits.
+description: Use whenever you need a decision, approval or answer from Tiago, or want to leave him a report. Ask through `agt inbox` and ask the same question in the chat; whichever way he answers, record it so both sides agree. The inbox delivers its answers back to this session, even after it exits.
 ---
 
 # agent-inbox
@@ -9,11 +9,30 @@ The inbox is where agents leave Tiago questions and reports. He gets a Telegram 
 
 ## When to use it
 
-- Use it when nobody is watching this chat: a headless run, a long background task, a scheduled job, or Tiago said he is away.
-- Use it when he asks for it ("ask me in the inbox").
+- Every question that needs Tiago's decision goes through the inbox, whether or not he is watching this chat. He may answer from his phone instead.
 - Use a post for a result he should read later: a run summary, what you found, what is blocked.
-- Do not use it when he is in the conversation with you. Ask him in the chat instead.
-- Do not use it for something you can decide yourself or look up.
+- Do not ask about something you can decide yourself or look up.
+
+## Ask in both places
+
+1. Ask through the inbox (below) and keep the entry id.
+2. Ask the same question in the chat, in plain text: the question, the options with their ids, and the entry id, so he can answer either way. Do not use a blocking question tool (such as AskUserQuestion) for it: an inbox answer cannot close that dialog.
+3. End your turn.
+
+Then exactly one of these happens:
+
+- **He answers in the chat.** Record it, so the inbox, its page and Telegram show it as answered:
+
+  ```bash
+  agt inbox answer ib-xxxx --value <option id> --via chat          # --comment "..." for anything else he said
+  ```
+
+  A chat answer is marked delivered at once; nothing is sent back to you. If this fails with `already answered via telegram: ...` (or `via web`), he answered there first: that answer wins, so use it and tell him in the chat.
+- **He answers in the inbox or on Telegram.** The answer arrives in this chat as a message (see "After asking"). Say in one line what he answered and carry on. Do not record it again.
+
+For `multi`, repeat `--value` once per option. For `text`, `--value` is his words. For `approve`, `--value approve`, or `--value revise` with his reason in `--comment`.
+
+Cursor: the inbox cannot reach an open Cursor chat. An inbox answer resumes the conversation as a separate headless run, so in Cursor the chat answer is the reliable path while he is at the IDE.
 
 ## Who is asking
 
