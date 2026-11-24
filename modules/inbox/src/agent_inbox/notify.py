@@ -272,15 +272,17 @@ def note_answered(entry_id: str, via: str, value) -> None:
 
 
 def urgent_counts(conn) -> str:
+    """The feed's banner: urgent entries still waiting on Tiago, per engine."""
     rows = conn.execute(
         """
         SELECT engine, count(*) AS n FROM entries
         WHERE priority = 'urgent' AND engine IS NOT NULL
+          AND ((kind = 'ask' AND state = 'open') OR (kind = 'post' AND state = 'unread'))
         GROUP BY engine
         """
     ).fetchall()
     counts = {row["engine"]: row["n"] for row in rows}
-    parts = [f"{name} {counts[name]}" for name in ("claude", "codex", "cursor") if counts.get(name)]
+    parts = [f"{counts[name]} from {name}" for name in ("claude", "codex", "cursor") if counts.get(name)]
     if not parts:
         return ""
-    return "urgent: " + ", ".join(parts)
+    return "Urgent and waiting: " + ", ".join(parts)
