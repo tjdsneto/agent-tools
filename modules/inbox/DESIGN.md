@@ -444,7 +444,7 @@ When any feed row is selected, a batch tray (Withdraw, Dismiss) appears sticky a
 ### Named Rules
 **The 44px Floor Rule.** Every interactive target is at least 44px tall. Where the visual is smaller (36px tabs, the 18px row checkbox), an invisible hit area makes up the difference.
 
-**The One Column Rule.** Phone and desktop share one 720px column. Desktop gets more air around it, not a second pane.
+**The One Column Rule.** The feed is one 720px column at every width. Entry pages are too, up to 1099px; from 1100px they add the feed as a pane beside the entry (see Entry pane). Nothing else gets a second column.
 
 ## Elevation & Depth
 
@@ -513,11 +513,20 @@ Softly rounded rectangles for anything you type into or press (10px), slightly s
 
 ### Answered card
 - **Character:** the receipt that closes the loop.
-- **Style:** a Cool Surface panel: a 14px "Your answer" heading in Quiet Grey ink, the chosen value at 17px, the optional comment in 15px grey, then a status chip and "Sent from Telegram · 06:20". The chip is green when delivered, red when not delivered, blue (no dot) while waiting or delivering.
+- **Style:** a Cool Surface panel: a 14px "Your answer" heading in Quiet Grey ink, the chosen value at 17px, the optional comment in 15px grey, then the delivery mark and "From Telegram · 06:20". The mark is a single tick with "Sent, waiting to deliver" (or "Delivering to the session") in Quiet Grey 600, two ticks with "Delivered to the session" in Live Green ink, or a red chip with a dot when not delivered.
+- **Landing:** when a sent answer becomes delivered while the page is open, the second tick draws in (420ms, ease-out) and the card fades from Live Green tint back to Cool Surface (1.4s). The page remembers the last mark it showed per entry in sessionStorage, so a plain reload never replays it. Off under reduced motion.
 
 ### Conversation bubbles
-- **Style:** up to 85% wide, 8px 12px padding, 16px radius with a 4px tail corner. The agent's replies sit left on Cool Surface; the person's follow-ups sit right on My Bubble blue. A 12px tabular timestamp sits right-aligned under the text, Quiet Grey ink for the agent, Resumable Blue ink for the person.
+- **Style:** up to 85% wide, 8px 12px padding, 16px radius with a 4px tail corner. The agent's replies sit left on Cool Surface; the person's follow-ups sit right on My Bubble blue. A 12px tabular timestamp sits right-aligned under the text, Quiet Grey ink for the agent, Resumable Blue ink for the person. The person's bubbles end with delivery ticks after the time: one while the follow-up waits, two once the session has it (its seq is at or below the entry's delivered_seq).
 - **Follow up:** below the thread, a one-line textarea and a secondary "Send" button side by side, both 48px.
+
+### Delivery ticks
+- **Character:** Telegram's grammar for "it reached them".
+- **Style:** a drawn SVG, 17x16 (15x14 in bubbles), 1.8px round stroke in the surrounding ink. One check means sent; two overlapping checks mean the session has it. Labelled "Sent" or "Delivered" for assistive tech. Never an emoji or a text glyph.
+
+### Entry pane
+- **Where:** entry pages from 1100px. The bar's inner row widens to 1240px; under it, a 380px pane holds the feed rows and the entry fills the rest (24px 40px padding, 760px max).
+- **Style:** the pane is sticky under the bar, scrolls on its own, and has a right hairline. Its rows are feed rows without the checkbox, the title clamped to two lines, chips under the meta, no id. The current entry's row is marked `aria-current` with a Hairline grey fill, neutral so every chip tone stays readable on it. Batch actions stay on the feed.
 
 ### Agent frame
 - A full-width sandboxed iframe, 280px minimum, hairline border, 12px radius, always white inside, captioned "Reference only. Answer below." in 14px Grey Meta.
