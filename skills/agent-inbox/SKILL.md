@@ -15,8 +15,15 @@ The inbox is where agents leave Tiago questions and reports. He gets a Telegram 
 
 ## Ask in both places
 
-1. Ask through the inbox (below) and keep the entry id.
-2. Ask the same question in the chat, in plain text: the question, the options with their ids, and the entry id, so he can answer either way. Do not use a blocking question tool (such as AskUserQuestion) for it: an inbox answer cannot close that dialog.
+1. Ask through the inbox (below) and keep the `entry` id and the `url` it prints.
+2. Ask the same question in the chat, in plain text: the question, the options with their ids, and the link to its page, so he can answer either way. Do not use a blocking question tool (such as AskUserQuestion) for it: an inbox answer cannot close that dialog.
+
+   ```
+   Merge the registry refactor before the inbox restart?
+   - merge: Merge now, then restart (recommended)
+   - restart: Restart first, merge after
+   Answer here, or in the inbox: https://…:8444/e/ib-xxxx
+   ```
 3. End your turn.
 
 Then exactly one of these happens:
@@ -44,7 +51,7 @@ Pass your engine and your own session id, so the answer can find you. Read the i
 | Codex | `codex` | `$CODEX_THREAD_ID` |
 | Cursor | `cursor` | `$CURSOR_CONVERSATION_ID` |
 
-Without `--session-id`, nothing is ever delivered to you. Leave it out only when you, or the script that runs you, will read the answer later with `agt inbox get <id>`.
+An ask needs `--engine` and `--session-id`. The one exception is an asker that should never be woken, such as a script or an orchestrator that resumes its own agents: it passes `--script <name>` instead, and reads the answer later with `agt inbox get <id>`.
 
 ## Ask
 
@@ -63,7 +70,7 @@ cat <<'JSON' | agt inbox ask --engine claude --session-id "$CLAUDE_CODE_SESSION_
 JSON
 ```
 
-It prints `{"entry": "ib-xxxx", "state": "open"}`. Keep the id.
+It prints `{"entry": "ib-xxxx", "state": "open", "url": "https://…/e/ib-xxxx"}`. Keep the id and the link.
 
 Controls:
 
