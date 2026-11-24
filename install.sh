@@ -30,11 +30,14 @@ for s in agent-registry session-waker claude-budget session-report active-sessio
 done
 
 # Skills → Claude + Cursor shared skill dirs (match tjdsneto-setup install conventions).
+# link_skill <name> [dest roots...]; default roots are Claude and Cursor.
 link_skill() {
-  local name="$1"
+  local name="$1"; shift
   local src="$ROOT/skills/$name"
   [ -d "$src" ] || return 0
-  for dest_root in "$HOME/.claude/skills" "$HOME/.cursor/skills"; do
+  local roots=("$@")
+  [ ${#roots[@]} -gt 0 ] || roots=("$HOME/.claude/skills" "$HOME/.cursor/skills")
+  for dest_root in "${roots[@]}"; do
     mkdir -p "$dest_root/$name"
     ln -sfn "$src/SKILL.md" "$dest_root/$name/SKILL.md"
     # Bundle refs/scripts if present
@@ -45,9 +48,11 @@ link_skill() {
   done
 }
 
-for sk in session-waker agent-say agent-read glue-miner session-awareness agent-inbox; do
+for sk in session-waker agent-say agent-read glue-miner session-awareness; do
   link_skill "$sk"
 done
+# Any agent can ask Tiago through the inbox, so Codex gets this one too.
+link_skill agent-inbox "$HOME/.claude/skills" "$HOME/.cursor/skills" "$HOME/.codex/skills"
 
 if [ -d "$HOME/.hermes/skills" ]; then
   mkdir -p "$HOME/.hermes/skills/inbox"
