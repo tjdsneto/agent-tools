@@ -51,7 +51,7 @@ Pass your engine and your own session id, so the answer can find you. Read the i
 | Codex | `codex` | `$CODEX_THREAD_ID` |
 | Cursor | `cursor` | `$CURSOR_CONVERSATION_ID` |
 
-An ask needs `--engine` and `--session-id`. The one exception is an asker that should never be woken, such as a script or an orchestrator that resumes its own agents: it passes `--script <name>` instead, and reads the answer later with `agt inbox get <id>`.
+An ask needs `--engine` and `--session-id`. The one exception is an asker that should never be woken, such as a script or an orchestrator that resumes its own agents: it passes `--script <name>` instead, and either blocks with `--wait` or reads the answer later with `agt inbox get <id>`.
 
 ## Ask
 
