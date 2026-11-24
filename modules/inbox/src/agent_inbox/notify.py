@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -25,8 +26,33 @@ def due(entries: list[dict], *, now: datetime, last_normal_at: datetime | None) 
     return urgent + normal
 
 
-def card(entry: dict, *, ui: str) -> str:
-    """Telegram card. hermes send renders Markdown, so the title is bold and the UI is a short link."""
+def buttons(entry: dict) -> list[list[str]] | None:
+    """Answer buttons for the inbox-buttons Hermes plugin, as [label, callback data] rows.
+
+    Only choice and approve: multi needs toggles, text and revise need words. None when any
+    callback data passes Telegram's 64-byte limit, so the card falls back to a text reply.
+    """
+    control = entry.get("control") or {}
+    ctype = control.get("type")
+    if ctype == "choice":
+        pairs = [
+            [("⭐ " if opt.get("recommended") else "") + opt["label"], f"ib:{entry['id']}:{opt['id']}"]
+            for opt in control.get("options") or []
+        ]
+    elif ctype == "approve":
+        pairs = [["Approve", f"ib:{entry['id']}:approve"]]
+    else:
+        return None
+    if any(len(data.encode()) > 64 for _, data in pairs):
+        return None
+    return pairs
+
+
+def card(entry: dict, *, ui: str, tappable: bool = False) -> str:
+    """Telegram card. hermes send renders Markdown, so the title is bold and the UI is a short link.
+
+    A tappable card goes out with buttons(), so a choice drops its numbered list.
+    """
     project = os.path.basename((entry.get("asker") or {}).get("project") or "")
     head = f"*{entry['title']}*"
     if entry.get("priority") == "urgent":
@@ -35,7 +61,9 @@ def card(entry: dict, *, ui: str) -> str:
     control = entry.get("control") or {}
     ctype = control.get("type")
     options = control.get("options") or []
-    if ctype in ("choice", "multi"):
+    if ctype == "choice" and tappable:
+        pass
+    elif ctype in ("choice", "multi"):
         for i, opt in enumerate(options, start=1):
             mark = " (recommended)" if opt.get("recommended") else ""
             lines.append(f"{i}. {opt['label']}{mark}")
@@ -43,7 +71,7 @@ def card(entry: dict, *, ui: str) -> str:
     elif ctype == "text":
         lines.append("Reply with your answer")
     elif ctype == "approve":
-        lines.append('Reply "approve" or "revise: reason"')
+        lines.append('Tap Approve, or reply "revise: reason"' if tappable else 'Reply "approve" or "revise: reason"')
     lines.append(f"[Open details]({ui})")
     return "\n".join(lines)
 
@@ -61,6 +89,20 @@ def _target() -> str:
 
 def hermes_send(to: str, text: str) -> None:
     subprocess.run(["hermes", "send", "--to", to, text], check=False, timeout=60)
+
+
+def hermes_card(to: str, text: str, pairs: list[list[str]]) -> bool:
+    """Send through the inbox-buttons plugin. False when it is missing or the send failed."""
+    try:
+        proc = subprocess.run(
+            ["hermes", "inbox-card", "--to", to, "--buttons", json.dumps(pairs)],
+            input=text, text=True, capture_output=True, timeout=60,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    if proc.returncode != 0:
+        print(f"inbox-card failed, sending without buttons: {proc.stdout.strip() or proc.stderr.strip()}", file=sys.stderr)
+    return proc.returncode == 0
 
 
 def notify_mac(title: str, body: str) -> None:
@@ -146,6 +188,14 @@ def _send(to: str, text: str) -> None:
         print(f"telegram send failed: {exc}", file=sys.stderr)
 
 
+def _send_card(to: str, entry: dict, ui: str) -> None:
+    link = _link(entry, ui)
+    pairs = buttons(entry)
+    if pairs and hermes_card(to, card(entry, ui=link, tappable=True), pairs):
+        return
+    _send(to, card(entry, ui=link))
+
+
 def push_new(conn, entries: list[dict], *, now: datetime, ui: str) -> None:
     seen = _notified(conn)
     fresh = [entry for entry in entries if _visible(entry) and entry["id"] not in seen]
@@ -156,10 +206,12 @@ def push_new(conn, entries: list[dict], *, now: datetime, ui: str) -> None:
     urgent = [entry for entry in batch if entry["priority"] == "urgent"]
     normal = [entry for entry in batch if entry["priority"] == "normal"]
     if target:
-        for entry in urgent:
-            _send(target, card(entry, ui=_link(entry, ui)))
-        if normal:
-            _send(target, "\n\n".join(card(entry, ui=_link(entry, ui)) for entry in normal))
+        # A card with buttons is its own message; the rest of a normal batch is one message.
+        for entry in urgent + [entry for entry in normal if buttons(entry)]:
+            _send_card(target, entry, ui)
+        plain = [entry for entry in normal if not buttons(entry)]
+        if plain:
+            _send(target, "\n\n".join(card(entry, ui=_link(entry, ui)) for entry in plain))
     else:
         _warn_unset()
     for entry in urgent:

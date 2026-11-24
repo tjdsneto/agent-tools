@@ -1,0 +1,10 @@
+name: inbox-buttons
+label: Inbox buttons
+kind: standalone
+version: 0.1.0
+author: tjdsneto
+description: >
+  Tappable answers for agent-inbox cards on Telegram. `hermes inbox-card` sends a card with
+  inline buttons using the gateway's own bot credentials, and a callback handler scoped to the
+  `ib:` prefix turns a tap into `agt inbox answer <id> --value <v> --via telegram`.
+provides_tools: []

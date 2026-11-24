@@ -99,3 +99,45 @@ def test_voice_is_opt_in_and_uses_agent_read(monkeypatch):
     monkeypatch.setenv("AGENT_INBOX_SAY", "1")
     notify.say("deploy broke")
     assert calls == [["agt", "read", "--title", "Inbox", "--text", "deploy broke", "--background"]]
+
+
+def _choice_entry(eid="ib-7k3q", priority="normal"):
+    return {"id": eid, "title": "Which split?", "priority": priority, "kind": "ask", "state": "open",
+            "asker": {"engine": "claude", "project": "/tmp/x"}, "created_at": "t",
+            "control": {"type": "choice", "options": [{"id": "a", "label": "Tauri"}, {"id": "b", "label": "Go tray", "recommended": True}]}}
+
+
+def test_choice_and_approve_get_buttons_and_the_rest_do_not():
+    from agent_inbox.notify import buttons
+    assert buttons(_choice_entry()) == [["Tauri", "ib:ib-7k3q:a"], ["⭐ Go tray", "ib:ib-7k3q:b"]]
+    assert buttons({"id": "ib-1", "control": {"type": "approve"}}) == [["Approve", "ib:ib-1:approve"]]
+    assert buttons({"id": "ib-1", "control": {"type": "multi", "options": [{"id": "a", "label": "A"}]}}) is None
+    assert buttons({"id": "ib-1", "control": {"type": "text"}}) is None
+    long_id = {"id": "ib-1", "control": {"type": "choice", "options": [{"id": "x" * 60, "label": "A"}]}}
+    assert buttons(long_id) is None
+
+
+def test_a_tappable_choice_card_drops_the_numbered_list():
+    text = card(_choice_entry(), ui="https://x/e/ib-7k3q", tappable=True)
+    assert "1." not in text and "Reply with a number" not in text
+    assert "[Open details](https://x/e/ib-7k3q)" in text
+
+
+def test_choice_cards_go_out_with_buttons_one_per_message(conn, monkeypatch):
+    monkeypatch.setenv("AGENT_INBOX_TELEGRAM_TO", "telegram:1")
+    cards, plain = [], []
+    monkeypatch.setattr("agent_inbox.notify.hermes_card", lambda to, text, pairs: cards.append((to, pairs)) or True)
+    monkeypatch.setattr("agent_inbox.notify.hermes_send", lambda to, text: plain.append(text))
+    text_q = {**_choice_entry("ib-3"), "control": {"type": "text"}}
+    push_new(conn, [_choice_entry("ib-1"), _choice_entry("ib-2"), text_q], now=datetime(2026, 11, 23, 12, 0, tzinfo=LOCAL), ui="https://x")
+    assert [pairs[0][1] for _, pairs in cards] == ["ib:ib-1:a", "ib:ib-2:a"]
+    assert len(plain) == 1 and "ib-3" in plain[0]
+
+
+def test_a_failed_button_send_falls_back_to_text(conn, monkeypatch):
+    monkeypatch.setenv("AGENT_INBOX_TELEGRAM_TO", "telegram:1")
+    plain = []
+    monkeypatch.setattr("agent_inbox.notify.hermes_card", lambda to, text, pairs: False)
+    monkeypatch.setattr("agent_inbox.notify.hermes_send", lambda to, text: plain.append(text))
+    push_new(conn, [_choice_entry()], now=datetime(2026, 11, 23, 12, 0, tzinfo=LOCAL), ui="https://x")
+    assert len(plain) == 1 and "1. Tauri" in plain[0]

@@ -53,6 +53,10 @@ if [ -d "$HOME/.hermes/skills" ]; then
   mkdir -p "$HOME/.hermes/skills/inbox"
   ln -sfn "$ROOT/skills/inbox/SKILL.md" "$HOME/.hermes/skills/inbox/SKILL.md"
   echo "skill inbox -> $HOME/.hermes/skills/inbox"
+  # Linked, not enabled: `hermes plugins enable inbox-buttons` writes Hermes config, which Cockpit owns.
+  mkdir -p "$HOME/.hermes/plugins"
+  ln -sfn "$ROOT/modules/inbox/hermes-plugin/inbox-buttons" "$HOME/.hermes/plugins/inbox-buttons"
+  echo "plugin inbox-buttons -> $HOME/.hermes/plugins/inbox-buttons"
 else
   echo "hermes skills dir missing; inbox skill is $ROOT/skills/inbox"
 fi
