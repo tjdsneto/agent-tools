@@ -166,6 +166,14 @@ fieldset:disabled .opt, fieldset:disabled legend {{ color: var(--mute); cursor: 
 .answered p {{ margin: 6px 0 0; color: var(--grey-i); font-size: 15px; }}
 .answered .status {{ display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: 10px; }}
 .answered .status .chip {{ white-space: normal; line-height: 1.3; padding-block: 4px; }}
+.sent {{ display: inline-flex; align-items: center; gap: 6px; font-weight: 600; color: var(--grey-i); }}
+.sent.delivered {{ color: var(--green-i); }}
+.ticks {{ flex: none; width: 17px; height: 16px; }}
+.ticks .t2 {{ stroke-dasharray: 12; stroke-dashoffset: 0; }}
+.landed .ticks .t2 {{ animation: tick 420ms 120ms cubic-bezier(.16, 1, .3, 1) both; }}
+.answered.landed {{ animation: landed 1400ms cubic-bezier(.16, 1, .3, 1); }}
+@keyframes tick {{ from {{ stroke-dashoffset: 12; }} to {{ stroke-dashoffset: 0; }} }}
+@keyframes landed {{ from {{ background: var(--green-t); }} to {{ background: var(--surf); }} }}
 .thread {{ display: flex; flex-direction: column; gap: 8px; margin: 24px 0 0; padding-top: 16px; border-top: 1px solid var(--line); }}
 .thread h2, .follow h2 {{ margin: 0 0 4px; font-size: 16px; }}
 .msg {{ max-width: 85%; padding: 8px 12px; border-radius: 16px; background: var(--surf); }}
@@ -173,6 +181,9 @@ fieldset:disabled .opt, fieldset:disabled legend {{ color: var(--mute); cursor: 
 .msg.agent {{ align-self: flex-start; border-bottom-left-radius: 4px; }}
 .msg time {{ display: block; margin-top: 2px; color: var(--grey-i); font-size: 12px; text-align: right; font-variant-numeric: tabular-nums; }}
 .msg.me time {{ color: var(--blue-i); }}
+.msg .when {{ display: flex; align-items: center; justify-content: flex-end; gap: 4px; margin-top: 2px; }}
+.msg .when time {{ margin: 0; }}
+.msg.me .ticks {{ color: var(--blue-i); width: 15px; height: 14px; }}
 .follow {{ margin: 24px 0 0; padding-top: 16px; border-top: 1px solid var(--line); }}
 .follow .pair {{ align-items: flex-start; }}
 .follow .field {{ margin: 0; flex: 1; min-height: 48px; }}
@@ -187,10 +198,26 @@ fieldset:disabled .opt, fieldset:disabled legend {{ color: var(--mute); cursor: 
   .actions {{ margin: 0; padding-inline: 0; }}
   .title {{ font-size: 26px; }}
 }}
-@media (prefers-reduced-motion: reduce) {{ .btn:active {{ transform: none; }} }}
+.pane {{ display: none; }}
+@media (min-width: 1100px) {{
+  .split .bar-in {{ max-width: 1240px; }}
+  .split-body {{ display: grid; grid-template-columns: 380px minmax(0, 1fr); max-width: 1240px; margin: 0 auto; }}
+  .pane {{ display: block; position: sticky; top: 57px; height: calc(100vh - 57px); overflow-y: auto; border-right: 1px solid var(--line); }}
+  .pane .list {{ margin: 0; border-top: 0; }}
+  .pane .row {{ grid-template-areas: "av title time" "av meta meta" "av chips chips"; padding-left: 16px; }}
+  .pane .row b {{ white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }}
+  .pane .row .rid {{ display: none; }}
+  .pane .row .chips {{ justify-content: flex-start; margin-top: 4px; }}
+  .pane .row[aria-current="page"] {{ background: var(--line); }}
+  .split-body main {{ max-width: 760px; margin: 0; padding: 24px 40px 48px; }}
+}}
+@media (prefers-reduced-motion: reduce) {{
+  .btn:active {{ transform: none; }}
+  .landed .ticks .t2, .answered.landed {{ animation: none; }}
+}}
 </style>
 </head>
-<body>
+<body{body}>
 """
 
 # A reload on every store change used to wipe a half-typed answer. Once the
@@ -203,6 +230,13 @@ const es = new EventSource("/events");
 let open = false, dirty = false, leaving = false;
 document.addEventListener("input", () => { dirty = true; });
 addEventListener("beforeunload", () => { leaving = true; es.close(); });
+// A mark that showed "sent" on the last visit and "delivered" now just landed.
+document.querySelectorAll("[data-ticks]").forEach((el) => {
+  const key = "ib-ticks:" + el.dataset.ticks, now = el.dataset.state;
+  let before = null;
+  try { before = sessionStorage.getItem(key); sessionStorage.setItem(key, now); } catch (e) {}
+  if (before === "sent" && now === "delivered") el.classList.add("landed");
+});
 es.onmessage = () => {
   if (leaving) return;
   if (!open) { open = true; return; }
@@ -402,14 +436,18 @@ def _bar(left: str, count: int | None) -> str:
     return f'<header class="bar"><div class="bar-in">{left}{right}</div></header>'
 
 
-def _card(row: dict) -> str:
+def _card(row: dict, *, pick: bool = True, current: bool = False) -> str:
     engine = (row.get("asker") or {}).get("engine") or ""
     meta = " · ".join(_esc(bit) for bit in (_who(row), engine) if bit)
     unread = " unread" if row["kind"] == "post" and row["state"] == "unread" else ""
-    return (
-        '<li class="item">'
+    box = (
         f'<label class="pick"><input type="checkbox" name="id" value="{_esc(row["id"])}" aria-label="Select {_esc(row["id"])}"></label>'
-        f'<a class="row{unread}" href="/e/{_esc(row["id"])}">{_avatar(row)}<b>{_esc(row["title"])}</b>'
+        if pick else ""
+    )
+    here = ' aria-current="page"' if current else ""
+    return (
+        f'<li class="item">{box}'
+        f'<a class="row{unread}" href="/e/{_esc(row["id"])}"{here}>{_avatar(row)}<b>{_esc(row["title"])}</b>'
         f'<time>{_esc(_clock(row.get("created_at")))}</time>'
         f'<small>{meta}<span class="rid"> · <span class="id">{_esc(row["id"])}</span></span></small>'
         f'<span class="chips">{_urgent(row)}{_chip(row)}</span></a>'
@@ -467,7 +505,7 @@ def _feed_page(rows: list[dict], qs: dict, error: str | None = None, banner: str
         body = '<p class="empty"><b>Nothing here</b>Agents\' questions and reports land here as they arrive.</p>'
     count = _waiting(rows) if waiting is None else waiting
     return (
-        _HEAD.format(title="Inbox")
+        _HEAD.format(title="Inbox", body="")
         + _bar("<h1>Inbox</h1>", count)
         + "<main>"
         + _nav(qs)
@@ -529,26 +567,40 @@ def _shown(entry: dict, value) -> str:
 VIA = {"telegram": "Telegram", "web": "the web", "cli": "the CLI", "say": "voice"}
 
 
+def _ticks(state: str) -> str:
+    """Telegram's marks: one tick when sent, two once the session has it.
+
+    The second tick is its own path, so the page can draw it in when delivery lands.
+    """
+    second = '<path class="t2" d="M7.5 11 8.5 12 15 4.5"/>' if state == "delivered" else ""
+    label = "Delivered" if state == "delivered" else "Sent"
+    return (
+        f'<svg class="ticks" viewBox="0 0 17 16" fill="none" stroke="currentColor" stroke-width="1.8" '
+        f'stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="{label}">'
+        f'<path d="M1.5 8.5 5 12 11.5 4.5"/>{second}</svg>'
+    )
+
+
 def _answered(entry: dict) -> str:
     answer = entry.get("answer")
     if not answer:
         return ""
     delivery = entry.get("delivery") or {}
-    if entry["state"] == "delivered":
-        tone, status = "green", "Delivered" + (", the session resumed to read it" if delivery.get("headless") else " to the session")
-    elif entry["state"] == "undelivered":
-        tone, status = "red", "Not delivered: the session never picked it up"
-    elif delivery.get("inflight"):
-        tone, status = "blue", "Delivering to the session"
+    if entry["state"] == "undelivered":
+        mark, state = '<span class="chip red"><i></i>Not delivered: the session never picked it up</span>', "failed"
+    elif entry["state"] == "delivered":
+        words = "Delivered" + (", the session resumed to read it" if delivery.get("headless") else " to the session")
+        mark, state = f'<span class="sent delivered">{_ticks("delivered")}{_esc(words)}</span>', "delivered"
     else:
-        tone, status = "blue", "Waiting to deliver"
-    dot = "<i></i>" if tone != "blue" else ""
+        words = "Delivering to the session" if delivery.get("inflight") else "Sent, waiting to deliver"
+        mark, state = f'<span class="sent">{_ticks("sent")}{_esc(words)}</span>', "sent"
     comment = f"<p>{_esc(answer['comment'])}</p>" if answer.get("comment") else ""
     via = answer.get("via")
-    sent = " · ".join(bit for bit in (f"Sent from {VIA.get(via, via)}" if via else "", _clock(answer.get("at"))) if bit)
+    sent = " · ".join(bit for bit in (f"From {VIA.get(via, via)}" if via else "", _clock(answer.get("at"))) if bit)
     return (
-        f'<section class="answered"><h2>Your answer</h2><b>{_esc(_shown(entry, answer.get("value")))}</b>{comment}'
-        f'<p class="status"><span class="chip {tone}">{dot}{_esc(status)}</span><span>{_esc(sent)}</span></p></section>'
+        f'<section class="answered" data-ticks="{_esc(entry["id"])}:answer" data-state="{state}">'
+        f'<h2>Your answer</h2><b>{_esc(_shown(entry, answer.get("value")))}</b>{comment}'
+        f'<p class="status">{mark}<span>{_esc(sent)}</span></p></section>'
     )
 
 
@@ -556,15 +608,27 @@ def _thread(entry: dict) -> str:
     events = entry.get("thread") or []
     if not events:
         return ""
-    bubbles = "".join(
-        f'<div class="msg {"me" if event.get("type") == "followup" else "agent"}">{_esc(event.get("text") or "")}'
-        f'<time>{_esc(_clock(event.get("at")))}</time></div>'
-        for event in events
-    )
+    delivered = (entry.get("delivery") or {}).get("delivered_seq") or 0
+
+    def bubble(event: dict) -> str:
+        when = f'<time>{_esc(_clock(event.get("at")))}</time>'
+        if event.get("type") != "followup":
+            return f'<div class="msg agent">{_esc(event.get("text") or "")}<span class="when">{when}</span></div>'
+        state = "delivered" if event["seq"] <= delivered else "sent"
+        return (
+            f'<div class="msg me" data-ticks="{_esc(entry["id"])}:f{event["seq"]}" data-state="{state}">'
+            f'{_esc(event.get("text") or "")}<span class="when">{when}{_ticks(state)}</span></div>'
+        )
+
+    bubbles = "".join(bubble(event) for event in events)
     return f'<section class="thread" aria-label="Conversation"><h2>Conversation</h2>{bubbles}</section>'
 
 
-def _entry_page(entry: dict, error: str | None = None, frame_origin: str | None = None, waiting: int | None = None) -> str:
+def _entry_page(
+    entry: dict, error: str | None = None, frame_origin: str | None = None, waiting: int | None = None,
+    sidebar: list[dict] | None = None,
+) -> str:
+    """One entry. sidebar is the feed, shown beside the entry on wide screens only."""
     eid = _esc(entry["id"])
     engine = (entry.get("asker") or {}).get("engine") or ""
     created = entry.get("created_at")
@@ -573,7 +637,12 @@ def _entry_page(entry: dict, error: str | None = None, frame_origin: str | None 
     meta = " · ".join(f'<span class="nw">{_esc(bit)}</span>' for bit in bits if bit)
     # An urgent entry already carries the Urgent chip.
     kind = "Report" if entry["kind"] == "post" else ("Question" if entry.get("priority") == "urgent" else "Normal priority")
-    parts = [_HEAD.format(title=_esc(entry["title"])), _bar(_BACK, waiting), "<main>"]
+    body = ' class="split"' if sidebar else ""
+    parts = [_HEAD.format(title=_esc(entry["title"]), body=body), _bar(_BACK, waiting)]
+    if sidebar:
+        rows = "".join(_card(row, pick=False, current=row["id"] == entry["id"]) for row in sidebar)
+        parts.append(f'<div class="split-body"><nav class="pane" aria-label="Inbox entries"><ul class="list">{rows}</ul></nav>')
+    parts.append("<main>")
     if error:
         parts.append(f'<p class="notice err" role="alert">{_esc(error)}</p>')
     parts.append(
@@ -615,7 +684,7 @@ def _entry_page(entry: dict, error: str | None = None, frame_origin: str | None 
             '<textarea class="field" name="text" rows="1" placeholder="Message the agent" aria-label="Follow-up message"></textarea>'
             '<button class="btn" type="submit">Send</button></div></form>'
         )
-    parts.append(f"</main>{_SCRIPT}")
+    parts.append("</main>" + ("</div>" if sidebar else "") + _SCRIPT)
     return "".join(parts)
 
 
@@ -700,7 +769,9 @@ class InboxHandler(BaseHTTPRequestHandler):
             if entry["kind"] == "post" and entry["state"] in ("unread", "read"):
                 store.mark_read(conn, entry_id)
                 entry = store.get_entry(conn, entry_id)
-            self._html(status, _entry_page(entry, error, _frame_origin(self.headers.get("Host")), open_count(conn)))
+            self._html(status, _entry_page(
+                entry, error, _frame_origin(self.headers.get("Host")), open_count(conn), sidebar=load_feed(conn, {}),
+            ))
 
     def _post_entry(self, entry_id: str, action: str) -> None:
         form = self._form()

@@ -194,3 +194,40 @@ def test_summary_and_detail_render_markdown_without_raw_html(conn, http):
     assert '<a href="https://example.com">docs</a>' in body
     assert 'href="javascript:' not in body
     assert "<script>alert(1)</script>" not in body and "&lt;script&gt;alert(1)&lt;/script&gt;" in body
+
+
+def test_answer_card_shows_one_tick_when_sent_and_two_when_delivered(conn, http):
+    e = store.create_entry(conn, "ask", validate_request({"title": "Q", "control": CHOICE}, "ask"), engine="claude", session_id="s-1")
+    conn.execute(
+        """UPDATE entries SET state = 'answered', answer = '{"value": "a", "via": "telegram", "at": "2026-11-24T10:00:00-03:00"}' WHERE id = %s""",
+        (e["id"],),
+    )
+    _, body = _get(http, f"/e/{e['id']}")
+    assert 'data-state="sent"' in body and 'aria-label="Sent"' in body and 'class="t2"' not in body
+    assert "From Telegram" in body
+    conn.execute("UPDATE entries SET state = 'delivered' WHERE id = %s", (e["id"],))
+    _, body = _get(http, f"/e/{e['id']}")
+    assert 'data-state="delivered"' in body and 'aria-label="Delivered"' in body and 'class="t2"' in body
+
+
+def test_follow_up_bubbles_tick_by_delivered_seq(conn, http):
+    e = store.create_entry(conn, "ask", validate_request({"title": "Q", "control": CHOICE}, "ask"), engine="claude", session_id="s-1")
+    first = store.add_followup(conn, e["id"], "one", via="web")
+    store.add_followup(conn, e["id"], "two", via="web")
+    seq = first.get("seq") or store.get_entry(conn, e["id"])["thread"][0]["seq"]
+    conn.execute("UPDATE entries SET delivery = delivery || jsonb_build_object('delivered_seq', %s::int) WHERE id = %s", (seq, e["id"]))
+    _, body = _get(http, f"/e/{e['id']}")
+    assert body.count('class="msg me"') == 2
+    assert body.count('aria-label="Delivered"') == 1 and body.count('aria-label="Sent"') == 1
+
+
+def test_entry_page_lists_the_feed_beside_it_and_marks_the_current_one(conn, http):
+    a = store.create_entry(conn, "ask", validate_request({"title": "First", "control": CHOICE}, "ask"), engine="claude", session_id="s-1")
+    b = store.create_entry(conn, "ask", validate_request({"title": "Second", "control": CHOICE}, "ask"), engine="claude", session_id="s-2")
+    _, body = _get(http, f"/e/{b['id']}")
+    assert '<body class="split">' in body and 'class="pane"' in body
+    assert f'href="/e/{b["id"]}" aria-current="page"' in body
+    assert f'href="/e/{a["id"]}">' in body
+    # The pane is navigation only: batch checkboxes stay on the feed.
+    pane = body[body.index('class="pane"'):body.index("<main>")]
+    assert 'type="checkbox"' not in pane
