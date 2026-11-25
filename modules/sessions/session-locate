@@ -1,0 +1,206 @@
+#!/usr/bin/env bash
+# session-locate — attribute a path / branch / commit SHA to the Claude Code session(s)
+# that actually worked there, ranked by activity, with live-vs-ended from agent-registry.
+#
+# The reliable signal is each transcript line's own "cwd" field (the dir the session was
+# running in), NOT content-grepping a branch name or SHA across transcripts — in a repo with
+# many worktrees every session's routine git output prints other branches'/SHAs' text into
+# its own transcript, so content-grep returns dozens of false positives.
+#
+# Usage:
+#   session-locate <path|branch|sha> [--live-only] [--json] [--top N] [-C <repo-dir>]
+#
+# Query resolution:
+#   path   → used as-is (must exist on disk)
+#   branch → the worktree checked out on that branch (git worktree list)
+#   sha    → the worktree(s) whose HEAD contains that commit (weak key; prefer path/branch)
+#
+# Branch/SHA resolution runs git in the current dir (or -C <repo-dir>).
+
+set -euo pipefail
+
+PROJECTS_DIR="${CLAUDE_PROJECTS_DIR:-$HOME/.claude/projects}"
+REGISTRY_BIN="${AGENT_REGISTRY_BIN:-agent-registry}"
+
+live_only=0
+as_json=0
+top=0
+repo_dir="."
+query=""
+
+die() { printf 'session-locate: %s\n' "$*" >&2; exit 1; }
+
+usage() {
+	sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'
+	exit "${1:-0}"
+}
+
+while [ $# -gt 0 ]; do
+	case "$1" in
+		--live-only) live_only=1; shift ;;
+		--json) as_json=1; shift ;;
+		--top) top="${2:?--top needs N}"; shift 2 ;;
+		--top=*) top="${1#*=}"; shift ;;
+		-C) repo_dir="${2:?-C needs a dir}"; shift 2 ;;
+		-h|--help) usage 0 ;;
+		--) shift; break ;;
+		-*) die "unknown flag: $1" ;;
+		*) [ -z "$query" ] && query="$1" || die "unexpected arg: $1"; shift ;;
+	esac
+done
+
+[ -n "$query" ] || usage 1
+[ -d "$PROJECTS_DIR" ] || die "no transcripts dir: $PROJECTS_DIR"
+command -v rg >/dev/null 2>&1 || die "rg (ripgrep) not found"
+command -v jq >/dev/null 2>&1 || die "jq not found"
+
+# ---------------------------------------------------------------------------
+# 1. Resolve the query to one or more absolute paths.
+# ---------------------------------------------------------------------------
+
+abspath() {
+	# Resolve to an absolute, symlink-collapsed path without requiring GNU realpath.
+	local p="$1"
+	if [ -d "$p" ]; then (cd "$p" && pwd -P)
+	elif [ -e "$p" ]; then (cd "$(dirname "$p")" && printf '%s/%s\n' "$(pwd -P)" "$(basename "$p")")
+	else printf '%s\n' "$p"
+	fi
+}
+
+git_q() { git -C "$repo_dir" "$@" 2>/dev/null; }
+
+# Parse `git worktree list --porcelain` into "branch<TAB>path" and "<path>" rows.
+worktree_for_branch() {
+	local want="$1" wt="" br=""
+	while IFS= read -r line; do
+		case "$line" in
+			"worktree "*) wt="${line#worktree }" ;;
+			"branch refs/heads/"*) br="${line#branch refs/heads/}"
+				[ "$br" = "$want" ] && { printf '%s\n' "$wt"; return 0; } ;;
+			"") wt=""; br="" ;;
+		esac
+	done < <(git_q worktree list --porcelain)
+	return 1
+}
+
+all_worktree_paths() {
+	git_q worktree list --porcelain | awk '/^worktree /{print substr($0,10)}'
+}
+
+resolve_type=""
+paths=()
+
+if [ -e "$query" ]; then
+	resolve_type="path"
+	paths+=("$(abspath "$query")")
+elif [ "${query#/}" != "$query" ]; then
+	# Absolute path that no longer exists on disk — the core case: an orphaned/removed
+	# worktree. Its cwd strings still live in old transcripts, so search literally.
+	resolve_type="path(gone)"
+	paths+=("$query")
+elif git_q rev-parse --git-dir >/dev/null; then
+	if git_q show-ref --verify --quiet "refs/heads/$query" || \
+	   git_q worktree list --porcelain | grep -q "^branch refs/heads/$query$"; then
+		resolve_type="branch"
+		wt="$(worktree_for_branch "$query")" || die "branch '$query' has no checked-out worktree"
+		paths+=("$(abspath "$wt")")
+	elif git_q rev-parse --verify --quiet "${query}^{commit}" >/dev/null; then
+		resolve_type="sha"
+		while IFS= read -r wt; do
+			[ -n "$wt" ] || continue
+			if git -C "$wt" merge-base --is-ancestor "$query" HEAD 2>/dev/null; then
+				paths+=("$(abspath "$wt")")
+			fi
+		done < <(all_worktree_paths)
+		[ ${#paths[@]} -gt 0 ] || die "SHA '$query' not contained by any worktree HEAD (weak key; try a path or branch)"
+	else
+		die "'$query' is not an existing path, a known branch, or a commit in $repo_dir"
+	fi
+else
+	die "'$query' is not an existing path, and $repo_dir is not a git repo (so branch/SHA can't resolve)"
+fi
+
+# ---------------------------------------------------------------------------
+# 2. Registry snapshot: session_id -> state (live/ended) + focus + branch.
+# ---------------------------------------------------------------------------
+
+reg_json="$("$REGISTRY_BIN" list --json 2>/dev/null || echo '{}')"
+
+reg_lookup() { # $1=session_id -> prints "state\tfocus\tbranch" or empty
+	printf '%s' "$reg_json" | jq -r --arg sid "$1" '
+		(.active // []) as $a | (.stale // []) as $s |
+		( [$a[] | select(.session_id==$sid) | "live"] +
+		  [$s[] | select(.session_id==$sid) | "ended"] )[0] as $state |
+		( ($a[] | select(.session_id==$sid)) // ($s[] | select(.session_id==$sid)) ) as $row |
+		if $state == null then "" else
+			[$state, ($row.title // $row.summary // ""), ($row.branch // "")] | @tsv
+		end'
+}
+
+# ---------------------------------------------------------------------------
+# 3. Find candidate sessions by cwd, rank by activity (line count).
+# ---------------------------------------------------------------------------
+
+mtime_epoch() { stat -f '%m' "$1" 2>/dev/null || stat -c '%Y' "$1" 2>/dev/null || echo 0; }
+
+# Aggregate line counts per session across all resolved paths.
+declare -A lines_by_sid
+declare -A file_by_sid
+for p in "${paths[@]}"; do
+	needle="\"cwd\":\"$p\""
+	while IFS= read -r f; do
+		[ -n "$f" ] || continue
+		c="$(rg -c --fixed-strings "$needle" "$f" 2>/dev/null || echo 0)"
+		sid="$(basename "$f" .jsonl)"
+		lines_by_sid["$sid"]=$(( ${lines_by_sid["$sid"]:-0} + c ))
+		# Keep the most-recent transcript file for mtime.
+		if [ -z "${file_by_sid["$sid"]:-}" ] || [ "$(mtime_epoch "$f")" -gt "$(mtime_epoch "${file_by_sid["$sid"]}")" ]; then
+			file_by_sid["$sid"]="$f"
+		fi
+	done < <(rg -l --no-messages --fixed-strings "$needle" "$PROJECTS_DIR"/*/*.jsonl 2>/dev/null)
+done
+
+[ ${#lines_by_sid[@]} -gt 0 ] || die "no session worked in: ${paths[*]}"
+
+# Build rows: sid \t lines \t mtime \t state \t focus
+rows=""
+for sid in "${!lines_by_sid[@]}"; do
+	meta="$(reg_lookup "$sid")"
+	if [ -n "$meta" ]; then
+		state="$(printf '%s' "$meta" | cut -f1)"
+		focus="$(printf '%s' "$meta" | cut -f2)"
+	else
+		state="ended"; focus=""
+	fi
+	[ "$live_only" = 1 ] && [ "$state" != "live" ] && continue
+	mt="$(mtime_epoch "${file_by_sid["$sid"]}")"
+	rows+="$(printf '%s\t%s\t%s\t%s\t%s' "$sid" "${lines_by_sid["$sid"]}" "$mt" "$state" "$focus")"$'\n'
+done
+
+[ -n "$rows" ] || die "no matching sessions after filters"
+
+# Sort by line count desc, then mtime desc.
+rows="$(printf '%s' "$rows" | sort -t$'\t' -k2,2nr -k3,3nr)"
+[ "$top" -gt 0 ] 2>/dev/null && rows="$(printf '%s\n' "$rows" | head -n "$top")"
+
+# ---------------------------------------------------------------------------
+# 4. Output.
+# ---------------------------------------------------------------------------
+
+if [ "$as_json" = 1 ]; then
+	printf '%s\n' "$rows" | jq -R -s --arg type "$resolve_type" --arg query "$query" \
+		--arg paths "$(printf '%s\n' "${paths[@]}")" '
+		{ query: $query, type: $type, paths: ($paths | split("\n") | map(select(length>0))),
+		  sessions: [ split("\n")[] | select(length>0) | split("\t") |
+			{ session_id: .[0], lines: (.[1]|tonumber), state: .[3],
+			  last_active: (.[2]|tonumber | todate), focus: .[4] } ] }'
+	exit 0
+fi
+
+printf '%s → %s\n' "$query" "${paths[*]}"
+printf '%-38s %-6s %7s  %-17s %s\n' "SESSION" "STATE" "LINES" "LAST-ACTIVE" "FOCUS"
+while IFS=$'\t' read -r sid lines mt state focus; do
+	[ -n "$sid" ] || continue
+	la="$(date -r "$mt" '+%Y-%m-%d %H:%M' 2>/dev/null || echo '-')"
+	printf '%-38s %-6s %7s  %-17s %s\n' "$sid" "$state" "$lines" "$la" "$focus"
+done < <(printf '%s\n' "$rows")

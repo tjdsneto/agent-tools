@@ -82,3 +82,4 @@ agt sessions autorename --dry-run     # preview the all-sessions pass
 - `agt sessions rename <id> <title>` — manually rename a specific session
 - `agt sessions report` — today's session-report table (tokens / running / closed); skill `claude-session-mngr`
 - `agt sessions review <transcript.jsonl>` — tool-usage and context-injection audit of one session; skill `session-review`
+- `agt sessions locate <path|branch|sha>` — which session(s) worked in a dir, branch or commit; skill `session-locate`

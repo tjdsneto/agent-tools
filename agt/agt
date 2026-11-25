@@ -45,7 +45,8 @@ case "$cmd" in
       autorename) exec "$ROOT/modules/sessions/rename-claude-sessions" "$@" ;;
       context) exec "$ROOT/modules/sessions/session-context" "$@" ;;
       review) exec "$ROOT/modules/sessions/session-review" "$@" ;;
-      *) die "sessions: need report|active|rename|list|autorename|context|review" ;;
+      locate) exec "$ROOT/modules/sessions/session-locate" "$@" ;;
+      *) die "sessions: need report|active|rename|list|autorename|context|review|locate" ;;
     esac
     ;;
   say)
@@ -71,7 +72,7 @@ agt — agent-tools
   agt waker …             session-waker
   agt waker-deregister    SessionEnd hook: de-register from session-waker
   agt budget …            claude-budget
-  agt sessions report|active|rename|list|autorename|context|review …
+  agt sessions report|active|rename|list|autorename|context|review|locate …
   agt say …               agent-say
   agt read …              agent-read
   agt inbox …             agent-inbox

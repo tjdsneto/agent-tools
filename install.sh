@@ -26,7 +26,7 @@ reload_agent() {
 link_bin agt "$ROOT/agt/agt"
 for s in agent-registry session-waker claude-budget session-report active-sessions \
          rename-session list-sessions rename-claude-sessions session-context session-review \
-         session-waker-deregister agent-say agent-read agent-inbox; do
+         session-waker-deregister session-locate agent-say agent-read agent-inbox; do
   link_bin "$s" "$ROOT/shims/$s"
 done
 
@@ -49,7 +49,7 @@ link_skill() {
   done
 }
 
-for sk in session-waker agent-say agent-read glue-miner session-awareness; do
+for sk in session-waker agent-say agent-read glue-miner session-awareness session-locate; do
   link_skill "$sk"
 done
 # Claude-only: they read Claude Code transcripts.

@@ -45,6 +45,11 @@ gives the daily grand total per token category plus session/running counts.
 
 ## Related
 
+- `session-locate` skill (`agt sessions locate <path|branch|sha>`) answers the inverse question:
+  not "what did session X do today" but "which session(s) worked in *this* dir/branch/SHA",
+  ranked by activity, live-vs-ended. Reach for it to attribute an orphaned worktree to its
+  author. Keys on each transcript line's `cwd` field (never a content-grep of the name/SHA,
+  which returns dozens of false positives).
 - `session-awareness` skill (`agt sessions active`/`list`) is a separate, pre-existing
   tool with some overlap (live-process listing). Its fate (retire/keep/merge) is undecided —
   see `~/projects/agent-tools/modules/sessions/docs/superpowers/specs/2026-07-28-claude-session-mngr-design.md`.
