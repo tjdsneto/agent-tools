@@ -161,7 +161,9 @@ def list_entries(
     engine: str | None = None,
     session_id: str | None = None,
     limit: int = 50,
+    newest: bool = False,
 ) -> list[dict]:
+    """Urgent first, then oldest first; newest=True is plain newest first, for history."""
     where: list[str] = []
     params: list[Any] = []
     for col, val in (("kind", kind), ("project", project), ("engine", engine), ("session_id", session_id)):
@@ -174,7 +176,8 @@ def list_entries(
     sql = "SELECT * FROM entries"
     if where:
         sql += " WHERE " + " AND ".join(where)
-    sql += f" ORDER BY {PRIORITY_ORDER}, created_at, id LIMIT %s"
+    order = "created_at DESC, id DESC" if newest else f"{PRIORITY_ORDER}, created_at, id"
+    sql += f" ORDER BY {order} LIMIT %s"
     params.append(limit)
     return [
         {k: v for k, v in _shape(r).items() if k not in LIST_HIDDEN}

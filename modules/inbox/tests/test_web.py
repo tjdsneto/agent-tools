@@ -319,3 +319,14 @@ def test_next_walks_the_feed_and_survives_reading_and_answering(conn, http):
     assert status == 303 and location == f"/e/{q['id']}?next={top}"
     _, page = _get(http, location)
     assert f'<a class="step" href="/e/{top}" rel="next" title="Next (J)">' in page
+
+
+def test_history_lists_the_newest_first(conn, http):
+    # The old one is urgent, so the feed's urgent-first order would list it first.
+    old = store.create_entry(conn, "post", validate_request({"title": "Old", "priority": "urgent"}, "post"), script="cron")
+    new = store.create_entry(conn, "post", validate_request({"title": "New"}, "post"), script="cron")
+    conn.execute("UPDATE entries SET created_at = now() - interval '2 days' WHERE id = %s", (old["id"],))
+    for e in (old, new):
+        store.mark_read(conn, e["id"])
+    _, body = _get(http, "/?history=1")
+    assert body.index(new["id"]) < body.index(old["id"])

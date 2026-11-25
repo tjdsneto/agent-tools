@@ -398,7 +398,7 @@ def load_feed(conn, qs: dict) -> list[dict]:
     common = {"kind": kind, "engine": engine, "project": project, "limit": 200}
     if _query_value(qs, "history") == "1":
         states = [state] if state else list(HISTORY_STATES)
-        return store.list_entries(conn, states=states, **common)
+        return store.list_entries(conn, states=states, newest=True, **common)
     rows = store.list_entries(conn, states=[state] if state else None, **common)
     hidden = HIDDEN_STATES if state else HIDDEN_STATES | DONE_STATES
     visible = [row for row in rows if row["state"] not in hidden and not _dismissed(row)]
