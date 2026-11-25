@@ -171,3 +171,11 @@ def test_session_type(tmp_registry):
     topics.set_intent("codex", "b", "B")
     assert topics.session_type("b") == "codex"
     assert topics.session_type("nope") is None
+
+
+def test_append_after_torn_tail_keeps_next_event(tmp_registry):
+    topics.set_intent("claude", "t", "A")
+    with open(topics.log_path("claude", "t"), "a", encoding="utf-8") as f:
+        f.write('{"event": "topic", "at": "2026-')  # crash mid-write, no newline
+    opened = topics.open_topic("claude", "t", "After the crash")
+    assert topics.state("claude", "t")["topic"]["id"] == opened["topic"]["id"]

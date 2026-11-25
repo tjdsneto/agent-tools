@@ -82,8 +82,14 @@ def read_events(agent_type: str, session_id: str) -> list[dict]:
 def _append(agent_type: str, session_id: str, event: dict) -> dict:
     path = log_path(agent_type, session_id)
     path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "a", encoding="utf-8") as f:
-        f.write(json.dumps(event) + "\n")
+    with open(path, "ab+") as f:
+        # A crash can leave a last line with no newline; start a fresh line so it can't swallow this event.
+        f.seek(0, 2)
+        if f.tell() > 0:
+            f.seek(-1, 2)
+            if f.read(1) != b"\n":
+                f.write(b"\n")
+        f.write((json.dumps(event) + "\n").encode("utf-8"))
     return event
 
 
