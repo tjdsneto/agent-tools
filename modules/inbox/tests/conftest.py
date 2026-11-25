@@ -70,3 +70,11 @@ def conn(inbox_db):
     c = db.connect()
     yield c
     c.close()
+
+
+def pytest_ignore_collect(collection_path, config):
+    """Collect tests/blackbox only when that path was requested."""
+    parts = getattr(collection_path, "parts", ())
+    if "blackbox" not in parts:
+        return False
+    return not any("blackbox" in str(arg) for arg in config.args)
