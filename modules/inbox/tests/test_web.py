@@ -306,9 +306,10 @@ def test_next_walks_the_feed_and_survives_reading_and_answering(conn, http):
     top, middle, last = order
     # Opening the middle report marks it read, but Next still goes to the row below it, not the top.
     _, page = _get(http, f"/e/{middle}")
-    assert f'<a class="step" href="/e/{last}" rel="next">' in page
+    assert f'<a class="step" href="/e/{last}" rel="next" title="Next (J)">' in page
     _, page = _get(http, f"/e/{last}")
-    assert '<span class="step" aria-disabled="true">' in page
+    # The last one finishes: back to the inbox.
+    assert '<a class="step" href="/" title="Finish (J)">Finish' in page
     # An answered question has left the feed; the answer form carries Next through the post.
     q = store.create_entry(conn, "ask", validate_request({"title": "Q", "control": CHOICE}, "ask"), engine="claude", session_id="s-1")
     conn.execute("UPDATE entries SET delivery = delivery || '{\"reachability\": \"live\"}' WHERE id = %s", (q["id"],))
@@ -317,4 +318,4 @@ def test_next_walks_the_feed_and_survives_reading_and_answering(conn, http):
     status, location, _ = _post(http, f"/e/{q['id']}/answer?next={top}", "value=a")
     assert status == 303 and location == f"/e/{q['id']}?next={top}"
     _, page = _get(http, location)
-    assert f'<a class="step" href="/e/{top}" rel="next">' in page
+    assert f'<a class="step" href="/e/{top}" rel="next" title="Next (J)">' in page

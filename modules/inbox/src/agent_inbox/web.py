@@ -106,7 +106,6 @@ main {{ max-width: 720px; margin: 0 auto; padding: 20px 16px 48px; }}
 .step svg {{ width: 18px; height: 18px; }}
 a.step:hover {{ background: var(--line); }}
 a.step:active {{ transform: translateY(1px); }}
-.step[aria-disabled] {{ color: var(--mute); opacity: .6; }}
 .filt {{ position: relative; flex: none; }}
 .filt summary {{ position: relative; display: grid; place-items: center; width: 44px; height: 36px; border-radius: 18px;
   background: var(--surf); list-style: none; cursor: pointer; }}
@@ -266,6 +265,12 @@ document.addEventListener("input", () => { dirty = true; });
 // Filters apply as soon as one changes; the panel closes on Escape or a click outside it.
 document.querySelectorAll(".filt select").forEach((el) => el.addEventListener("change", () => el.form.requestSubmit()));
 const filt = document.querySelector(".filt");
+// J presses Next (or Finish) and K goes back to the inbox, unless a field has the keys.
+document.addEventListener("keydown", (e) => {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.target.closest("input, textarea, select, [contenteditable]")) return;
+  const to = e.key === "j" ? document.querySelector("a.step") : e.key === "k" ? document.querySelector("a.back") : null;
+  if (to) { e.preventDefault(); to.click(); }
+});
 if (filt) {
   document.addEventListener("click", (e) => { if (filt.open && !filt.contains(e.target)) filt.open = false; });
   document.addEventListener("keydown", (e) => {
@@ -298,6 +303,11 @@ _FUNNEL = (
 _CHEVRON = (
     '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" '
     'stroke-linejoin="round" aria-hidden="true"><path d="M7.5 4.5 13 10l-5.5 5.5"/></svg>'
+)
+
+_CHECK = (
+    '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" '
+    'stroke-linejoin="round" aria-hidden="true"><path d="M4.5 10.5 8 14l7.5-8"/></svg>'
 )
 
 _BACK = (
@@ -727,11 +737,10 @@ def _thread(entry: dict) -> str:
 
 
 def _step(next_id: str | None) -> str:
-    """The Next button: the entry after this one in the feed, or a dimmed button at the end."""
-    label = f'Next{_CHEVRON}'
+    """The Next button: the entry after this one in the feed, or Finish, back to the inbox, at the end. J presses it."""
     if not next_id:
-        return f'<span class="step" aria-disabled="true">{label}</span>'
-    return f'<a class="step" href="/e/{_esc(next_id)}" rel="next">{label}</a>'
+        return f'<a class="step" href="/" title="Finish (J)">Finish{_CHECK}</a>'
+    return f'<a class="step" href="/e/{_esc(next_id)}" rel="next" title="Next (J)">Next{_CHEVRON}</a>'
 
 
 def _entry_page(
