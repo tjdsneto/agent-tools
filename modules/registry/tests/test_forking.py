@@ -79,6 +79,12 @@ def test_default_backend():
     assert forking.default_backend({}) == "cursor"
 
 
+def test_default_backend_env_override_wins_over_herdr():
+    assert forking.default_backend({"AGENT_REGISTRY_FORK_BACKEND": "none", "HERDR_ENV": "1"}) == "none"
+    assert forking.default_backend({"AGENT_REGISTRY_FORK_BACKEND": "cursor", "HERDR_ENV": "1"}) == "cursor"
+    assert forking.default_backend({"AGENT_REGISTRY_FORK_BACKEND": "bogus", "HERDR_ENV": "1"}) == "herdr"
+
+
 def test_run_missing_binary_returns_127():
     res = forking._run(["definitely-not-a-binary-xyz"])
     assert res.returncode == 127

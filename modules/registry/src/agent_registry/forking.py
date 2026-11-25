@@ -24,6 +24,9 @@ def _run(cmd: Sequence[str]) -> subprocess.CompletedProcess:
 
 
 def default_backend(env: Mapping[str, str] = os.environ) -> str:
+    override = env.get("AGENT_REGISTRY_FORK_BACKEND")
+    if override in BACKENDS:
+        return override
     return "herdr" if env.get("HERDR_ENV") == "1" else "cursor"
 
 
