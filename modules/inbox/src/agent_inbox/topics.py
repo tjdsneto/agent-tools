@@ -32,20 +32,17 @@ def registry(*args: str) -> Any:
     try:
         proc = subprocess.run(
             [_agt(), "registry", *args],
-            capture_output=True, text=True, timeout=TIMEOUT_SEC, stdin=subprocess.DEVNULL,
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=TIMEOUT_SEC, stdin=subprocess.DEVNULL,
         )
-    except (OSError, subprocess.SubprocessError) as exc:
-        _warn(args, exc)
-        return None
-    # argparse also exits 2, so the registry's own message decides.
-    if proc.returncode == 2 and "topic not found" in proc.stderr:
-        return NOT_FOUND
-    if proc.returncode != 0:
-        _warn(args, proc.stderr.strip() or f"exit {proc.returncode}")
-        return None
-    try:
+        # argparse also exits 2, so the registry's own message decides.
+        if proc.returncode == 2 and "topic not found" in proc.stderr:
+            return NOT_FOUND
+        if proc.returncode != 0:
+            _warn(args, proc.stderr.strip() or f"exit {proc.returncode}")
+            return None
         return json.loads(proc.stdout)
-    except ValueError as exc:
+    except Exception as exc:  # the contract is "never raises": a bad registry must not break an ask
         _warn(args, exc)
         return None
 

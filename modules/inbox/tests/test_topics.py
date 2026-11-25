@@ -96,3 +96,11 @@ def test_note_without_a_path_does_nothing_and_without_an_asker_sends_none(fake_r
     assert fake_registry.calls == []
     topics.note("posted", "ib-2", PATH, title="R")
     assert fake_registry.notes() == [["posted", "--topic=tp-plan", "--entry=ib-2", "--title=R"]]
+
+
+def test_non_utf8_output_from_agt_is_none_and_never_raises(tmp_path, monkeypatch, capsys):
+    fake_agt(tmp_path, monkeypatch, r"printf '\377\376'; printf '\377\376' >&2; exit 1")
+    assert real_registry("topic-path") is None
+    assert "continuing without the topic link" in capsys.readouterr().err
+    fake_agt(tmp_path, monkeypatch, r"printf '\377\376'")
+    assert real_registry("topic-path") is None
