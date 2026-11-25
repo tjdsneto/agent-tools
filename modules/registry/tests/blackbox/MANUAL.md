@@ -21,3 +21,7 @@ What a test can't see. Run after any change to forking or the hook. Record the d
 
 | Date | Check | Result |
 |---|---|---|
+| 2026-11-25 | 1. Reminder in Claude Code | Pass. After the plugin update, the hook line appeared in an already-running session without a restart; another live session set an intent and closed a topic on its own. |
+| 2026-11-25 | 2. Drift ask | Pass, via `test_topics_agent.py` (claude, 3/3 runs): off-intent prompt got a fork / park / keep ask and no topic, fork or park event. |
+| 2026-11-25 | 3. Cursor fork | Pass. A Claude Code tab opened in the same agent-tools window as the parent, prompt filled and not sent; after Enter the child adopted tp-zkzb and `topics --tree` showed it under the parent (parent `forked`, child `intent`). Only one window was focused, so check 4 is still open. |
+| 2026-11-25 | 6. Codex reminder | Pass, via `test_topics_agent.py` (codex, 1 run): Codex set an intent with no mention of the skill in its prompt. |
