@@ -25,7 +25,7 @@ As soon as the first prompt makes clear what the session is for, set the intent:
 agt registry intent "Make inbox entries topic-aware"
 ```
 
-A session has one intent. If the work turns into something else, that is a new session, not a new intent.
+A session has one intent. If the work turns into something else, that is a new session, not a new intent. If the hook line already shows an intent, leave it alone.
 
 A session started by a fork reads its brief and adopts its topic first, as its prompt says:
 
@@ -35,7 +35,7 @@ agt registry intent --adopt tp-xxxx
 
 ## Name the topic you're on
 
-When the main line moves to a new step, open it as a topic. When it is finished, mark it done.
+When the main line moves to a new step, open it as a topic. When it is finished, mark it done. Open and close topics silently; they're for the registry, not the chat.
 
 ```bash
 agt registry topic "Decide where topic records live"
@@ -44,7 +44,7 @@ agt registry topic --done
 
 ## Drift check
 
-Run it whenever a prompt, or your own work, opens a new thread:
+Run it only when the work changes subject, not when it takes another step toward the same goal. A bug found along the way, a follow-up question, or a retry is the same thread. When you can't tell, treat it as the main line: open a topic and don't ask.
 
 | The new thread is… | Then |
 |---|---|
@@ -52,11 +52,17 @@ Run it whenever a prompt, or your own work, opens a new thread:
 | on-intent, but a side quest that can be split off (independent of the main line and likely more than a few turns) | ask: fork / park / keep here |
 | off-intent | ask: fork as a new intent / park / keep here |
 
-Ask in one line of plain chat text, with fork as the default, and wait for the answer. Do not use a blocking question tool.
+If the work would still make sense without the rest of the intent, it's a side quest. If it moves the intent forward, it's the main line.
+
+Ask in one line of plain chat text, with fork as the default. Then end your turn. Don't start the new thread, fork, park or open a topic until he answers. If the same prompt also asked for main-line work, do only that part. Do not use a blocking question tool.
 
 ```
 Side quest: retry policy for wake. Fork / park / keep here? (fork)
 ```
+
+A bare ok or go means the default, fork. If the reply is unclear, ask once more.
+
+A drift ask is the exception to agent-inbox: ask it in chat only, never through the inbox. It's a quick steer, and a late inbox answer would resume you on a thread that has already moved on.
 
 Then do what he chose:
 
@@ -73,12 +79,12 @@ Then do what he chose:
   ```
 
   It opens a visible session: a Cursor tab with the prompt filled in (Tiago presses Enter), or a Herdr pane that starts on its own when you run inside Herdr. Tell him which, then go back to the main line and leave the forked thread alone.
-- **Park.** Park the idea with the `parked-ideas` skill, then record it with the park id: `agt registry topic --park --ref <park-id>`. If the thread was not yet a topic, open it first (`agt registry topic "…"`) so the park has something to close.
+- **Park.** Park the idea with the `parked-ideas` skill (`park add` prints `Parked <id>: <title>`), then record it with that id: `agt registry topic --park --ref <id park add printed>`. If the thread was not yet a topic, open it first (`agt registry topic "…"`) so the park has something to close.
 - **Keep here.** Open it as a topic and work on it.
 
 ## When the intent is done
 
-When every topic under the intent is done, say so in one line and suggest ending or clearing the session. Don't start new work in it.
+When the outcome the intent names is met, mark the current topic done, then say so in one line and suggest ending or clearing the session. Don't start new work in it.
 
 ## Look around
 
