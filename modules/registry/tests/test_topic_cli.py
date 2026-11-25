@@ -102,3 +102,60 @@ def test_fork_reads_brief_file(tmp_registry, capsys, tmp_path):
 def test_fork_needs_a_mode(tmp_registry, capsys):
     with pytest.raises(SystemExit):
         main(["fork", "Side", "--backend", "none", *WHO])
+
+
+def test_topic_path_for_a_session_and_a_topic(tmp_registry, capsys):
+    code, out, _ = _run(capsys, "topic-path", *WHO)
+    assert code == EXIT_OK and out.strip() == "null"
+    _run(capsys, "intent", "Ship it", *WHO)
+    _, out, _ = _run(capsys, "topic", "Plan", *WHO)
+    plan = json.loads(out)["topic"]["id"]
+    code, out, _ = _run(capsys, "topic-path", *WHO)
+    assert code == EXIT_OK
+    path = json.loads(out)
+    assert [(n["title"], n["kind"]) for n in path] == [("Ship it", "intent"), ("Plan", "topic")]
+    code, out, _ = _run(capsys, "topic-path", "--topic", plan)
+    assert code == EXIT_OK and json.loads(out) == path
+    code, _, err = _run(capsys, "topic-path", "--topic", "tp-zzzz")
+    assert code == EXIT_NOT_FOUND and "topic not found" in err
+
+
+def test_topic_note_each_kind(tmp_registry, capsys):
+    _, out, _ = _run(capsys, "intent", "Ship it", *WHO)
+    tid = json.loads(out)["topic"]["id"]
+    cases = [
+        (["asked", "--title", "Which?"], {"title": "Which?"}),
+        (["posted", "--title", "Done"], {"title": "Done"}),
+        (["answered", "--value", "b", "--via", "web"], {"value": "b", "via": "web"}),
+        (["closed", "--state", "expired"], {"state": "expired"}),
+    ]
+    for argv, extra in cases:
+        code, out, _ = _run(capsys, "topic-note", argv[0], "--topic", tid, "--entry", "ib-1", *argv[1:], *WHO)
+        assert code == EXIT_OK
+        ev = json.loads(out)
+        assert (ev["event"], ev["entry"], ev["topic"]["id"]) == (argv[0], "ib-1", tid)
+        assert {k: ev[k] for k in extra} == extra
+    assert [e["event"] for e in topics.read_events("claude", "s1")] == ["intent", "asked", "posted", "answered", "closed"]
+
+
+def test_topic_note_errors(tmp_registry, capsys):
+    _, out, _ = _run(capsys, "intent", "Ship it", *WHO)
+    tid = json.loads(out)["topic"]["id"]
+    assert _run(capsys, "topic-note", "shrugged", "--topic", tid, "--entry", "ib-1")[0] == EXIT_USAGE
+    assert _run(capsys, "topic-note", "answered", "--topic", tid, "--entry", "ib-1", "--value", "a", "--via", "fax")[0] == EXIT_USAGE
+    assert _run(capsys, "topic-note", "asked", "--topic", tid, "--entry", "ib-1", "--title", "t", "--type", "claude")[0] == EXIT_USAGE
+    assert _run(capsys, "topic-note", "asked", "--topic", "tp-zzzz", "--entry", "ib-1", "--title", "t")[0] == EXIT_NOT_FOUND
+
+
+def test_done_lists_the_questions_still_open(tmp_registry, capsys):
+    _run(capsys, "intent", "Ship it", *WHO)
+    _, out, _ = _run(capsys, "topic", "Plan", *WHO)
+    tid = json.loads(out)["topic"]["id"]
+    for entry in ("ib-1", "ib-2", "ib-3"):
+        _run(capsys, "topic-note", "asked", "--topic", tid, "--entry", entry, "--title", "Q", *WHO)
+    _run(capsys, "topic-note", "answered", "--topic", tid, "--entry", "ib-1", "--value", "a", "--via", "chat", *WHO)
+    _run(capsys, "topic-note", "closed", "--topic", tid, "--entry", "ib-3", "--state", "withdrawn", *WHO)
+    code, out, _ = _run(capsys, "topic", "--done", *WHO)
+    assert code == EXIT_OK
+    done = json.loads(out)
+    assert done["event"] == "done" and done["open_questions"] == ["ib-2"]
