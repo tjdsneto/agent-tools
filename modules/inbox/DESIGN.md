@@ -484,7 +484,7 @@ Softly rounded rectangles for anything you type into or press (10px), slightly s
 
 ### Avatars
 - **Style:** a circle with the project's initial, 40px (16px/650) in feed rows, 28px (13px) in the entry's meta line, in the project's fixed tint-and-ink pair. In the entry's meta line it is decorative and hidden from assistive tech, because the meta line names the project.
-- **Kind badge:** on feed and pane rows, an 18px circle on the avatar's bottom-right corner, ringed 2px in the row's own fill, tells a question from a report at a glance: Action Blue with a white question mark for a question, grey ink with three white lines for a report. The avatar then carries `role="img"` named Question or Report.
+- **Kind badge:** on feed and pane rows, an 18px circle on the avatar's bottom-right corner, ringed 2px in the row's own fill, tells a question from a report at a glance: Action Blue with a white question mark for a question, grey ink with a white i (info) for a report. The avatar then carries `role="img"` named Question or Report.
 
 ### Feed rows
 - **Style:** a 44px checkbox column, then the row: avatar, 600-weight title, right-aligned 13px time, a 14px Grey Meta line "project · engine · You: <answer> · id" (the answer part only once answered, like a chat preview), and the chips. 72px minimum, hairline below.

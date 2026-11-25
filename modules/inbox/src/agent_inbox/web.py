@@ -551,12 +551,13 @@ def _who(row: dict) -> str:
 _KIND_BADGE = {
     "ask": ("q", "Question", '<path d="M4.3 4.5a1.75 1.75 0 1 1 2.5 1.6c-.5.3-.8.7-.8 1.2v.2" fill="none" stroke="currentColor" '
             'stroke-width="1.6" stroke-linecap="round"/><circle cx="6" cy="9.6" r=".9" fill="currentColor"/>'),
-    "post": ("r", "Report", '<path d="M3.5 4h5M3.5 6h5M3.5 8h3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>'),
+    "post": ("r", "Report", '<circle cx="6" cy="3.4" r=".95" fill="currentColor"/><path d="M6 5.6v3.6" fill="none" '
+             'stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>'),
 }
 
 
 def _avatar(row: dict, small: bool = False, kind: bool = False) -> str:
-    """The project's initial. kind adds a corner badge: a question mark for a question, lines for a report."""
+    """The project's initial. kind adds a corner badge: a question mark for a question, an i for a report."""
     name = _who(row) or (row.get("asker") or {}).get("engine") or "?"
     tone = sum(name.encode()) % 7
     size = " sm" if small else ""
