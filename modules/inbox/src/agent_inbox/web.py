@@ -540,35 +540,38 @@ TABS = (("Active", "/", {}), ('<span class="lg">Needs answer</span><span class="
 
 
 def _tab(current: dict) -> tuple[str, dict]:
-    """The tab a view belongs to: an exact match, else the tab with the same kind and history, else Active."""
-    for _, href, want in TABS:
-        if want == current:
-            return href, want
-    for _, href, want in TABS[1:]:
-        if all(current.get(key) == value for key, value in want.items() if key != "state"):
-            return href, want
-    return TABS[0][1], TABS[0][2]
+    """The tab a view belongs to. History holds any kind; otherwise the kind picks Info or Needs answer."""
+    if current.get("history"):
+        pick = 3
+    elif current.get("kind") == "post":
+        pick = 2
+    elif current.get("kind") == "ask":
+        pick = 1
+    else:
+        pick = 0
+    return TABS[pick][1], TABS[pick][2]
 
 
-def _nav(qs: dict) -> tuple[str, str]:
+def _nav(qs: dict, projects: list[str] = ()) -> tuple[str, str]:
     """The view tabs, and the filter button and panel that sit in the header bar."""
-    project = _query_value(qs, "project")
-    hidden = f'<input type="hidden" name="project" value="{_esc(project)}">' if project else ""
     current = {key: _query_value(qs, key) for key in ("kind", "state", "history") if _query_value(qs, key)}
     home, want = _tab(current)
     mark = ' aria-current="page"'
     tabs = "".join(f'<a href="{href}"{mark if href == home else ""}>{label}</a>' for label, href, _ in TABS)
-    # The filter panel narrows the current tab: it keeps the tab's kind and history, and
-    # counts only what differs from the tab.
-    for key in ("kind", "history"):
-        if current.get(key):
-            hidden += f'<input type="hidden" name="{key}" value="{_esc(current[key])}">'
-    on = sum(1 for key in ("engine", "state") if _query_value(qs, key) != want.get(key))
+    # The filter panel narrows the current tab: it keeps the tab's history, and counts
+    # only what differs from the tab.
+    hidden = '<input type="hidden" name="history" value="1">' if current.get("history") else ""
+    on = sum(1 for key in ("kind", "project", "engine", "state") if _query_value(qs, key) != want.get(key))
+    project = _query_value(qs, "project")
+    if project and project not in projects:
+        projects = [project, *projects]
 
-    def options(label: str, key: str, names: tuple[str, ...]) -> str:
+    def options(label: str, key: str, names) -> str:
+        """names are values, or (value, label) pairs."""
         chosen = _query_value(qs, key)
+        pairs = [name if isinstance(name, tuple) else (name, name) for name in names]
         opts = "".join(
-            f'<option value="{name}"{" selected" if name == chosen else ""}>{name}</option>' for name in names
+            f'<option value="{_esc(value)}"{" selected" if value == chosen else ""}>{_esc(text)}</option>' for value, text in pairs
         )
         return f'<label>{label}<select name="{key}"><option value="">Any {label.lower()}</option>{opts}</select></label>'
 
@@ -579,6 +582,8 @@ def _nav(qs: dict) -> tuple[str, str]:
         f'<details class="filt{" on" if on else ""}"><summary aria-label="Filters{said}" title="Filters">{_FUNNEL}{badge}</summary>'
         '<form method="get" action="/">'
         + hidden
+        + options("Type", "kind", (("ask", "Question"), ("post", "Report")))
+        + options("Project", "project", [(path, Path(path).name) for path in projects])
         + options("Engine", "engine", ("claude", "codex", "cursor"))
         + options("State", "state", ("open", "unread", "answered", "delivered", "undelivered", "expired", "read"))
         + f'<div class="pair">{clear}<button class="btn go" type="submit">Apply</button></div>'
@@ -591,7 +596,10 @@ def _waiting(rows: list[dict]) -> int:
     return sum(1 for row in rows if row["kind"] == "ask" and row["state"] == "open")
 
 
-def _feed_page(rows: list[dict], qs: dict, error: str | None = None, banner: str = "", waiting: int | None = None) -> str:
+def _feed_page(
+    rows: list[dict], qs: dict, error: str | None = None, banner: str = "", waiting: int | None = None,
+    projects: list[str] = (),
+) -> str:
     err = f'<p class="notice err" role="alert">{_esc(error)}</p>' if error else ""
     line = f'<p class="notice warn">{_esc(banner)}</p>' if banner else ""
     if rows:
@@ -612,7 +620,7 @@ def _feed_page(rows: list[dict], qs: dict, error: str | None = None, banner: str
                 'Answered questions and read reports are in <a href="/?history=1">History</a>.</p>'
             )
     count = _waiting(rows) if waiting is None else waiting
-    tabs, filters = _nav(qs)
+    tabs, filters = _nav(qs, projects)
     return (
         _HEAD.format(title="Inbox", body="")
         + _bar("<h1>Inbox</h1>", count, filters)
@@ -871,7 +879,9 @@ class InboxHandler(BaseHTTPRequestHandler):
         if method == "GET" and path == "/":
             with db.connect() as conn:
                 from agent_inbox.notify import urgent_counts
-                self._html(200, _feed_page(load_feed(conn, qs), qs, banner=urgent_counts(conn), waiting=open_count(conn)))
+                self._html(200, _feed_page(
+                    load_feed(conn, qs), qs, banner=urgent_counts(conn), waiting=open_count(conn), projects=store.list_projects(conn),
+                ))
             return
         match = re.fullmatch(r"/e/([^/]+)", path)
         if method == "GET" and match:
@@ -949,7 +959,10 @@ class InboxHandler(BaseHTTPRequestHandler):
             if applied == 0:
                 message = errors[0] if errors else "nothing selected"
                 from agent_inbox.notify import urgent_counts
-                self._html(409, _feed_page(load_feed(conn, {}), {}, message, banner=urgent_counts(conn), waiting=open_count(conn)))
+                self._html(409, _feed_page(
+                    load_feed(conn, {}), {}, message, banner=urgent_counts(conn), waiting=open_count(conn),
+                    projects=store.list_projects(conn),
+                ))
                 return
         self._redirect("/")
 

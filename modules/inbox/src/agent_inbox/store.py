@@ -185,6 +185,14 @@ def list_entries(
     ]
 
 
+def list_projects(conn: psycopg.Connection) -> list[str]:
+    """Every project that has an entry, most recently active first."""
+    rows = conn.execute(
+        "SELECT project FROM entries WHERE project IS NOT NULL GROUP BY project ORDER BY max(created_at) DESC"
+    ).fetchall()
+    return [row["project"] for row in rows]
+
+
 def _check_via(via: str) -> None:
     if via not in VIAS:
         raise ValidationError(f"via must be one of {', '.join(VIAS)}")

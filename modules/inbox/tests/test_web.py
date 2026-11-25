@@ -286,7 +286,7 @@ def test_filters_narrow_the_current_tab_and_count_what_they_change(conn, http):
     assert 'class="filt"' in plain and 'aria-label="Filters"' in plain
     _, info = _get(http, "/?kind=post&engine=codex")
     assert '<a href="/?kind=post" aria-current="page">Info</a>' in info
-    assert '<input type="hidden" name="kind" value="post">' in info
+    assert '<option value="post" selected>Report</option>' in info
     assert 'class="filt on"' in info and 'aria-label="Filters, 1 on"' in info
     assert '<a class="btn" href="/?kind=post">Clear</a>' in info
     # A tab's own state is not a filter; a different one is.
@@ -330,3 +330,17 @@ def test_history_lists_the_newest_first(conn, http):
         store.mark_read(conn, e["id"])
     _, body = _get(http, "/?history=1")
     assert body.index(new["id"]) < body.index(old["id"])
+
+
+def test_filters_pick_a_type_and_a_project(conn, http):
+    here = store.create_entry(conn, "post", validate_request({"title": "Here"}, "post"), script="cron", cwd="/x/agent-tools")
+    there = store.create_entry(conn, "ask", validate_request({"title": "There", "control": CHOICE}, "ask"),
+                               engine="claude", session_id="s-1", cwd="/x/am-videos")
+    _, page = _get(http, "/")
+    assert '<option value="/x/am-videos">am-videos</option>' in page and '<option value="ask">Question</option>' in page
+    _, page = _get(http, "/?project=/x/agent-tools")
+    assert here["id"] in page and there["id"] not in page and "Filters, 1 on" in page
+    # In History, Type narrows the tab instead of switching to Info.
+    store.mark_read(conn, here["id"])
+    _, page = _get(http, "/?history=1&kind=post")
+    assert 'aria-current="page">History</a>' in page and here["id"] in page and "Filters, 1 on" in page
