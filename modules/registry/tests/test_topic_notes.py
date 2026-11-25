@@ -114,3 +114,28 @@ def test_a_note_without_an_entry_is_skipped(tmp_registry):
     )
     assert [e["event"] for e in topics.read_events("claude", "s1")] == ["intent"]
     assert topics.open_questions("tp-root") == []
+
+
+def test_note_fields_are_text_or_none_and_value_is_capped_on_read(tmp_registry):
+    _write(
+        "claude", "s1",
+        {"event": "intent", "at": "2026-01-01T00:00:00", "topic": {"id": "tp-root", "title": "R"}},
+        {"event": "answered", "at": "2026-01-02T00:00:00", "topic": {"id": "tp-root", "title": "R"},
+         "entry": "ib-1", "via": ["web"], "title": {"a": 1}, "value": "x" * 500, "state": 7},
+    )
+    want = {"event": "answered", "at": "2026-01-02T00:00:00", "entry": "ib-1",
+            "via": None, "title": None, "value": "x" * 200, "state": None}
+    held = topics.state("claude", "s1")["topics"][0]
+    assert held["notes"] == [want]
+    assert topics.tree()[0]["notes"] == [want]
+
+
+def test_a_note_without_a_date_sorts_last_in_the_tree(tmp_registry):
+    _write(
+        "claude", "s1",
+        {"event": "intent", "at": "2026-01-01T00:00:00", "topic": {"id": "tp-root", "title": "R"}},
+        {"event": "asked", "at": None, "topic": {"id": "tp-root", "title": "R"}, "entry": "ib-undated", "title": "Q"},
+        {"event": "asked", "at": "2026-01-03T00:00:00", "topic": {"id": "tp-root", "title": "R"}, "entry": "ib-b", "title": "Q"},
+        {"event": "asked", "at": "2026-01-02T00:00:00", "topic": {"id": "tp-root", "title": "R"}, "entry": "ib-a", "title": "Q"},
+    )
+    assert [n["entry"] for n in topics.tree()[0]["notes"]] == ["ib-a", "ib-b", "ib-undated"]

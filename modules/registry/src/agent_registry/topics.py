@@ -98,6 +98,12 @@ def read_events(agent_type: str, session_id: str) -> list[dict]:
             event["at"] = None
         if event.get("event") in NOTE_KINDS and not (isinstance(event.get("entry"), str) and event["entry"]):
             continue  # a note must name its inbox entry
+        if event.get("event") in NOTE_KINDS:
+            for key in ("title", "value", "via", "state"):
+                if key in event and not isinstance(event[key], str):
+                    event[key] = None
+            if event.get("value") is not None:
+                event["value"] = event["value"][:NOTE_VALUE_MAX]
         events.append(event)
     return events
 
@@ -399,7 +405,7 @@ def tree() -> list[dict]:
             node["sessions"].append({"agent_type": agent_type, "session_id": session_id, "role": role})
     roots = []
     for node in nodes.values():
-        node["notes"].sort(key=lambda n: n.get("at") or "")
+        node["notes"].sort(key=lambda n: (n.get("at") is None, n.get("at") or ""))
         parent = nodes.get(node["parent"]) if node["parent"] else None
         (parent["children"] if parent else roots).append(node)
     return roots
