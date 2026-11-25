@@ -23,6 +23,32 @@ def no_telegram(monkeypatch):
     # Urgent pushes also notify the Mac; a test run must not pop real notifications.
     monkeypatch.setattr("agent_inbox.notify.notify_mac", lambda title, body: None)
 
+
+class FakeRegistry:
+    """Stands in for agent_inbox.topics.registry. replies maps a registry command to its
+    result, or to a callable that gets the args. Unset commands return None, like a
+    registry that is down."""
+
+    def __init__(self):
+        self.calls: list[list[str]] = []
+        self.replies: dict = {}
+
+    def __call__(self, *args):
+        self.calls.append(list(args))
+        reply = self.replies.get(args[0])
+        return reply(*args) if callable(reply) else reply
+
+    def notes(self) -> list[list[str]]:
+        return [call[1:] for call in self.calls if call[0] == "topic-note"]
+
+
+@pytest.fixture(autouse=True)
+def fake_registry(monkeypatch):
+    """Tests never shell out to the agent registry."""
+    fake = FakeRegistry()
+    monkeypatch.setattr("agent_inbox.topics.registry", fake)
+    return fake
+
 TEST_DSN = os.environ.get("AGENT_INBOX_TEST_DSN", "host=localhost port=5433 dbname=agent_inbox_test")
 
 
