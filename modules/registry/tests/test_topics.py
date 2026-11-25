@@ -179,3 +179,31 @@ def test_append_after_torn_tail_keeps_next_event(tmp_registry):
         f.write('{"event": "topic", "at": "2026-')  # crash mid-write, no newline
     opened = topics.open_topic("claude", "t", "After the crash")
     assert topics.state("claude", "t")["topic"]["id"] == opened["topic"]["id"]
+
+
+def _write_garbage_log(agent_type, session_id):
+    path = topics.log_path(agent_type, session_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    good = {"event": "intent", "topic": {"id": "tp-good", "title": "Valid"}}
+    lines = [
+        json.dumps({"event": "topic", "topic": {"id": ["x"], "title": "a"}}).encode(),
+        json.dumps({"event": "topic", "topic": {"id": {"k": 1}, "title": "a"}}).encode(),
+        json.dumps({"event": "topic", "topic": {"id": "tp-bad", "title": ["no"]}}).encode(),
+        b'{"event": "topic", "topic": {"id": "tp-\xff\xfe", "title": "x"}}',
+        json.dumps(good).encode(),
+    ]
+    path.write_bytes(b"\n".join(lines) + b"\n")
+
+
+def test_bad_events_are_skipped(tmp_registry):
+    _write_garbage_log("claude", "s1")
+    assert topics.state("claude", "s1")["intent"] == {"id": "tp-good", "title": "Valid"}
+    topics.current("claude", "s1")
+
+
+def test_list_survives_garbage_log(tmp_registry):
+    from agent_registry import ops
+    ops.register(agent_type="claude", session_id="s1", directory="/proj")
+    _write_garbage_log("claude", "s1")
+    active, _ = ops.list_split()
+    assert active[0]["intent"] == {"id": "tp-good", "title": "Valid"}

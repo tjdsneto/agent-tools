@@ -67,15 +67,22 @@ def read_events(agent_type: str, session_id: str) -> list[dict]:
     if not path.exists():
         return []
     events = []
-    for line in path.read_text(encoding="utf-8").splitlines():
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
         if not line.strip():
             continue
         try:
             event = json.loads(line)
         except json.JSONDecodeError:
             continue  # a torn line never hides the rest of the log
-        if isinstance(event, dict) and isinstance(event.get("topic"), dict):
-            events.append(event)
+        if not isinstance(event, dict) or not isinstance(event.get("topic"), dict):
+            continue
+        topic = event["topic"]
+        tid = topic.get("id")
+        if not isinstance(tid, str) or not tid:
+            continue
+        if topic.get("title") is not None and not isinstance(topic["title"], str):
+            continue
+        events.append(event)
     return events
 
 
