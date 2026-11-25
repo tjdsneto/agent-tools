@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 
 import psycopg
@@ -43,8 +44,10 @@ SEED = [
 
 def main() -> None:
     dsn = os.environ.get("AGENT_INBOX_DSN", "")
-    if "agent_inbox_test" not in dsn:
-        sys.exit("refusing: AGENT_INBOX_DSN must point at agent_inbox_test")
+    # The database name, not the whole string: a host or user could contain the words too.
+    named = re.search(r"dbname=(\S+)", dsn) or re.match(r"postgres(?:ql)?://[^/]*/([^?\s]+)", dsn)
+    if not named or "agent_inbox_test" not in named.group(1):
+        sys.exit("refusing: AGENT_INBOX_DSN must name a database containing agent_inbox_test")
     topics.registry = lambda *args: None  # never touch the real registry; paths are set below
     with psycopg.connect(dsn, autocommit=True) as raw:
         raw.execute("DROP TABLE IF EXISTS events, entries, ops CASCADE")

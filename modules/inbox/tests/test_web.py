@@ -442,6 +442,13 @@ def test_group_by_is_remembered_in_a_cookie(conn, http, fake_registry):
     assert cookie is None and 'class="grp"' not in odd and '<option value="none" selected>None</option>' in odd
 
 
+def test_a_refused_batch_still_offers_the_intent_filter(conn, http, fake_registry):
+    _with_path(conn, fake_registry, [ROOT, PLAN], title="On plan")
+    status, _, body = _post(http, "/batch", "action=withdraw")
+    assert status == 409 and "nothing selected" in body
+    assert '<select name="intent">' in body and "Topic awareness</option>" in body
+
+
 def test_a_row_reads_its_title_before_its_topic_path(conn, http, fake_registry):
     _with_path(conn, fake_registry, [ROOT, PLAN], title="On plan")
     _, body = _get(http, "/")

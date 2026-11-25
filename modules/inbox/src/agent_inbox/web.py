@@ -1151,9 +1151,10 @@ class InboxHandler(BaseHTTPRequestHandler):
                 message = errors[0] if errors else "nothing selected"
                 from agent_inbox.notify import urgent_counts
                 group, _ = _group_choice({}, self.headers.get("Cookie"))
+                rows = load_feed(conn, {})
                 self._html(409, _feed_page(
-                    load_feed(conn, {}), {}, message, banner=urgent_counts(conn), waiting=open_count(conn),
-                    projects=store.list_projects(conn), group=group,
+                    rows, {}, message, banner=urgent_counts(conn), waiting=open_count(conn),
+                    projects=store.list_projects(conn), intents=grouping.intents_in(rows), group=group,
                 ))
                 return
         self._redirect("/")
