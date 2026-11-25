@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+#
+# play-stop-sound - Play a short sound when Claude finishes responding (Stop hook).
+#
+# Runs as a Stop hook so you get an audible cue when the session is waiting
+# for your input. Uses a system sound (no audio clip). Only plays on normal
+# stop (skips when stop_hook_active is true to avoid repeated dings).
+#
+
+set -euo pipefail
+
+# Consume hook JSON from stdin
+INPUT="$(cat)"
+
+# Only play on normal stop; skip when another hook forced continuation
+if command -v jq &>/dev/null; then
+  STOP_HOOK_ACTIVE=$(echo "$INPUT" | jq -r '.stop_hook_active // false')
+  if [ "$STOP_HOOK_ACTIVE" = "true" ]; then
+    exit 0
+  fi
+fi
+
+# Play a short system sound (macOS)
+if [[ "$(uname -s)" == "Darwin" ]]; then
+  if [ -f /System/Library/Sounds/Pop.aiff ]; then
+    afplay /System/Library/Sounds/Pop.aiff &
+  elif [ -f /System/Library/Sounds/Ping.aiff ]; then
+    afplay /System/Library/Sounds/Ping.aiff &
+  fi
+# Fallback: terminal bell (may be disabled in prefs)
+else
+  printf '\a' 2>/dev/null || true
+fi
+
+exit 0

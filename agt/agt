@@ -46,8 +46,12 @@ case "$cmd" in
       context) exec "$ROOT/modules/sessions/session-context" "$@" ;;
       review) exec "$ROOT/modules/sessions/session-review" "$@" ;;
       locate) exec "$ROOT/modules/sessions/session-locate" "$@" ;;
-      *) die "sessions: need report|active|rename|list|autorename|context|review|locate" ;;
+      stop-sound) exec "$ROOT/modules/sessions/play-stop-sound" "$@" ;;
+      *) die "sessions: need report|active|rename|list|autorename|context|review|locate|stop-sound" ;;
     esac
+    ;;
+  tools)
+    exec python3 "$ROOT/modules/tool-registry/registry.py" "$@"
     ;;
   say)
     exec "$ROOT/modules/say/bin/agent-say" "$@"
@@ -72,7 +76,8 @@ agt — agent-tools
   agt waker …             session-waker
   agt waker-deregister    SessionEnd hook: de-register from session-waker
   agt budget …            claude-budget
-  agt sessions report|active|rename|list|autorename|context|review|locate …
+  agt sessions report|active|rename|list|autorename|context|review|locate|stop-sound …
+  agt tools …             tool-registry: what skills, agents, MCP, CLIs, models are usable here
   agt say …               agent-say
   agt read …              agent-read
   agt inbox …             agent-inbox

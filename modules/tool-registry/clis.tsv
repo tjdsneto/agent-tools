@@ -1,0 +1,12 @@
+# Agent-callable CLI wrappers — CURATED list (the registry's source of truth for
+# the `cli` kind). Add a row to expose a command; the scanner shows it only when
+# the command actually resolves on PATH (an uninstalled one is hidden unless --all).
+# Columns: command<TAB>description
+gemini-ask	Ask Google Gemini a one-shot question; API key auto-injected from 1Password, passthrough to the gemini CLI.
+buddy	Lindris CI/CD control — Buddy.works pipelines (builds, deploys, PR checks). Auth/defaults in ~/.config/buddy-cli/config.json.
+opc	Run the 1Password CLI through a persistent authorized tmux session — promptless `op` reads across short-lived shells.
+op-ssh-cache	RETIRED 2026-11-01. SSH keys live on disk; do not route SSH back through this agent.
+ssh-config-refresh	Restore Lindris, OptinMonster, and ARMTC SSH host blocks from 1Password into ~/.ssh/config.d/. Does not touch the personal fragment.
+park	Park a session thread/idea for later and recall parked ideas by topic or timeframe.
+dev-env	Claim/release runnable dev dirs in the durable registry (concurrency-capped); coordinates with Watts.
+agent-registry	Register/list AI session presence across hosts — list before claiming an issue/PR to avoid collisions.

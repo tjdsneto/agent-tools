@@ -1,0 +1,8 @@
+# Available Claude models — HAND-MAINTAINED (no on-disk source to scan).
+# Columns: name<TAB>model-id<TAB>note
+# Update when Anthropic ships/retires a model. Keep newest-capable first.
+Opus 5.5	claude-opus-5-5	most capable; default for hard/agentic work
+Sonnet 5	claude-sonnet-5	balanced cost/capability workhorse
+Haiku 4.5	claude-haiku-4-5-20251001	fastest/cheapest; light tasks & subagents
+Fable 5.1	claude-fable-5-1	creative/writing-tuned
+Opus 4.8 (1M ctx)	claude-opus-4-8[1m]	1M-token context window variant

@@ -26,7 +26,8 @@ reload_agent() {
 link_bin agt "$ROOT/agt/agt"
 for s in agent-registry session-waker claude-budget session-report active-sessions \
          rename-session list-sessions rename-claude-sessions session-context session-review \
-         session-waker-deregister session-locate agent-say agent-read agent-inbox; do
+         session-waker-deregister session-locate play-stop-sound tool-registry \
+         agent-say agent-read agent-inbox; do
   link_bin "$s" "$ROOT/shims/$s"
 done
 
@@ -49,11 +50,13 @@ link_skill() {
   done
 }
 
-for sk in session-waker agent-say agent-read glue-miner session-awareness session-locate; do
+for sk in session-waker agent-say agent-read glue-miner session-awareness session-locate \
+          check-usage visual-ask fresh-continuation closing-session-sweep \
+          maestro-patient-waiting maestro-conduct tool-registry; do
   link_skill "$sk"
 done
 # Claude-only: they read Claude Code transcripts.
-for sk in session-review claude-session-mngr; do
+for sk in session-review claude-session-mngr end-session recover-pasted-files; do
   link_skill "$sk" "$HOME/.claude/skills"
 done
 # Any agent can ask Tiago through the inbox, so Codex gets this one too.

@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Question</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; }
+    :root {
+      --bg: #f5f5f7; --card: #fff; --muted-bg: #e5e5e7; --line: #d1d1d6;
+      --text: #1d1d1f; --muted: #6e6e73; --accent: #0071e3; --selected: #e8f4fd;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #1d1d1f; --card: #2d2d2f; --muted-bg: #3d3d3f; --line: #424245;
+        --text: #f5f5f7; --muted: #98989d; --accent: #0a84ff; --selected: rgba(10,132,255,.15);
+      }
+    }
+    body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); line-height: 1.5; }
+    header { padding: .6rem 1.5rem; border-bottom: 1px solid var(--line); background: var(--card); font-size: .8rem; color: var(--muted); }
+    main { padding: 2rem; max-width: 960px; }
+    h2 { font-size: 1.5rem; font-weight: 600; margin-bottom: .4rem; }
+    h3 { font-size: 1rem; font-weight: 600; }
+    .subtitle { color: var(--muted); margin-bottom: 1.25rem; }
+    .section { margin-bottom: 1.5rem; }
+    .label { font-size: .7rem; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); margin-bottom: .4rem; }
+    .options { display: flex; flex-direction: column; gap: .75rem; }
+    .option, .card { background: var(--card); border: 2px solid var(--line); border-radius: 12px; cursor: pointer; }
+    .option { padding: 1rem 1.15rem; display: flex; gap: 1rem; align-items: flex-start; }
+    .option:hover, .card:hover { border-color: var(--accent); }
+    .option.selected, .card.selected { background: var(--selected); border-color: var(--accent); }
+    .letter { width: 1.75rem; height: 1.75rem; border-radius: 6px; background: var(--muted-bg); color: var(--muted); display: flex; align-items: center; justify-content: center; font-weight: 600; flex-shrink: 0; }
+    .option.selected .letter { background: var(--accent); color: white; }
+    .content p, .card-body p, .subtitle { color: var(--muted); }
+    .content p { font-size: .9rem; margin: 0; }
+    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; }
+    .card-body { padding: 1rem; }
+    .mockup { background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; margin-bottom: 1.25rem; }
+    .mockup-header { background: var(--muted-bg); color: var(--muted); font-size: .75rem; padding: .45rem 1rem; }
+    .mockup-body { padding: 1.25rem; }
+    .split, .pros-cons { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+    @media (max-width: 700px) { .split, .pros-cons { grid-template-columns: 1fr; } }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .9em; }
+  </style>
+</head>
+<body>
+  <header>Question</header>
+  <main>
+    <!-- CONTENT -->
+  </main>
+  <script>
+    let seen = null;
+    async function poll() {
+      try {
+        const res = await fetch('/version', { cache: 'no-store' });
+        const info = await res.json();
+        const key = (info.file || '') + ':' + info.mtime;
+        if (seen === null) seen = key;
+        else if (seen !== key) location.reload();
+      } catch (e) {}
+    }
+    setInterval(poll, 1000);
+
+    function sendEvent(event) {
+      fetch('/event', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(event)
+      });
+    }
+
+    document.addEventListener('click', (e) => {
+      const target = e.target.closest('[data-choice]');
+      if (!target) return;
+      sendEvent({
+        type: 'click',
+        choice: target.dataset.choice,
+        text: (target.innerText || '').trim().slice(0, 500)
+      });
+    });
+
+    window.toggleSelect = function (el) {
+      const container = el.closest('.options') || el.closest('.cards');
+      const multi = container && container.dataset.multiselect !== undefined;
+      if (!multi && container) {
+        container.querySelectorAll('.option, .card').forEach((node) => node.classList.remove('selected'));
+        el.classList.add('selected');
+        return;
+      }
+      el.classList.toggle('selected');
+    };
+  </script>
+</body>
+</html>
