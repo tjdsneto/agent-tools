@@ -45,11 +45,21 @@ def test_claude_sets_intent_then_asks_on_drift(box):
     assert not any(e["event"] in ("forked", "parked") for e in after[len(events):]), after
 
 
+def _codex_shell_env(box):
+    # Codex hands its shell only the env its shell_environment_policy allows (often just core vars),
+    # so the temp registry has to be set for the shell explicitly or `agt` writes the real one.
+    env = _agent_env(box)
+    args = []
+    for key in ("AGENT_REGISTRY_PATH", "AGENT_REGISTRY_FORK_BACKEND"):
+        args += ["-c", f"shell_environment_policy.set.{key}={json.dumps(env[key])}"]
+    return args
+
+
 @pytest.mark.skipif(not shutil.which("codex"), reason="codex is not on PATH")
 def test_codex_sets_intent(box):
     proc = subprocess.run(
         [shutil.which("codex"), "exec", "--dangerously-bypass-hook-trust", "-s", "workspace-write",
-         "--skip-git-repo-check", "-C", str(box.root), "--json", FIRST],
+         *_codex_shell_env(box), "--skip-git-repo-check", "-C", str(box.root), "--json", FIRST],
         env=_agent_env(box), capture_output=True, text=True, timeout=300,
     )
     assert proc.returncode == 0, proc.stderr
