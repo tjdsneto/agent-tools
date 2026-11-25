@@ -16,6 +16,12 @@ from agent_registry.store import registry_path
 # Events that create a topic id; the session whose log holds one owns that topic.
 MINTING = ("intent", "topic", "forked")
 CLOSING = ("done", "parked", "forked")
+# Inbox activity a topic's history records. A note never opens, closes or re-dates a topic.
+NOTE_KINDS = ("asked", "posted", "answered", "closed")
+NOTE_VIAS = ("web", "telegram", "chat", "cli")
+NOTE_CLOSED_STATES = ("withdrawn", "expired", "superseded")
+NOTE_VALUE_MAX = 200
+NOTE_FIELDS = ("entry", "title", "value", "via", "state")
 
 
 class TopicUsageError(Exception):
@@ -90,6 +96,8 @@ def read_events(agent_type: str, session_id: str) -> list[dict]:
             del event["parent"]
         if "at" in event and not isinstance(event["at"], str):
             event["at"] = None
+        if event.get("event") in NOTE_KINDS and not (isinstance(event.get("entry"), str) and event["entry"]):
+            continue  # a note must name its inbox entry
         events.append(event)
     return events
 
@@ -131,8 +139,15 @@ def _title(value: str | None) -> str:
     return title
 
 
+def _note_view(ev: dict) -> dict:
+    return {"event": ev["event"], "at": ev.get("at"), **{k: ev[k] for k in NOTE_FIELDS if k in ev}}
+
+
 def _replay(events: list[dict]) -> dict:
-    """Fold a log into the session's intent, its current topic, and every topic it touched."""
+    """Fold a log into the session's intent, its current topic, and every topic it touched.
+
+    Inbox notes are history: each lands in its topic's `notes`, and none of them changes a
+    status, an `at`, or which topics the session touched."""
     intent = None
     current = None
     seen: dict[str, dict] = {}
@@ -141,8 +156,12 @@ def _replay(events: list[dict]) -> dict:
         tid = ev["topic"].get("id")
         if not tid:
             continue
+        if kind in NOTE_KINDS:
+            if tid in seen:
+                seen[tid]["notes"].append(_note_view(ev))
+            continue
         entry = seen.setdefault(tid, {
-            "id": tid, "title": ev["topic"].get("title"), "parent": None, "status": "open", "at": None,
+            "id": tid, "title": ev["topic"].get("title"), "parent": None, "status": "open", "at": None, "notes": [],
         })
         if ev.get("parent"):
             entry["parent"] = ev["parent"]
@@ -363,8 +382,9 @@ def tree() -> list[dict]:
         for t in st["topics"]:
             node = nodes.setdefault(t["id"], {
                 "id": t["id"], "title": t["title"], "parent": None, "status": t["status"],
-                "sessions": [], "children": [],
+                "sessions": [], "children": [], "notes": [],
             })
+            node["notes"].extend(t["notes"])
             if t["parent"]:
                 node["parent"] = t["parent"]
             if (t["at"] or "") >= latest.get(t["id"], ""):
@@ -379,6 +399,67 @@ def tree() -> list[dict]:
             node["sessions"].append({"agent_type": agent_type, "session_id": session_id, "role": role})
     roots = []
     for node in nodes.values():
+        node["notes"].sort(key=lambda n: n.get("at") or "")
         parent = nodes.get(node["parent"]) if node["parent"] else None
         (parent["children"] if parent else roots).append(node)
     return roots
+
+
+def _note_log(topic_id: str, agent_type: str | None, session_id: str | None) -> tuple[str, str, str | None] | None:
+    """The asking session's log when it holds the topic, else the log of the session that minted it."""
+    if agent_type and session_id:
+        held = next((t for t in state(agent_type, session_id)["topics"] if t["id"] == topic_id), None)
+        if held:
+            return agent_type, session_id, held["title"]
+    found = find_topic(topic_id)
+    if found:
+        return found["agent_type"], found["session_id"], found["title"]
+    return None
+
+
+def add_note(
+    kind: str, topic_id: str, entry: str, *, agent_type: str | None = None, session_id: str | None = None,
+    title: str | None = None, value: str | None = None, via: str | None = None, closed_as: str | None = None,
+) -> dict:
+    """Record inbox activity on a topic: asked or posted (title), answered (value, via), closed (state)."""
+    if kind not in NOTE_KINDS:
+        raise TopicUsageError(f"note kind must be one of {', '.join(NOTE_KINDS)}")
+    entry = (entry or "").strip()
+    if not entry:
+        raise TopicUsageError("a note needs --entry")
+    fields: dict = {"entry": entry}
+    if kind in ("asked", "posted"):
+        fields["title"] = _title(title)
+    elif kind == "answered":
+        if value is None:
+            raise TopicUsageError("an answered note needs --value")
+        if via not in NOTE_VIAS:
+            raise TopicUsageError(f"--via must be one of {', '.join(NOTE_VIAS)}")
+        fields.update(value=value[:NOTE_VALUE_MAX], via=via)
+    else:
+        if closed_as not in NOTE_CLOSED_STATES:
+            raise TopicUsageError(f"--state must be one of {', '.join(NOTE_CLOSED_STATES)}")
+        fields["state"] = closed_as
+    with _locked():
+        where = _note_log(topic_id, agent_type, session_id)
+        if where is None:
+            raise TopicNotFoundError(topic_id)
+        log_type, log_session, topic_title = where
+        return _append(log_type, log_session, {
+            "event": kind, "at": now_iso(), "topic": {"id": topic_id, "title": topic_title}, **fields,
+        })
+
+
+def open_questions(topic_id: str) -> list[str]:
+    """Entries asked under the topic, in any log, with no answered or closed note yet."""
+    asked: list[str] = []
+    settled: set[str] = set()
+    for _agent_type, _session_id, events in _all_logs():
+        for ev in events:
+            if ev["topic"]["id"] != topic_id:
+                continue
+            if ev.get("event") == "asked" and ev["entry"] not in asked:
+                asked.append(ev["entry"])
+            elif ev.get("event") in ("answered", "closed"):
+                settled.add(ev["entry"])
+    return [entry for entry in asked if entry not in settled]
