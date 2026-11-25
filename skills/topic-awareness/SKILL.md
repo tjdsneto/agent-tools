@@ -15,6 +15,8 @@ Intent: Make inbox entries topic-aware (tp-7k3q) · Topic: Decide where topic re
 
 or, in a new session, `No intent set for this session. …`.
 
+Subagents don't use this skill. They share the parent session's id, so their topic commands would write to the parent's log. Only the main session sets the intent, opens topics and forks.
+
 Session identity comes from your environment (`CLAUDE_CODE_SESSION_ID`, `CODEX_THREAD_ID`, `CURSOR_CONVERSATION_ID`), so these commands need no flags.
 
 ## Set the intent once
@@ -78,7 +80,7 @@ Then do what he chose:
   MD
   ```
 
-  It opens a visible session: a Cursor tab with the prompt filled in (Tiago presses Enter), or a Herdr pane that starts on its own when you run inside Herdr. Tell him which, then go back to the main line and leave the forked thread alone.
+  It opens a visible session: a Cursor tab with the prompt filled in (Tiago presses Enter), or a Herdr pane that starts on its own when you run inside Herdr. Tell him which, then go back to the main line and leave the forked thread alone. If the result says `launched: false`, give Tiago the printed `prompt` and brief path in one line so he can start it himself.
 - **Park.** Park the idea with the `parked-ideas` skill (`park add` prints `Parked <id>: <title>`), then record it with that id: `agt registry topic --park --ref <id park add printed>`. If the thread was not yet a topic, open it first (`agt registry topic "…"`) so the park has something to close.
 - **Keep here.** Open it as a topic and work on it.
 
