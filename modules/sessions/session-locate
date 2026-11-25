@@ -144,8 +144,8 @@ reg_lookup() { # $1=session_id -> prints "state\tfocus\tbranch" or empty
 mtime_epoch() { stat -f '%m' "$1" 2>/dev/null || stat -c '%Y' "$1" 2>/dev/null || echo 0; }
 
 # Aggregate line counts per session across all resolved paths.
-declare -A lines_by_sid
-declare -A file_by_sid
+declare -A lines_by_sid=()
+declare -A file_by_sid=()
 for p in "${paths[@]}"; do
 	needle="\"cwd\":\"$p\""
 	while IFS= read -r f; do
