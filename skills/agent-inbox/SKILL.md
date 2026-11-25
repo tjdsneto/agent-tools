@@ -113,6 +113,17 @@ agt inbox reply ib-xxxx --text "Yes, CI ran on the merge commit."
 agt inbox wait ib-xxxx --after <seq>    # only if you are waiting in the foreground
 ```
 
+## Unattended agents
+
+An unattended agent runs with no chat and must never be woken by the inbox: for example, an agent the ana autopilot starts with `claude -p`. A wake resumes the session with its saved launch flags, or with `--dangerously-skip-permissions` when none were saved, which can drop the tool limits its launcher gave it. So it asks differently:
+
+- Ask with `--script <name>` (ana uses `--script autopilot`) and pass neither `--engine` nor `--session-id`. The inbox wakes any ask that carries a session id, even with `--script`.
+- Skip "Ask in both places": there is no chat to ask in, so ask only in the inbox.
+- **The task cannot go on without the answer:** add `--wait`. Exit 0 with `"event": "answer"` is the answer. Exit 0 with `"event": "followup"` is a follow-up: `agt inbox reply`, then `agt inbox wait <id> --after <seq>`. Exit 4 means the question closed (expired, withdrawn or superseded). Exit 5 is the timeout: the question stays open. Write the entry id in your report and end; whoever launched you resumes you once `agt inbox get <id>` shows `answered`.
+- **The task can go on without it:** ask without `--wait`, write the entry id in your report and carry on. A later run reads the answer, and any follow-up left in the thread, with `agt inbox get <id>`.
+
+A good question is the same either way: one decision per question, the options with their ids, your recommendation marked `recommended`, and the reason in the summary (see "Write for a phone" above).
+
 ## Change or cancel a question
 
 ```bash
