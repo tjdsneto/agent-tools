@@ -69,3 +69,4 @@ had changed. Every rule below exists because of that.
 | Human action (submit, approve, "when I'm ready") | Watcher from above — or just tell them to nudge you. Never scheduled wakes. |
 | CI/deploy the harness can't see | `ScheduleWakeup`, interval matched to the job, max 3 quiet polls |
 | Watcher keeps getting killed | Stop. Ask. Don't escalate. |
+| The wait outlives this session (token limit, machine sleep, terminal close) | `session-waker` (`agt waker register`). These rules still govern the run it wakes. |

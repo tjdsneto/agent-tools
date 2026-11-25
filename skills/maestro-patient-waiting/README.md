@@ -41,6 +41,9 @@ premium-model turns over a week confirming that nothing had happened.
 - **`conduct`** — the boss-not-doer stance for orchestrating an
   implement → review → address pipeline, which relies on this discipline for the
   waits between phases. Find the set under the **`maestro`** tag.
+- **`session-waker`** — for a wait that outlives the session itself (token
+  exhaustion, machine sleep, terminal close): an external monitor wakes the
+  session when its token window resets.
 - **[until](https://skills.awesomemotive.com/skills/delayed-work-until/)** — this
   ladder with the clock as the watched condition, for when the thing you're
   waiting on is a wall-clock time rather than a change in state.
