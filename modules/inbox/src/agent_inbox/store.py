@@ -247,6 +247,10 @@ def answer(
             (state, Jsonb(payload), entry_id),
         )
         _event(conn, entry_id, "answer", via, payload)
+    topics.note(
+        "answered", entry_id, row["topic_path"], engine=row["engine"], session_id=row["session_id"],
+        value=clean, via=via,
+    )
     if via != "telegram":
         try:
             from agent_inbox.notify import note_answered
@@ -260,6 +264,14 @@ def _set_state(conn: psycopg.Connection, row: dict, to: str, **extra: Any) -> No
     sets = ["state = %s", "updated_at = now()"] + [f"{k} = %s" for k in extra]
     conn.execute(f"UPDATE entries SET {', '.join(sets)} WHERE id = %s", (to, *extra.values(), row["id"]))
     _event(conn, row["id"], "state", None, {"from": row["state"], "to": to})
+
+
+def note_closed(row: dict, state: str) -> None:
+    """An ask left open without an answer; tell its topic, so it stops counting as waiting."""
+    topics.note(
+        "closed", row["id"], row.get("topic_path"), engine=row.get("engine"), session_id=row.get("session_id"),
+        state=state,
+    )
 
 
 def add_followup(conn: psycopg.Connection, entry_id: str, text: str, *, via: str = "cli") -> dict:
@@ -318,6 +330,7 @@ def withdraw(conn: psycopg.Connection, entry_id: str) -> dict:
         if row["state"] != "open":
             raise ConflictError(_closed_message(row))
         _set_state(conn, row, "withdrawn")
+    note_closed(row, "withdrawn")
     return {"entry": entry_id, "state": "withdrawn"}
 
 
@@ -334,6 +347,7 @@ def supersede(conn: psycopg.Connection, entry_id: str, *, by: str) -> dict:
         if row["state"] != "open":
             raise ConflictError(_closed_message(row))
         _set_state(conn, row, "superseded", superseded_by=by)
+    note_closed(row, "superseded")
     return {"entry": entry_id, "state": "superseded", "superseded_by": by}
 
 

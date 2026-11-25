@@ -18,7 +18,7 @@ def expire_due(conn: psycopg.Connection) -> int:
         """
         UPDATE entries SET state = 'expired', updated_at = now()
         WHERE kind = 'ask' AND state = 'open' AND expires_at IS NOT NULL AND expires_at <= now()
-        RETURNING id
+        RETURNING id, topic_path, engine, session_id
         """
     ).fetchall()
     for row in rows:
@@ -26,6 +26,8 @@ def expire_due(conn: psycopg.Connection) -> int:
             "INSERT INTO events (entry_id, type, body) VALUES (%s, 'state', %s)",
             (row["id"], Jsonb({"from": "open", "to": "expired"})),
         )
+    for row in rows:
+        store.note_closed(row, "expired")
     return len(rows)
 
 
