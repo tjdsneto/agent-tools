@@ -40,11 +40,11 @@ Why: Tiago runs many sessions at once. A long session that drifts through severa
 | `topic` | `parent` (the intent's id) | Opens a child topic. It becomes the current topic. |
 | `done` | | Closes a topic. |
 | `parked` | `ref` (the `park` id, when parked through `park`) | Sets a topic aside, unfinished. |
-| `forked` | `side` or `new_intent`, `backend`, `brief` (path) | A topic handed to a new session. |
+| `forked` | `parent`, `mode` (`side` or `new_intent`), `backend`, `brief` (path) | A topic handed to a new session. |
 
 A topic's status is the last of `done`, `parked` or `forked` recorded for it. With none of those, it is open.
 
-**Live entry.** The live registry row gains `intent` and `topic`, each `{id, title}` or null. `list` and the board show them. `summary` stays as it is: it is still the free-text focus line.
+**Live entry.** `list` and the board add `intent` and `topic` (each `{id, title}` or null) to every row, derived from the session's log when the list is built. They are not stored in `registry.json`, so a daemon running older code can't drop them. `summary` stays as it is.
 
 **Writes** take the registry's existing file lock, so two hooks or commands writing at once don't corrupt a log.
 
@@ -111,7 +111,7 @@ The reminder is added to the existing `plugin/scripts/registry-hook`, so `plugin
 
 Unit tests sit beside the existing ones in `modules/registry/tests/`. The **black-box suite** is the part left behind for re-checking this feature. It touches only the public surfaces: `agt` commands, the hook script fed hook JSON on stdin, and the files on disk. It never imports the package.
 
-**Tier 1, `tests/blackbox/test_topics_cli.py`.** Fast, needs no agent, run with `pytest tests/blackbox/test_topics_cli.py`. Each test uses a temp `AGENT_REGISTRY_PATH`.
+**Tier 1, `tests/blackbox/test_topics_cli.py` and `tests/blackbox/test_topics_hook.py`.** Fast, needs no agent, run with `pytest tests/blackbox/test_topics_cli.py tests/blackbox/test_topics_hook.py`. Each test uses a temp `AGENT_REGISTRY_PATH`.
 
 - intent → topic → done → topics: the history comes back in order, and the statuses are right.
 - A second `intent` on the same session exits 4. `topic` with no intent exits 1. `--done` on an unknown id exits 2.
