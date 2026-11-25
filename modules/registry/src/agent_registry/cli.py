@@ -10,7 +10,7 @@ from pathlib import Path
 # directory on sys.path[0], so the import needs `src/`, which contains the package.
 if __name__ == "__main__" and __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from agent_registry import archive, client, doctor
+from agent_registry import archive, client, doctor, topic_cli
 from agent_registry.constants import (
     DASHBOARD_DEFAULT_PORT,
     EXIT_IO,
@@ -173,7 +173,10 @@ def main(argv: list[str] | None = None) -> int:
     daemon_sub.add_parser("start")
     daemon_sub.add_parser("stop")
 
+    topic_cli.add_parsers(sub)
     args = parser.parse_args(argv)
+    if args.cmd in topic_cli.COMMANDS:
+        return topic_cli.run(args)
     try:
         if args.cmd == "daemon":
             return _daemon(args)
