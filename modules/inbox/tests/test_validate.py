@@ -102,3 +102,10 @@ def test_request_html_cap_source_and_expiry():
         validate_request({"title": "t", "expires_at": "2026-12-01T09:00:00"}, "post")
     with pytest.raises(ValidationError, match="priority"):
         validate_request({"title": "t", "priority": "meh"}, "post")
+
+def test_topic_is_an_optional_topic_id():
+    assert validate_request({"title": "t"}, "post")["topic"] is None
+    assert validate_request({"title": "t", "topic": "tp-7k3q"}, "post")["topic"] == "tp-7k3q"
+    for bad in ("7k3q", "tp-", "tp-7k 3q", 7, ["tp-7k3q"]):
+        with pytest.raises(ValidationError, match="topic must be a topic id"):
+            validate_request({"title": "t", "topic": bad}, "post")

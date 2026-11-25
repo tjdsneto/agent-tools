@@ -86,6 +86,7 @@ Optional fields:
 - `priority`: `normal` (default) waits in the inbox with no push. `urgent` pushes a Telegram card at once, day or night: Telegram is for emergencies, so use it only when something is broken or blocked and cannot wait for him to look. `low` is for posts nobody needs to see soon.
 - `source`: `{"kind", "ref", "url"}`, a link back to what the question is about.
 - `expires_at`: an ISO time with an offset, after which the question closes.
+- `topic`: a topic id (`tp-xxxx`, from `agt registry topics`). You rarely need it: with `--engine` and `--session-id` the inbox records your session's intent and topic by itself, and shows them on the entry. Any asker can pass it to file the question under that discussion, and it wins over your session's own topic. An unknown id is exit 1.
 
 Write for a phone: the title is the question itself, the summary is two or three sentences, and every option label stands on its own.
 

@@ -8,6 +8,7 @@ from typing import Any
 import psycopg
 from psycopg.types.json import Jsonb
 
+from agent_inbox import topics
 from agent_inbox.constants import ASK_LIVE_STATES, CLOSED_STATES, HTML_MAX_BYTES, VIAS
 from agent_inbox.errors import ConflictError, NotFoundError, StoreError, ValidationError
 from agent_inbox.ids import new_id
@@ -88,6 +89,7 @@ def _shape(row: dict, events: list[dict] | None = None) -> dict:
         "superseded_by": row["superseded_by"],
         "waiter_pid": row["waiter_pid"],
         "delivery": row.get("delivery") or {},
+        "topic_path": row.get("topic_path"),
     }
     if events is not None:
         entry["thread"] = [_shape_event(e) for e in events if e["type"] in ("followup", "reply")]
@@ -119,30 +121,38 @@ def create_entry(
         if session_id and not engine:
             raise ValidationError("--session-id needs --engine")
         mode, state = None, "unread"
+    # Resolved before the insert: an unknown named topic must not leave an entry behind.
+    path = topics.path_for(engine=engine, session_id=session_id, topic=req.get("topic"))
     params = {
         "kind": kind, "engine": engine, "model": model, "session_id": session_id,
         "cwd": cwd, "project": project_root(cwd), "script": script,
         "priority": req["priority"], "mode": mode, "title": req["title"],
         "summary": req.get("summary"), "detail": req.get("detail"), "html": req.get("html"),
         "control": _jsonb(req.get("control")), "source": _jsonb(req.get("source")),
-        "expires_at": req.get("expires_at"), "state": state,
+        "expires_at": req.get("expires_at"), "state": state, "topic_path": _jsonb(path),
     }
     for _ in range(ID_ATTEMPTS):
         params["id"] = new_id()
         row = conn.execute(
             """
             INSERT INTO entries (id, kind, engine, model, session_id, cwd, project, script, priority, mode,
-                                 title, summary, detail, html, control, source, expires_at, state)
+                                 title, summary, detail, html, control, source, expires_at, state, topic_path)
             VALUES (%(id)s, %(kind)s, %(engine)s, %(model)s, %(session_id)s, %(cwd)s, %(project)s, %(script)s,
                     %(priority)s, %(mode)s, %(title)s, %(summary)s, %(detail)s, %(html)s, %(control)s,
-                    %(source)s, %(expires_at)s, %(state)s)
+                    %(source)s, %(expires_at)s, %(state)s, %(topic_path)s)
             ON CONFLICT (id) DO NOTHING
             RETURNING id
             """,
             params,
         ).fetchone()
         if row:
-            return get_entry(conn, row["id"])
+            entry = get_entry(conn, row["id"])
+            # The connection autocommits, so the insert is committed before the note names it.
+            topics.note(
+                "asked" if kind == "ask" else "posted", entry["id"], path,
+                engine=engine, session_id=session_id, title=entry["title"],
+            )
+            return entry
     raise StoreError("could not allocate an entry id")
 
 
@@ -193,6 +203,21 @@ def list_projects(conn: psycopg.Connection) -> list[str]:
     return [row["project"] for row in rows]
 
 
+def same_topic(conn: psycopg.Connection, entry: dict, limit: int = 10) -> list[dict]:
+    """Other entries whose path ends in the same topic as this one, newest first."""
+    path = entry.get("topic_path") or []
+    if not path:
+        return []
+    rows = conn.execute(
+        """
+        SELECT * FROM entries WHERE topic_path->-1->>'id' = %s AND id <> %s
+        ORDER BY created_at DESC, id DESC LIMIT %s
+        """,
+        (path[-1]["id"], entry["id"], limit),
+    ).fetchall()
+    return [{k: v for k, v in _shape(r).items() if k not in LIST_HIDDEN} for r in rows]
+
+
 def _check_via(via: str) -> None:
     if via not in VIAS:
         raise ValidationError(f"via must be one of {', '.join(VIAS)}")
@@ -237,6 +262,10 @@ def answer(
             (state, Jsonb(payload), entry_id),
         )
         _event(conn, entry_id, "answer", via, payload)
+    topics.note(
+        "answered", entry_id, row["topic_path"], engine=row["engine"], session_id=row["session_id"],
+        value=clean, via=via,
+    )
     if via != "telegram":
         try:
             from agent_inbox.notify import note_answered
@@ -250,6 +279,14 @@ def _set_state(conn: psycopg.Connection, row: dict, to: str, **extra: Any) -> No
     sets = ["state = %s", "updated_at = now()"] + [f"{k} = %s" for k in extra]
     conn.execute(f"UPDATE entries SET {', '.join(sets)} WHERE id = %s", (to, *extra.values(), row["id"]))
     _event(conn, row["id"], "state", None, {"from": row["state"], "to": to})
+
+
+def note_closed(row: dict, state: str) -> None:
+    """An ask left open without an answer; tell its topic, so it stops counting as waiting."""
+    topics.note(
+        "closed", row["id"], row.get("topic_path"), engine=row.get("engine"), session_id=row.get("session_id"),
+        state=state,
+    )
 
 
 def add_followup(conn: psycopg.Connection, entry_id: str, text: str, *, via: str = "cli") -> dict:
@@ -308,6 +345,7 @@ def withdraw(conn: psycopg.Connection, entry_id: str) -> dict:
         if row["state"] != "open":
             raise ConflictError(_closed_message(row))
         _set_state(conn, row, "withdrawn")
+    note_closed(row, "withdrawn")
     return {"entry": entry_id, "state": "withdrawn"}
 
 
@@ -324,6 +362,7 @@ def supersede(conn: psycopg.Connection, entry_id: str, *, by: str) -> dict:
         if row["state"] != "open":
             raise ConflictError(_closed_message(row))
         _set_state(conn, row, "superseded", superseded_by=by)
+    note_closed(row, "superseded")
     return {"entry": entry_id, "state": "superseded", "superseded_by": by}
 
 

@@ -17,7 +17,7 @@ from agent_registry.constants import (
     SESSION_ENV,
 )
 
-COMMANDS = frozenset({"intent", "topic", "topics", "fork", "topic-context"})
+COMMANDS = frozenset({"intent", "topic", "topics", "fork", "topic-context", "topic-path", "topic-note"})
 
 
 def _add_who(p: argparse.ArgumentParser) -> None:
@@ -56,6 +56,20 @@ def add_parsers(sub) -> None:
     _add_who(p)
 
     p = sub.add_parser("topic-context")
+    _add_who(p)
+
+    p = sub.add_parser("topic-path")
+    p.add_argument("--topic", default=None, metavar="TOPIC_ID")
+    _add_who(p)
+
+    p = sub.add_parser("topic-note")
+    p.add_argument("kind", metavar="asked|posted|answered|closed")
+    p.add_argument("--topic", required=True, metavar="TOPIC_ID")
+    p.add_argument("--entry", required=True)
+    p.add_argument("--title", default=None)
+    p.add_argument("--value", default=None)
+    p.add_argument("--via", default=None)
+    p.add_argument("--state", dest="closed_as", default=None)
     _add_who(p)
 
 
@@ -108,6 +122,21 @@ def _dispatch(args: argparse.Namespace):
             **topics.state(agent_type, session_id),
             "events": topics.read_events(agent_type, session_id),
         }
+    if cmd == "topic-path":
+        if args.topic:
+            path = topics.path_from(args.topic)
+            if path is None:
+                raise topics.TopicNotFoundError(args.topic)
+            return path
+        return topics.session_path(*_identity(args))
+    if cmd == "topic-note":
+        # The inbox passes the asker only when it has one; never guess it from the environment.
+        if bool(args.agent_type) != bool(args.session_id):
+            raise topics.TopicUsageError("--type and --session-id go together")
+        return topics.add_note(
+            args.kind, args.topic, args.entry, agent_type=args.agent_type, session_id=args.session_id,
+            title=args.title, value=args.value, via=args.via, closed_as=args.closed_as,
+        )
     agent_type, session_id = _identity(args)
     if cmd == "intent":
         _one(args.title, args.adopt)
@@ -119,7 +148,8 @@ def _dispatch(args: argparse.Namespace):
         if args.title is not None:
             return topics.open_topic(agent_type, session_id, args.title)
         if args.done is not None:
-            return topics.close_topic(agent_type, session_id, "done", args.done or None)
+            done = topics.close_topic(agent_type, session_id, "done", args.done or None)
+            return {**done, "open_questions": topics.open_questions(done["topic"]["id"])}
         return topics.close_topic(agent_type, session_id, "parked", args.park or None, ref=args.ref)
     if cmd == "fork":
         return forking.fork(

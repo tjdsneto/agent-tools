@@ -2536,28 +2536,23 @@ Expected: `200`.
 
 - [ ] **Step 3: Take the screenshots**
 
-Each run gets a throwaway profile, so headless Chrome never attaches to Tiago's running browser.
+Use the committed visual check, `modules/inbox/tests/visual/shots.sh` (its `README.md` has the details). It seeds a scratch test DB, starts the web-only server on the port you give it, takes the shots and stops the server, so it replaces Step 2's manual seed and server. It refuses ports 8797 and 8798 and the live `agent_inbox` DB.
 
 ```bash
+createdb -h localhost -p 5433 agent_inbox_test_visual
 cd /Users/tjdsneto/projects/agent-tools/.worktrees/topic-aware-inbox/modules/inbox
-CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-# The four-node ask: its breadcrumb is the longest, and "Window targeting notes" shares its topic.
-ASK=$(.venv/bin/python -c 'import json; print(json.load(open("tmp/seed.json"))["Is the Cursor tab opening in the right project window?"])')
-shot() {
-  local size="$1" name="$2" url="$3"; shift 3
-  "$CHROME" --headless=new --disable-gpu --hide-scrollbars --no-first-run --user-data-dir="$(mktemp -d)" \
-    --window-size="$size" --screenshot="tmp/shots/$name.png" "$@" "$url" 2>/dev/null
-}
-for size in 390,1400 1280,1000; do
-  w=${size%,*}
-  for g in none intent tree; do shot "$size" "feed-$g-$w" "http://127.0.0.1:8897/?group=$g"; done
-  shot "$size" "entry-$w" "http://127.0.0.1:8897/e/$ASK"
-done
-shot 390,1400 feed-tree-390-dark "http://127.0.0.1:8897/?group=tree" --force-dark-mode
-ls tmp/shots
+AGENT_INBOX_DSN="host=localhost port=5433 dbname=agent_inbox_test_visual" tests/visual/shots.sh tmp/shots 8897
+dropdb -h localhost -p 5433 agent_inbox_test_visual
 ```
 
-Expected: nine PNGs: `feed-{none,intent,tree}-{390,1280}.png`, `entry-{390,1280}.png`, `feed-tree-390-dark.png`.
+Expected: twelve PNGs (the nine below plus `entry-390-dark.png` and `filter-open-390-{light,dark}.png`), a line per shot with its measured width and scheme, and exit 0.
+
+Why not plain `chrome --headless --window-size=390,1400 --screenshot`, as this step first said:
+- On macOS Chrome won't make a window narrower than 500px, so a 390px request lays the page out at 500px and crops the PNG; it looks like content runs off the right edge.
+- `--virtual-time-budget` hangs on these pages.
+- `--force-dark-mode` doesn't flip `prefers-color-scheme`. Headless Chrome follows the Mac's own appearance, so on a Mac in dark mode every "light" shot is dark too.
+
+`cdpshot.mjs` drives Chrome over the DevTools Protocol instead: it emulates the exact viewport and colour scheme, checks `innerWidth`, the page's scroll width and the scheme before the shot, and exits 3 when they don't match.
 
 - [ ] **Step 4: Look at every screenshot**
 

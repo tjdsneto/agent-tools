@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 from markdown_it import MarkdownIt
 from psycopg.types.json import Jsonb
 
-from agent_inbox import db, store
+from agent_inbox import db, grouping, store
 from agent_inbox.constants import FRAME_PORT, HTTP_PORT, NOTIFY_CHANNEL
 from agent_inbox.errors import ConflictError, NotFoundError, StoreError, ValidationError
 
@@ -22,6 +22,9 @@ HISTORY_STATES = ("answered", "delivered", "read", "expired", "withdrawn", "supe
 DONE_STATES = {"answered", "delivered", "read"}
 HIDDEN_STATES = {"archived", "withdrawn", "superseded"}
 FRAME_ORIGIN = f"http://127.0.0.1:{FRAME_PORT}"
+GROUP_LABELS = (("none", "None"), ("intent", "Intent"), ("tree", "Topic tree"))
+GROUP_COOKIE = "ib_group"
+GROUP_MAX_AGE = 365 * 24 * 3600
 
 _HEAD = """<!doctype html>
 <html lang="en">
@@ -151,14 +154,27 @@ select {{ min-height: 44px; padding: 0 12px; border: 1px solid var(--field); bor
 .row.unread b::before {{ content: ""; display: inline-block; width: 8px; height: 8px; margin: 0 8px 2px 0; border-radius: 50%; background: var(--accent); }}
 .row small {{ grid-area: meta; color: var(--mute); font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
 .row time {{ grid-area: time; justify-self: end; color: var(--mute); font-size: 13px; font-variant-numeric: tabular-nums; }}
+.row .ctx {{ grid-area: ctx; display: flex; min-width: 0; color: var(--mute); font-size: 12px; line-height: 1.3; white-space: nowrap; }}
+.row .ctx-more {{ flex: none; }}
+.row .ctx-lead {{ flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }}
+.row .ctx-last {{ flex: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }}
+/* A long last name still leaves the names before it room for an ellipsis. */
+.row .ctx-lead + .ctx-last {{ max-width: calc(100% - 1.5em); }}
+.row .ctx-more + .ctx-lead + .ctx-last {{ max-width: calc(100% - 3.5em); }}
+.row.has-ctx {{ grid-template-areas: "av ctx ctx" "av title time" "av meta meta" "av chips chips"; }}
 @media (max-width: 759px) {{
   .row b {{ white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }}
   .row .rid {{ display: none; }}
 }}
-.row .chips {{ grid-area: chips; display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }}
 .day h2 {{ position: sticky; top: 56px; z-index: 1; margin: 0 -16px; padding: 16px 16px 8px; background: var(--bg);
   color: var(--mute); font-size: 13px; font-weight: 650; line-height: 1.2; }}
 .day:first-child h2 {{ padding-top: 4px; }}
+.row .chips {{ grid-area: chips; display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }}
+.grp h2 {{ position: sticky; top: 56px; z-index: 1; margin: 0 -16px; padding: 16px 16px 8px; background: var(--bg);
+  color: var(--mute); font-size: 13px; font-weight: 650; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
+.grp:first-child h2 {{ padding-top: 4px; }}
+.grp h3 {{ margin: 0 -16px; padding: 12px 16px 6px 32px; color: var(--mute); font-size: 13px; font-weight: 600; line-height: 1.2;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
 .empty {{ padding: 48px 0; text-align: center; color: var(--mute); }}
 .empty b {{ display: block; color: var(--ink); font-size: 17px; margin-bottom: 4px; }}
 .actions {{ position: sticky; bottom: 0; display: none; gap: 8px; margin: 0 -16px; padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
@@ -230,14 +246,30 @@ fieldset:disabled .opt, fieldset:disabled legend {{ color: var(--mute); cursor: 
 .follow .pair {{ align-items: flex-start; }}
 .follow .field {{ margin: 0; flex: 1; min-height: 48px; }}
 .follow .btn {{ flex: none; min-height: 48px; }}
+.crumbs ol {{ display: flex; flex-wrap: wrap; gap: 2px 6px; margin: 0 0 6px; padding: 0; list-style: none;
+  color: var(--mute); font-size: 14px; line-height: 1.4; }}
+.crumbs li + li::before {{ content: "›"; margin-right: 6px; }}
+.ontopic {{ margin: 24px 0 0; padding-top: 16px; border-top: 1px solid var(--line); }}
+.ontopic h2 {{ margin: 0 0 4px; font-size: 16px; }}
+.ontopic ul {{ list-style: none; margin: 0; padding: 0; }}
+.ontopic a {{ display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 48px; padding: 8px 0;
+  border-bottom: 1px solid var(--line); color: inherit; text-decoration: none; }}
+.ontopic li:last-child a {{ border-bottom: 0; }}
+.ontopic a:hover b {{ text-decoration: underline; }}
+.ontopic b {{ min-width: 0; font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
+.ontopic .end {{ flex: none; display: flex; align-items: center; gap: 8px; }}
+.ontopic time {{ color: var(--mute); font-size: 13px; font-variant-numeric: tabular-nums; }}
 #stale {{ position: fixed; left: 50%; bottom: 20px; z-index: 3; transform: translateX(-50%); margin: 0; padding: 10px 16px;
   border-radius: 20px; background: var(--ink); color: var(--bg); box-shadow: 0 4px 16px rgba(0,0,0,.18); white-space: nowrap; }}
 #stale a {{ color: inherit; font-weight: 650; }}
 @media (min-width: 760px) {{
   .row {{ grid-template-areas: "av title time" "av meta chips"; }}
+  .row.has-ctx {{ grid-template-areas: "av ctx ctx" "av title time" "av meta chips"; }}
   .row .chips {{ justify-content: flex-end; margin-top: 0; }}
   .list {{ margin: 0; border-top: 1px solid var(--line); }}
   .day h2 {{ margin: 0; padding-inline: 0; }}
+  .grp h2 {{ margin: 0; padding-inline: 0; }}
+  .grp h3 {{ margin: 0; padding-inline: 16px 0; }}
   .actions {{ margin: 0; padding-inline: 0; }}
   .title {{ font-size: 26px; }}
 }}
@@ -248,6 +280,7 @@ fieldset:disabled .opt, fieldset:disabled legend {{ color: var(--mute); cursor: 
   .pane {{ display: block; position: sticky; top: 57px; height: calc(100vh - 57px); overflow-y: auto; border-right: 1px solid var(--line); }}
   .pane .list {{ margin: 0; border-top: 0; }}
   .pane .row {{ grid-template-areas: "av title time" "av meta meta" "av chips chips"; padding-left: 16px; }}
+  .pane .row.has-ctx {{ grid-template-areas: "av ctx ctx" "av title time" "av meta meta" "av chips chips"; }}
   .pane .row b {{ white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }}
   .pane .row .rid {{ display: none; }}
   .pane .row .chips {{ justify-content: flex-start; margin-top: 4px; }}
@@ -402,6 +435,21 @@ def _dismissed(row: dict) -> bool:
     return flag is True or flag == "true"
 
 
+def _group_choice(qs: dict, cookie_header: str | None) -> tuple[str, str | None]:
+    """The Group by mode and, when this request picked one, the Set-Cookie that remembers it.
+
+    A cookie rather than the URL, so the choice survives the live reload, the tab links and the phone."""
+    asked = _query_value(qs, "group")
+    if asked in grouping.GROUPS:
+        return asked, f"{GROUP_COOKIE}={asked}; Path=/; Max-Age={GROUP_MAX_AGE}; SameSite=Lax"
+    # By hand: http.cookies gives up on every cookie after one that holds a space or JSON.
+    for part in (cookie_header or "").split(";"):
+        name, _, value = part.strip().partition("=")
+        if name == GROUP_COOKIE:
+            return (value if value in grouping.GROUPS else "none"), None
+    return "none", None
+
+
 def load_feed(conn, qs: dict) -> list[dict]:
     kind = _query_value(qs, "kind")
     engine = _query_value(qs, "engine")
@@ -496,6 +544,24 @@ def _by_day(rows: list[dict]) -> str:
     )
 
 
+def _grouped(groups: list[grouping.Group]) -> str:
+    """Group by: one section per intent or root with a one-line heading; tree nests forked intents one level."""
+    def rows(items: list[dict]) -> str:
+        return ('<ul class="list">' + "".join(_card(row) for row in items) + "</ul>") if items else ""
+
+    def heading(group: grouping.Group, tag: str) -> str:
+        project = _who(group.lead) if group.key and tag == "h2" else ""
+        text = " · ".join(bit for bit in (group.title, project) if bit)
+        return f'<{tag} title="{_esc(text)}">{_esc(text)}</{tag}>'
+
+    return "".join(
+        f'<section class="grp">{heading(group, "h2")}{rows(group.rows)}'
+        + "".join(f'<section class="grp sub">{heading(sub, "h3")}{rows(sub.rows)}</section>' for sub in group.subs)
+        + "</section>"
+        for group in groups
+    )
+
+
 def _ago(value) -> str:
     when = _local(value)
     if when is None:
@@ -584,6 +650,18 @@ def _card(row: dict, *, pick: bool = True, current: bool = False, by_day: bool =
     said = f"You: {_shown(row, answer.get('value'))}" if row["kind"] == "ask" and answer else ""
     meta = " · ".join(_esc(bit) for bit in (_who(row), engine, said) if bit)
     unread = " unread" if row["kind"] == "post" and row["state"] == "unread" else ""
+    # The discussion the row belongs to, above its title: the last two names of its topic path.
+    path = grouping.path_of(row)
+    ctx = grouping.context(path)
+    line = ""
+    if ctx:
+        # One span per part, so a narrow row ellipsizes the name in the middle, never the topic.
+        names = [grouping.name(node) for node in path]
+        more = '<span class="ctx-more">…&nbsp;›&nbsp;</span>' if len(names) > 2 else ""
+        lead = f'<span class="ctx-lead">{_esc(names[-2])}</span>' if len(names) > 1 else ""
+        last = f'<span class="ctx-last">{"&nbsp;› " if lead else ""}{_esc(names[-1])}</span>'
+        line = f'<span class="ctx" title="{_esc(ctx[1])}">{more}{lead}{last}</span>'
+    has = " has-ctx" if ctx else ""
     box = (
         f'<label class="pick"><input type="checkbox" name="id" value="{_esc(row["id"])}" aria-label="Select {_esc(row["id"])}"></label>'
         if pick else ""
@@ -591,7 +669,7 @@ def _card(row: dict, *, pick: bool = True, current: bool = False, by_day: bool =
     here = ' aria-current="page"' if current else ""
     return (
         f'<li class="item">{box}'
-        f'<a class="row{unread}" href="/e/{_esc(row["id"])}"{here}>{_avatar(row, kind=True)}<b>{_esc(row["title"])}</b>'
+        f'<a class="row{unread}{has}" href="/e/{_esc(row["id"])}"{here}>{_avatar(row, kind=True)}<b>{_esc(row["title"])}</b>{line}'
         f'<time>{_esc(_hour(row.get("created_at")) if by_day else _clock(row.get("created_at")))}</time>'
         f'<small>{meta}<span class="rid"> · <span class="id">{_esc(row["id"])}</span></span></small>'
         f'<span class="chips">{_urgent(row)}{_chip(row)}</span></a>'
@@ -616,19 +694,31 @@ def _tab(current: dict) -> tuple[str, dict]:
     return TABS[pick][1], TABS[pick][2]
 
 
-def _nav(qs: dict, projects: list[str] = ()) -> tuple[str, str]:
+def _group_select(group: str) -> str:
+    opts = "".join(
+        f'<option value="{value}"{" selected" if value == group else ""}>{label}</option>' for value, label in GROUP_LABELS
+    )
+    return f'<label>Group by<select name="group">{opts}</select></label>'
+
+
+def _nav(
+    qs: dict, projects: list[str] = (), intents: list[tuple[str, str]] = (), group: str = "none",
+) -> tuple[str, str]:
     """The view tabs, and the filter button and panel that sit in the header bar."""
     current = {key: _query_value(qs, key) for key in ("kind", "state", "history") if _query_value(qs, key)}
     home, want = _tab(current)
     mark = ' aria-current="page"'
     tabs = "".join(f'<a href="{href}"{mark if href == home else ""}>{label}</a>' for label, href, _ in TABS)
     # The filter panel narrows the current tab: it keeps the tab's history, and counts
-    # only what differs from the tab.
+    # only what differs from the tab. Group by is a view, so it is never counted.
     hidden = '<input type="hidden" name="history" value="1">' if current.get("history") else ""
-    on = sum(1 for key in ("kind", "project", "engine", "state") if _query_value(qs, key) != want.get(key))
+    on = sum(1 for key in ("kind", "project", "engine", "state", "intent") if _query_value(qs, key) != want.get(key))
     project = _query_value(qs, "project")
     if project and project not in projects:
         projects = [project, *projects]
+    intent = _query_value(qs, "intent")
+    if intent and intent not in {value for value, _ in intents}:
+        intents = [(intent, intent), *intents]
 
     def options(label: str, key: str, names) -> str:
         """names are values, or (value, label) pairs."""
@@ -650,6 +740,8 @@ def _nav(qs: dict, projects: list[str] = ()) -> tuple[str, str]:
         + options("Project", "project", [(path, Path(path).name) for path in projects])
         + options("Engine", "engine", ("claude", "codex", "cursor"))
         + options("State", "state", ("open", "unread", "answered", "delivered", "undelivered", "expired", "read"))
+        + (options("Intent", "intent", intents) if intents else "")
+        + _group_select(group)
         + f'<div class="pair">{clear}<button class="btn go" type="submit">Apply</button></div>'
         "</form></details>"
     )
@@ -662,22 +754,27 @@ def _waiting(rows: list[dict]) -> int:
 
 def _feed_page(
     rows: list[dict], qs: dict, error: str | None = None, banner: str = "", waiting: int | None = None,
-    projects: list[str] = (),
+    projects: list[str] = (), intents: list[tuple[str, str]] = (), group: str = "none",
 ) -> str:
     err = f'<p class="notice err" role="alert">{_esc(error)}</p>' if error else ""
     line = f'<p class="notice warn">{_esc(banner)}</p>' if banner else ""
     if rows:
+        if group in ("intent", "tree"):
+            listing = _grouped(grouping.group_rows(rows, group))
+        elif _query_value(qs, "history") == "1":
+            listing = _by_day(rows)
+        else:
+            listing = '<ul class="list">' + "".join(_card(row) for row in rows) + "</ul>"
         body = (
             '<form method="post" action="/batch">'
-            + (_by_day(rows) if _query_value(qs, "history") == "1"
-               else '<ul class="list">' + "".join(_card(row) for row in rows) + "</ul>")
+            + listing
             + '<div class="actions">'
             '<button class="btn danger" type="submit" name="action" value="withdraw">Withdraw</button>'
             '<button class="btn" type="submit" name="action" value="dismiss">Dismiss</button>'
             "</div></form>"
         )
     else:
-        if qs:
+        if any(key != "group" for key in qs):
             body = '<p class="empty"><b>Nothing here</b>Nothing matches this view.</p>'
         else:
             body = (
@@ -685,7 +782,7 @@ def _feed_page(
                 'Answered questions and read reports are in <a href="/?history=1">History</a>.</p>'
             )
     count = _waiting(rows) if waiting is None else waiting
-    tabs, filters = _nav(qs, projects)
+    tabs, filters = _nav(qs, projects, intents, group)
     return (
         _HEAD.format(title="Inbox", body="")
         + _bar("<h1>Inbox</h1>", count, filters)
@@ -809,6 +906,27 @@ def _thread(entry: dict) -> str:
     return f'<section class="thread" aria-label="Conversation"><h2>Conversation</h2>{bubbles}</section>'
 
 
+def _crumbs(entry: dict) -> str:
+    """The entry's topic path, root first, above the title."""
+    path = grouping.path_of(entry)
+    if not path:
+        return ""
+    items = "".join(f"<li>{_esc(grouping.name(node))}</li>" for node in path)
+    return f'<nav class="crumbs" aria-label="Topic"><ol>{items}</ol></nav>'
+
+
+def _on_topic(related: list[dict]) -> str:
+    """The other entries on the same topic: title, state and age, each linking to its page."""
+    if not related:
+        return ""
+    items = "".join(
+        f'<li><a href="/e/{_esc(row["id"])}"><b>{_esc(row["title"])}</b>'
+        f'<span class="end">{_chip(row)}<time>{_esc(_ago(row.get("created_at")))}</time></span></a></li>'
+        for row in related
+    )
+    return f'<section class="ontopic" aria-label="On this topic"><h2>On this topic</h2><ul>{items}</ul></section>'
+
+
 def _step(next_id: str | None) -> str:
     """The Next button: the entry after this one in the feed, or Finish, back to the inbox, at the end. J presses it."""
     if not next_id:
@@ -818,7 +936,7 @@ def _step(next_id: str | None) -> str:
 
 def _entry_page(
     entry: dict, error: str | None = None, frame_origin: str | None = None, waiting: int | None = None,
-    sidebar: list[dict] | None = None, next_id: str | None = None,
+    sidebar: list[dict] | None = None, next_id: str | None = None, related: list[dict] | None = None,
 ) -> str:
     """One entry. sidebar is the feed, shown beside the entry on wide screens only."""
     eid = _esc(entry["id"])
@@ -842,7 +960,8 @@ def _entry_page(
     if error:
         parts.append(f'<p class="notice err" role="alert">{_esc(error)}</p>')
     parts.append(
-        f'<h1 class="title">{_esc(entry["title"])}</h1>'
+        _crumbs(entry)
+        + f'<h1 class="title">{_esc(entry["title"])}</h1>'
         f'<p class="meta who">{_avatar(entry, small=True)}<span>{meta}</span></p>'
         f'<p class="meta sub">{_urgent(entry)}{_chip(entry)}<span>{_esc(kind)} · <span class="id">{eid}</span></span></p>'
     )
@@ -880,6 +999,8 @@ def _entry_page(
             '<textarea class="field" name="text" rows="1" placeholder="Message the agent" aria-label="Follow-up message"></textarea>'
             '<button class="btn" type="submit">Send</button></div></form>'
         )
+    # After the follow-up form, so the thread and its reply box stay together.
+    parts.append(_on_topic(related or []))
     parts.append("</main>" + ("</div>" if sidebar is not None else "") + _SCRIPT)
     return "".join(parts)
 
@@ -942,11 +1063,16 @@ class InboxHandler(BaseHTTPRequestHandler):
             self._events()
             return
         if method == "GET" and path == "/":
+            group, cookie = _group_choice(qs, self.headers.get("Cookie"))
             with db.connect() as conn:
                 from agent_inbox.notify import urgent_counts
+                rows = load_feed(conn, qs)
+                # The intent filter offers the intents in the view before it narrows it.
+                intents = grouping.intents_in(rows)
                 self._html(200, _feed_page(
-                    load_feed(conn, qs), qs, banner=urgent_counts(conn), waiting=open_count(conn), projects=store.list_projects(conn),
-                ))
+                    grouping.only_intent(rows, _query_value(qs, "intent")), qs, banner=urgent_counts(conn),
+                    waiting=open_count(conn), projects=store.list_projects(conn), intents=intents, group=group,
+                ), cookie=cookie)
             return
         match = re.fullmatch(r"/e/([^/]+)", path)
         if method == "GET" and match:
@@ -974,7 +1100,7 @@ class InboxHandler(BaseHTTPRequestHandler):
                 listed = [entry, *listed]
             self._html(status, _entry_page(
                 entry, error, _frame_origin(self.headers.get("Host")), open_count(conn), sidebar=listed,
-                next_id=next_entry(listed, entry_id, after),
+                next_id=next_entry(listed, entry_id, after), related=store.same_topic(conn, entry),
             ))
 
     def _post_entry(self, entry_id: str, action: str, after: str | None = None) -> None:
@@ -1024,9 +1150,11 @@ class InboxHandler(BaseHTTPRequestHandler):
             if applied == 0:
                 message = errors[0] if errors else "nothing selected"
                 from agent_inbox.notify import urgent_counts
+                group, _ = _group_choice({}, self.headers.get("Cookie"))
+                rows = load_feed(conn, {})
                 self._html(409, _feed_page(
-                    load_feed(conn, {}), {}, message, banner=urgent_counts(conn), waiting=open_count(conn),
-                    projects=store.list_projects(conn),
+                    rows, {}, message, banner=urgent_counts(conn), waiting=open_count(conn),
+                    projects=store.list_projects(conn), intents=grouping.intents_in(rows), group=group,
                 ))
                 return
         self._redirect("/")
@@ -1055,15 +1183,17 @@ class InboxHandler(BaseHTTPRequestHandler):
         raw = self.rfile.read(min(length, 1_000_000)).decode()
         return parse_qs(raw, keep_blank_values=True)
 
-    def _bytes(self, status: int, payload: bytes, content_type: str) -> None:
+    def _bytes(self, status: int, payload: bytes, content_type: str, cookie: str | None = None) -> None:
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(payload)))
+        if cookie:
+            self.send_header("Set-Cookie", cookie)
         self.end_headers()
         self.wfile.write(payload)
 
-    def _html(self, status: int, page: str) -> None:
-        self._bytes(status, page.encode(), "text/html; charset=utf-8")
+    def _html(self, status: int, page: str, cookie: str | None = None) -> None:
+        self._bytes(status, page.encode(), "text/html; charset=utf-8", cookie)
 
     def _redirect(self, location: str) -> None:
         self.send_response(303)

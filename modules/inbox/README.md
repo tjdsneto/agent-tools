@@ -75,6 +75,16 @@ Telegram is for emergencies: only urgent entries push, at once, day or night, an
 
 Choice and approve cards carry tap-to-answer buttons through the `inbox-buttons` Hermes plugin in `hermes-plugin/`. `./install.sh` links it into `~/.hermes/plugins`; turn it on once with `hermes plugins enable inbox-buttons`. Without it, cards fall back to numbered text replies.
 
+## Topics
+
+Each entry carries `topic_path`: the asking session's intent and topic from the agent registry, root intent first, as a list of `{id, title, kind}` (`kind` is `intent` or `topic`). It's a snapshot taken when the entry is created, so pages never call the registry, and a topic renamed later keeps its old name here. An ask or post with `--engine` and `--session-id` gets the session's path. Any asker, not only a `--script` one, may instead name a topic in its request, `"topic": "tp-xxxx"`, which wins over the session's path; that's how an asker files a question under a discussion. An unknown named topic is exit 1. A missing, failing or slow registry (2 s timeout) is not an error: the entry is created with `topic_path: null` and one warning line on stderr. The registry client never raises, whatever `agt` prints.
+
+The link runs the other way too. After the entry commits, the inbox appends a note to the topic's log with `agt registry topic-note`, inline and with the same 2 s timeout: `asked` or `posted` when it's created, `answered` when it's answered (web, Telegram, CLI or chat), and `closed` when an ask is withdrawn, superseded or expires unanswered. Notes are best effort and never fail the inbox operation. `agt registry topic --done` then lists the questions still waiting as `open_questions`. Each ask or post makes two registry calls (path, then note), each bounded by the 2 s timeout; on this machine that cost about 0.18 s (median 0.38 s against 0.20 s with no registry).
+
+The feed shows the last two names of each row's path above its title, with `…` in front when the path is longer; on a narrow row the middle name is cut first, never the topic. The filter menu adds an intent filter (the intents in the current view) and Group by: none (the plain feed), intent (one section per asking intent, with its project) or topic tree (one section per root, forked intents nested one level). Sections holding an open question come first, and rows without a path go last under "No topic". The `ib_group` cookie remembers the choice, and it applies to History too, where the sections replace the day headings. An entry's page shows its full path above the title and, at the bottom, up to 10 other entries on the same topic, newest first. Entries from before this shipped show no path.
+
+`AGENT_INBOX_AGT` overrides the `agt` the inbox runs; the black-box tests point it at the checkout under test. Black-box checks: `.venv/bin/python -m pytest tests/blackbox -q`. The visual check (screenshots of the feed and entry page, phone and desktop, light and dark) lives in `tests/visual/`; its README says how to run it.
+
 ## Tests
 
     cd modules/inbox && .venv/bin/python -m pytest -q

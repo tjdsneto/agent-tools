@@ -364,3 +364,167 @@ def test_rows_mark_questions_and_reports_apart(conn, http):
     _, feed = _get(http, "/")
     assert 'role="img" aria-label="Question"' in feed and '<i class="kb q">' in feed
     assert 'role="img" aria-label="Report"' in feed and '<i class="kb r">' in feed
+
+
+ROOT = {"id": "tp-root", "title": "Topic awareness", "kind": "intent"}
+PLAN = {"id": "tp-plan", "title": "Write the plan", "kind": "topic"}
+FORK = {"id": "tp-fork", "title": "Manual check", "kind": "intent"}
+OTHER = {"id": "tp-othr", "title": "Inbox restyle", "kind": "intent"}
+
+
+def _get_resp(http, path, headers=None):
+    conn = HTTPConnection(http[0], http[1], timeout=5)
+    conn.request("GET", path, headers=headers or {})
+    resp = conn.getresponse()
+    return resp.status, resp.getheader("Set-Cookie"), resp.read().decode()
+
+
+def _with_path(conn, fake_registry, path, title="Q", kind="ask"):
+    """An entry from session s-1 in project agent-tools whose registry path is `path`."""
+    fake_registry.replies["topic-path"] = path
+    if kind == "ask":
+        req = validate_request({"title": title, "control": CHOICE}, "ask")
+    else:
+        req = validate_request({"title": title}, "post")
+    return store.create_entry(conn, kind, req, engine="claude", session_id="s-1", cwd="/x/agent-tools")
+
+
+def test_rows_show_the_last_two_path_names_above_the_title(conn, http, fake_registry):
+    deep = _with_path(conn, fake_registry, [ROOT, PLAN, FORK], title="Deep")
+    flat = _with_path(conn, fake_registry, None, title="Flat")
+    _, body = _get(http, "/")
+    # The last name has its own span so a narrow row cuts the names before it, never the topic.
+    assert (
+        '<b>Deep</b><span class="ctx" title="Topic awareness › Write the plan › Manual check">'
+        '<span class="ctx-more">…&nbsp;›&nbsp;</span><span class="ctx-lead">Write the plan</span>'
+        '<span class="ctx-last">&nbsp;› Manual check</span></span>'
+    ) in body
+    assert f'<a class="row has-ctx" href="/e/{deep["id"]}"' in body
+    assert f'<a class="row" href="/e/{flat["id"]}"' in body
+
+
+def test_a_one_name_context_line_is_just_its_last_name(conn, http, fake_registry):
+    _with_path(conn, fake_registry, [ROOT], title="Root only")
+    _, body = _get(http, "/")
+    assert '<b>Root only</b><span class="ctx" title="Topic awareness"><span class="ctx-last">Topic awareness</span></span>' in body
+
+
+def test_a_two_name_context_line_has_no_leading_ellipsis(conn, http, fake_registry):
+    _with_path(conn, fake_registry, [ROOT, PLAN], title="Two")
+    _, body = _get(http, "/")
+    assert (
+        '<b>Two</b><span class="ctx" title="Topic awareness › Write the plan"><span class="ctx-lead">Topic awareness</span>'
+        '<span class="ctx-last">&nbsp;› Write the plan</span></span>'
+    ) in body
+
+
+def test_the_context_line_is_escaped(conn, http, fake_registry):
+    _with_path(conn, fake_registry, [{"id": "tp-x", "title": '<img src=x onerror="alert(1)">', "kind": "intent"}])
+    _, body = _get(http, "/")
+    assert "<img src=x" not in body
+    assert "&lt;img src=x onerror=&quot;alert(1)&quot;&gt;" in body
+
+
+def test_group_by_is_remembered_in_a_cookie(conn, http, fake_registry):
+    _with_path(conn, fake_registry, [ROOT, PLAN], title="On plan")
+    status, cookie, body = _get_resp(http, "/?group=intent")
+    assert status == 200 and cookie.startswith("ib_group=intent;") and "SameSite=Lax" in cookie
+    assert '<section class="grp"><h2 title="Topic awareness · agent-tools">Topic awareness · agent-tools</h2>' in body
+    assert '<option value="intent" selected>Intent</option>' in body
+    _, cookie, remembered = _get_resp(http, "/", headers={"Cookie": "ib_group=intent"})
+    assert cookie is None and 'class="grp"' in remembered
+    # Group by is a view, not a filter: it doesn't light the filter badge.
+    assert 'aria-label="Filters"' in remembered
+    _, cookie, plain = _get_resp(http, "/?group=none", headers={"Cookie": "ib_group=intent"})
+    assert cookie.startswith("ib_group=none;") and 'class="grp"' not in plain
+    # A bad value, in the URL or the cookie, is today's feed.
+    _, cookie, odd = _get_resp(http, "/?group=sideways", headers={"Cookie": "ib_group=sideways"})
+    assert cookie is None and 'class="grp"' not in odd and '<option value="none" selected>None</option>' in odd
+
+
+def test_a_refused_batch_still_offers_the_intent_filter(conn, http, fake_registry):
+    _with_path(conn, fake_registry, [ROOT, PLAN], title="On plan")
+    status, _, body = _post(http, "/batch", "action=withdraw")
+    assert status == 409 and "nothing selected" in body
+    assert '<select name="intent">' in body and "Topic awareness</option>" in body
+
+
+def test_a_row_reads_its_title_before_its_topic_path(conn, http, fake_registry):
+    _with_path(conn, fake_registry, [ROOT, PLAN], title="On plan")
+    _, body = _get(http, "/")
+    row = body[body.index('<a class="row'):]
+    assert row.index("On plan</b>") < row.index('class="ctx"')
+
+
+@pytest.mark.parametrize("cookie", [
+    'a={"x":1}; ib_group=tree',
+    "ib_group=tree; a={\"x\":1}",
+    "a=has a space; b=2; ib_group=tree",
+])
+def test_group_by_survives_other_cookies(conn, http, fake_registry, cookie):
+    _with_path(conn, fake_registry, [ROOT, PLAN], title="On plan")
+    _, _, body = _get_resp(http, "/", headers={"Cookie": cookie})
+    assert '<option value="tree" selected>Topic tree</option>' in body
+
+
+def test_group_by_ignores_a_garbage_cookie_value_beside_others(conn, http, fake_registry):
+    _, _, body = _get_resp(http, "/", headers={"Cookie": 'a={"x":1}; ib_group=sideways'})
+    assert '<option value="none" selected>None</option>' in body
+
+
+def test_group_by_tree_nests_forks_and_ends_with_no_topic(conn, http, fake_registry):
+    fork_q = _with_path(conn, fake_registry, [ROOT, PLAN, FORK], title="Fork question")
+    root_r = _with_path(conn, fake_registry, [ROOT, PLAN], title="Root report", kind="post")
+    loose = _with_path(conn, fake_registry, None, title="Loose report", kind="post")
+    _, _, body = _get_resp(http, "/?group=tree")
+    root_at = body.index('<h2 title="Topic awareness · agent-tools">')
+    sub_at = body.index('<section class="grp sub"><h3 title="Manual check">Manual check</h3>')
+    none_at = body.index('<h2 title="No topic">No topic</h2>')
+    assert root_at < body.index(root_r["id"]) < sub_at < body.index(fork_q["id"]) < none_at < body.index(loose["id"])
+
+
+def test_the_intent_filter_lists_intents_in_view_and_narrows(conn, http, fake_registry):
+    _, empty = _get(http, "/")
+    assert 'name="intent"' not in empty
+    mine = _with_path(conn, fake_registry, [ROOT, PLAN], title="Mine")
+    theirs = _with_path(conn, fake_registry, [OTHER], title="Theirs", kind="post")
+    _, body = _get(http, "/")
+    assert (
+        '<select name="intent"><option value="">Any intent</option>'
+        '<option value="tp-root">Topic awareness</option><option value="tp-othr">Inbox restyle</option></select>'
+    ) in body
+    _, body = _get(http, "/?intent=tp-othr")
+    assert theirs["id"] in body and mine["id"] not in body and "Filters, 1 on" in body
+    assert '<option value="tp-othr" selected>Inbox restyle</option>' in body
+
+
+def test_entry_page_shows_the_full_path_as_a_breadcrumb(conn, http, fake_registry):
+    e = _with_path(conn, fake_registry, [ROOT, PLAN, FORK], title="Deep")
+    _, body = _get(http, f"/e/{e['id']}")
+    crumbs = (
+        '<nav class="crumbs" aria-label="Topic"><ol><li>Topic awareness</li><li>Write the plan</li>'
+        "<li>Manual check</li></ol></nav>"
+    )
+    assert crumbs in body and body.index(crumbs) < body.index('<h1 class="title">')
+    loose = _with_path(conn, fake_registry, None, title="Loose")
+    _, body = _get(http, f"/e/{loose['id']}")
+    assert 'class="crumbs"' not in body and 'class="ontopic"' not in body
+
+
+def test_on_this_topic_lists_the_other_entries_newest_first(conn, http, fake_registry):
+    older = _with_path(conn, fake_registry, [ROOT, PLAN], title="Older", kind="post")
+    newer = _with_path(conn, fake_registry, [ROOT, PLAN], title="Newer")
+    elsewhere = _with_path(conn, fake_registry, [ROOT], title="Elsewhere", kind="post")
+    conn.execute("UPDATE entries SET created_at = now() - interval '2 hours' WHERE id = %s", (older["id"],))
+    here = _with_path(conn, fake_registry, [ROOT, PLAN], title="Here")
+    _, body = _get(http, f"/e/{here['id']}")
+    section = body[body.index('<section class="ontopic"'):]
+    assert section.index(f'href="/e/{newer["id"]}"') < section.index(f'href="/e/{older["id"]}"')
+    assert elsewhere["id"] not in section and f'href="/e/{here["id"]}"' not in section
+    assert "2 h ago" in section and "Needs answer" in section
+
+
+def test_on_this_topic_stops_at_ten(conn, fake_registry):
+    entries = [_with_path(conn, fake_registry, [ROOT, PLAN], title=f"E{i}", kind="post") for i in range(12)]
+    assert len(store.same_topic(conn, entries[0])) == 10
+    assert store.same_topic(conn, {"id": "ib-none", "topic_path": None}) == []

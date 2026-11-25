@@ -44,6 +44,8 @@ agt registry topic "Decide where topic records live"
 agt registry topic --done
 ```
 
+`topic --done` also prints `open_questions`: the ids of inbox questions you asked under that topic that are still waiting for Tiago. If the list isn't empty, withdraw each one you no longer need (`agt inbox withdraw ib-…`), or say in one line of chat which ones are still waiting and why. Answered, withdrawn, superseded and expired questions normally don't show up there, but the note is best effort, so a question can still be listed after it was answered. If `agt inbox withdraw` fails with "already answered" or a conflict, it was already settled: move on.
+
 ## Drift check
 
 Run it only when the work changes subject, not when it takes another step toward the same goal. A bug found along the way, a follow-up question, or a retry is the same thread. When you can't tell, treat it as the main line: open a topic and don't ask.
