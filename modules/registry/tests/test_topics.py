@@ -85,3 +85,89 @@ def test_mint_skips_taken_ids(tmp_registry, monkeypatch):
     monkeypatch.setattr(topics.secrets, "choice", lambda _alphabet: next(picks))
     assert topics.set_intent("claude", "s1", "A")["topic"]["id"] == "tp-aaaa"
     assert topics.set_intent("claude", "s2", "B")["topic"]["id"] == "tp-bbbb"
+
+
+from pathlib import Path
+
+
+def test_record_fork_writes_brief_and_event(tmp_registry):
+    topics.set_intent("claude", "p", "A")
+    main = topics.open_topic("claude", "p", "main")
+    ev = topics.record_fork("claude", "p", "Side", mode="new_intent", backend="none", brief_text="# Brief\n")
+    assert ev["event"] == "forked"
+    assert ev["parent"] == main["topic"]["id"]
+    assert ev["mode"] == "new_intent"
+    assert ev["backend"] == "none"
+    assert Path(ev["brief"]).read_text() == "# Brief\n"
+    assert Path(ev["brief"]).parent == tmp_registry.parent / "briefs"
+    # Forking a side thread does not close the topic the session is on.
+    assert topics.state("claude", "p")["topic"]["id"] == main["topic"]["id"]
+
+
+def test_record_fork_parent_is_intent_without_topic(tmp_registry):
+    intent = topics.set_intent("claude", "p", "A")
+    ev = topics.record_fork("claude", "p", "Side", mode="side", backend="none", brief_text="b")
+    assert ev["parent"] == intent["topic"]["id"]
+
+
+def test_record_fork_rules(tmp_registry):
+    with pytest.raises(topics.NoIntentError):
+        topics.record_fork("claude", "p", "x", mode="side", backend="none", brief_text="b")
+    topics.set_intent("claude", "p", "A")
+    with pytest.raises(topics.TopicUsageError):
+        topics.record_fork("claude", "p", "x", mode="side", backend="none", brief_text="   ")
+    with pytest.raises(topics.TopicUsageError):
+        topics.record_fork("claude", "p", "x", mode="sideways", backend="none", brief_text="b")
+
+
+def test_tree_links_forked_child(tmp_registry):
+    root = topics.set_intent("claude", "p", "Parent intent")
+    fork = topics.record_fork("claude", "p", "Side quest", mode="side", backend="none", brief_text="b")
+    topics.adopt("claude", "c", fork["topic"]["id"])
+    tree = topics.tree()
+    assert [n["id"] for n in tree] == [root["topic"]["id"]]
+    child = tree[0]["children"][0]
+    assert child["id"] == fork["topic"]["id"]
+    assert child["status"] == "open"
+    assert {(s["session_id"], s["role"]) for s in child["sessions"]} == {("p", "forked"), ("c", "intent")}
+
+
+def test_open_topics_across_sessions(tmp_registry):
+    topics.set_intent("claude", "a", "A")
+    topics.open_topic("claude", "a", "a1")
+    topics.close_topic("claude", "a", "done")
+    topics.set_intent("codex", "b", "B")
+    rows = topics.open_topics()
+    assert {(r["agent_type"], r["session_id"], r["title"]) for r in rows} == {
+        ("claude", "a", "A"), ("codex", "b", "B"),
+    }
+
+
+def test_current_and_context_line(tmp_registry):
+    assert topics.current("claude", "s") == {"intent": None, "topic": None}
+    assert topics.context_line("claude", "s").startswith("No intent set for this session.")
+    intent = topics.set_intent("claude", "s", "Ship it")
+    opened = topics.open_topic("claude", "s", "Plan")
+    line = topics.context_line("claude", "s")
+    assert line == (
+        f"Intent: Ship it ({intent['topic']['id']}) · Topic: Plan ({opened['topic']['id']}). "
+        "If this prompt opens a new thread, run the topic-awareness drift check."
+    )
+    topics.close_topic("claude", "s", "done")
+    assert "· Topic: none." in topics.context_line("claude", "s")
+
+
+def test_current_survives_unreadable_log(tmp_registry):
+    topics.set_intent("claude", "s", "A")
+    path = topics.log_path("claude", "s")
+    path.chmod(0)
+    try:
+        assert topics.current("claude", "s") == {"intent": None, "topic": None}
+    finally:
+        path.chmod(0o600)
+
+
+def test_session_type(tmp_registry):
+    topics.set_intent("codex", "b", "B")
+    assert topics.session_type("b") == "codex"
+    assert topics.session_type("nope") is None

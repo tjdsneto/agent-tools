@@ -213,3 +213,112 @@ def close_topic(
         if ref:
             event["ref"] = ref
         return _append(agent_type, session_id, event)
+
+
+FORK_MODES = ("side", "new_intent")
+
+
+def record_fork(
+    agent_type: str, session_id: str, title: str, *, mode: str, backend: str, brief_text: str,
+) -> dict:
+    """Mint the child topic, write its brief, and log the hand-off in the parent session."""
+    title = _title(title)
+    if mode not in FORK_MODES:
+        raise TopicUsageError(f"mode must be one of {', '.join(FORK_MODES)}")
+    if not (brief_text or "").strip():
+        raise TopicUsageError("a fork needs a brief: pass --brief-file or pipe it on stdin")
+    with _locked():
+        st = state(agent_type, session_id)
+        if not st["intent"]:
+            raise NoIntentError('set an intent first: agt registry intent "<title>"')
+        parent = (st["topic"] or st["intent"])["id"]
+        tid = _mint()
+        brief = briefs_dir() / f"{tid}.md"
+        brief.parent.mkdir(parents=True, exist_ok=True)
+        brief.write_text(brief_text, encoding="utf-8")
+        return _append(agent_type, session_id, {
+            "event": "forked",
+            "at": now_iso(),
+            "topic": {"id": tid, "title": title},
+            "parent": parent,
+            "mode": mode,
+            "backend": backend,
+            "brief": str(brief),
+        })
+
+
+def current(agent_type: str, session_id: str) -> dict:
+    """Intent and topic for a live row. An unreadable log shows as none, never as an error."""
+    try:
+        st = state(agent_type, session_id)
+    except OSError:
+        return {"intent": None, "topic": None}
+    return {"intent": st["intent"], "topic": st["topic"]}
+
+
+def context_line(agent_type: str, session_id: str) -> str:
+    st = state(agent_type, session_id)
+    if not st["intent"]:
+        return (
+            "No intent set for this session. Once the first prompt makes it clear, "
+            'set it: agt registry intent "<title>".'
+        )
+    intent = st["intent"]
+    topic = f"{st['topic']['title']} ({st['topic']['id']})" if st["topic"] else "none"
+    return (
+        f"Intent: {intent['title']} ({intent['id']}) · Topic: {topic}. "
+        "If this prompt opens a new thread, run the topic-awareness drift check."
+    )
+
+
+def session_type(session_id: str) -> str | None:
+    root = topics_dir()
+    if not root.exists():
+        return None
+    for path in sorted(root.glob(f"*/{_safe(session_id)}.jsonl")):
+        return path.parent.name
+    return None
+
+
+def open_topics() -> list[dict]:
+    rows = []
+    for agent_type, session_id, events in _all_logs():
+        st = _replay(events)
+        for t in st["topics"]:
+            if t["status"] == "open":
+                rows.append({
+                    "id": t["id"], "title": t["title"], "parent": t["parent"],
+                    "agent_type": agent_type, "session_id": session_id,
+                    "is_intent": bool(st["intent"] and st["intent"]["id"] == t["id"]),
+                })
+    return rows
+
+
+def tree() -> list[dict]:
+    """Every topic across sessions as nested nodes. A topic's status is its latest event's."""
+    nodes: dict[str, dict] = {}
+    latest: dict[str, str] = {}
+    for agent_type, session_id, events in _all_logs():
+        st = _replay(events)
+        for t in st["topics"]:
+            node = nodes.setdefault(t["id"], {
+                "id": t["id"], "title": t["title"], "parent": None, "status": t["status"],
+                "sessions": [], "children": [],
+            })
+            if t["parent"]:
+                node["parent"] = t["parent"]
+            if (t["at"] or "") >= latest.get(t["id"], ""):
+                latest[t["id"]] = t["at"] or ""
+                node["status"] = t["status"]
+            if t["status"] == "forked":
+                role = "forked"
+            elif st["intent"] and st["intent"]["id"] == t["id"]:
+                role = "intent"
+            else:
+                role = "topic"
+            node["sessions"].append({"agent_type": agent_type, "session_id": session_id, "role": role})
+    roots = []
+    for node in nodes.values():
+        parent = nodes.get(node["parent"]) if node["parent"] else None
+        (parent["children"] if parent else roots).append(node)
+    return roots
