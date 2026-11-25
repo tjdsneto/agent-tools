@@ -57,3 +57,27 @@ def test_existing_database_gains_topic_path_and_its_index(conn):
     ).fetchone()
     assert col is not None and col["data_type"] == "jsonb"
     assert conn.execute("SELECT to_regclass('entries_topic') AS t").fetchone()["t"] is not None
+
+
+def test_connect_on_a_migrated_database_does_not_queue_behind_a_reader(conn, inbox_db):
+    import threading
+    import time
+
+    reader = psycopg.connect(inbox_db)  # BEGIN implicitly; holds a lock on entries until closed
+    reader.execute("SELECT 1 FROM entries LIMIT 1")
+    done = []
+
+    def connect():
+        c = db.connect()
+        c.close()
+        done.append(True)
+
+    t = threading.Thread(target=connect, daemon=True)
+    start = time.monotonic()
+    t.start()
+    t.join(2)
+    elapsed = time.monotonic() - start
+    reader.rollback()  # unblocks a connect that queued, so the thread can finish either way
+    reader.close()
+    t.join(5)
+    assert done and elapsed < 1, f"connect took {elapsed:.1f}s behind an open reader"
