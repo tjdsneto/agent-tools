@@ -242,6 +242,19 @@ fieldset:disabled .opt, fieldset:disabled legend {{ color: var(--mute); cursor: 
 .follow .pair {{ align-items: flex-start; }}
 .follow .field {{ margin: 0; flex: 1; min-height: 48px; }}
 .follow .btn {{ flex: none; min-height: 48px; }}
+.crumbs ol {{ display: flex; flex-wrap: wrap; gap: 2px 6px; margin: 0 0 6px; padding: 0; list-style: none;
+  color: var(--mute); font-size: 14px; line-height: 1.4; }}
+.crumbs li + li::before {{ content: "›"; margin-right: 6px; }}
+.ontopic {{ margin: 24px 0 0; padding-top: 16px; border-top: 1px solid var(--line); }}
+.ontopic h2 {{ margin: 0 0 4px; font-size: 16px; }}
+.ontopic ul {{ list-style: none; margin: 0; padding: 0; }}
+.ontopic a {{ display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 48px; padding: 8px 0;
+  border-bottom: 1px solid var(--line); color: inherit; text-decoration: none; }}
+.ontopic li:last-child a {{ border-bottom: 0; }}
+.ontopic a:hover b {{ text-decoration: underline; }}
+.ontopic b {{ min-width: 0; font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
+.ontopic .end {{ flex: none; display: flex; align-items: center; gap: 8px; }}
+.ontopic time {{ color: var(--mute); font-size: 13px; font-variant-numeric: tabular-nums; }}
 #stale {{ position: fixed; left: 50%; bottom: 20px; z-index: 3; transform: translateX(-50%); margin: 0; padding: 10px 16px;
   border-radius: 20px; background: var(--ink); color: var(--bg); box-shadow: 0 4px 16px rgba(0,0,0,.18); white-space: nowrap; }}
 #stale a {{ color: inherit; font-weight: 650; }}
@@ -882,6 +895,27 @@ def _thread(entry: dict) -> str:
     return f'<section class="thread" aria-label="Conversation"><h2>Conversation</h2>{bubbles}</section>'
 
 
+def _crumbs(entry: dict) -> str:
+    """The entry's topic path, root first, above the title."""
+    path = grouping.path_of(entry)
+    if not path:
+        return ""
+    items = "".join(f"<li>{_esc(grouping.name(node))}</li>" for node in path)
+    return f'<nav class="crumbs" aria-label="Topic"><ol>{items}</ol></nav>'
+
+
+def _on_topic(related: list[dict]) -> str:
+    """The other entries on the same topic: title, state and age, each linking to its page."""
+    if not related:
+        return ""
+    items = "".join(
+        f'<li><a href="/e/{_esc(row["id"])}"><b>{_esc(row["title"])}</b>'
+        f'<span class="end">{_chip(row)}<time>{_esc(_ago(row.get("created_at")))}</time></span></a></li>'
+        for row in related
+    )
+    return f'<section class="ontopic" aria-label="On this topic"><h2>On this topic</h2><ul>{items}</ul></section>'
+
+
 def _step(next_id: str | None) -> str:
     """The Next button: the entry after this one in the feed, or Finish, back to the inbox, at the end. J presses it."""
     if not next_id:
@@ -891,7 +925,7 @@ def _step(next_id: str | None) -> str:
 
 def _entry_page(
     entry: dict, error: str | None = None, frame_origin: str | None = None, waiting: int | None = None,
-    sidebar: list[dict] | None = None, next_id: str | None = None,
+    sidebar: list[dict] | None = None, next_id: str | None = None, related: list[dict] | None = None,
 ) -> str:
     """One entry. sidebar is the feed, shown beside the entry on wide screens only."""
     eid = _esc(entry["id"])
@@ -915,7 +949,8 @@ def _entry_page(
     if error:
         parts.append(f'<p class="notice err" role="alert">{_esc(error)}</p>')
     parts.append(
-        f'<h1 class="title">{_esc(entry["title"])}</h1>'
+        _crumbs(entry)
+        + f'<h1 class="title">{_esc(entry["title"])}</h1>'
         f'<p class="meta who">{_avatar(entry, small=True)}<span>{meta}</span></p>'
         f'<p class="meta sub">{_urgent(entry)}{_chip(entry)}<span>{_esc(kind)} · <span class="id">{eid}</span></span></p>'
     )
@@ -953,6 +988,8 @@ def _entry_page(
             '<textarea class="field" name="text" rows="1" placeholder="Message the agent" aria-label="Follow-up message"></textarea>'
             '<button class="btn" type="submit">Send</button></div></form>'
         )
+    # After the follow-up form, so the thread and its reply box stay together.
+    parts.append(_on_topic(related or []))
     parts.append("</main>" + ("</div>" if sidebar is not None else "") + _SCRIPT)
     return "".join(parts)
 
@@ -1052,7 +1089,7 @@ class InboxHandler(BaseHTTPRequestHandler):
                 listed = [entry, *listed]
             self._html(status, _entry_page(
                 entry, error, _frame_origin(self.headers.get("Host")), open_count(conn), sidebar=listed,
-                next_id=next_entry(listed, entry_id, after),
+                next_id=next_entry(listed, entry_id, after), related=store.same_topic(conn, entry),
             ))
 
     def _post_entry(self, entry_id: str, action: str, after: str | None = None) -> None:

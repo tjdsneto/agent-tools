@@ -449,3 +449,35 @@ def test_the_intent_filter_lists_intents_in_view_and_narrows(conn, http, fake_re
     _, body = _get(http, "/?intent=tp-othr")
     assert theirs["id"] in body and mine["id"] not in body and "Filters, 1 on" in body
     assert '<option value="tp-othr" selected>Inbox restyle</option>' in body
+
+
+def test_entry_page_shows_the_full_path_as_a_breadcrumb(conn, http, fake_registry):
+    e = _with_path(conn, fake_registry, [ROOT, PLAN, FORK], title="Deep")
+    _, body = _get(http, f"/e/{e['id']}")
+    crumbs = (
+        '<nav class="crumbs" aria-label="Topic"><ol><li>Topic awareness</li><li>Write the plan</li>'
+        "<li>Manual check</li></ol></nav>"
+    )
+    assert crumbs in body and body.index(crumbs) < body.index('<h1 class="title">')
+    loose = _with_path(conn, fake_registry, None, title="Loose")
+    _, body = _get(http, f"/e/{loose['id']}")
+    assert 'class="crumbs"' not in body and 'class="ontopic"' not in body
+
+
+def test_on_this_topic_lists_the_other_entries_newest_first(conn, http, fake_registry):
+    older = _with_path(conn, fake_registry, [ROOT, PLAN], title="Older", kind="post")
+    newer = _with_path(conn, fake_registry, [ROOT, PLAN], title="Newer")
+    elsewhere = _with_path(conn, fake_registry, [ROOT], title="Elsewhere", kind="post")
+    conn.execute("UPDATE entries SET created_at = now() - interval '2 hours' WHERE id = %s", (older["id"],))
+    here = _with_path(conn, fake_registry, [ROOT, PLAN], title="Here")
+    _, body = _get(http, f"/e/{here['id']}")
+    section = body[body.index('<section class="ontopic"'):]
+    assert section.index(f'href="/e/{newer["id"]}"') < section.index(f'href="/e/{older["id"]}"')
+    assert elsewhere["id"] not in section and f'href="/e/{here["id"]}"' not in section
+    assert "2 h ago" in section and "Needs answer" in section
+
+
+def test_on_this_topic_stops_at_ten(conn, fake_registry):
+    entries = [_with_path(conn, fake_registry, [ROOT, PLAN], title=f"E{i}", kind="post") for i in range(12)]
+    assert len(store.same_topic(conn, entries[0])) == 10
+    assert store.same_topic(conn, {"id": "ib-none", "topic_path": None}) == []
