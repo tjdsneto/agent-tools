@@ -96,8 +96,9 @@ main {{ max-width: 720px; margin: 0 auto; padding: 20px 16px 48px; }}
 .tabs a::after {{ content: ""; position: absolute; inset: -4px 0; }}
 .tabs {{ padding-block: 4px; margin-top: -4px; mask-image: linear-gradient(to left, transparent, #000 16px);
   -webkit-mask-image: linear-gradient(to left, transparent, #000 16px); }}
-@media (max-width: 479px) {{ .tabs {{ gap: 6px; }} .tabs a {{ padding: 0 12px; }} }}
-@media (max-width: 379px) {{ .tabs a {{ padding: 0 10px; }} }}
+.tabs .sm {{ display: none; }}
+@media (max-width: 479px) {{ .tabs {{ gap: 6px; }} .tabs a {{ padding: 0 12px; }} .tabs .lg {{ display: none; }} .tabs .sm {{ display: inline; }} }}
+@media (max-width: 379px) {{ .tabs a {{ padding: 0 9px; }} }}
 .tools {{ display: flex; align-items: center; gap: 12px; }}
 .step {{ position: relative; display: inline-flex; align-items: center; gap: 2px; height: 36px; padding: 0 10px 0 14px; border-radius: 18px;
   background: var(--surf); color: var(--ink); font-size: 15px; font-weight: 600; text-decoration: none; }}
@@ -524,7 +525,7 @@ def _card(row: dict, *, pick: bool = True, current: bool = False) -> str:
     )
 
 
-TABS = (("Active", "/", {}), ("Needs answer", "/?kind=ask&state=open", {"kind": "ask", "state": "open"}),
+TABS = (("Active", "/", {}), ('<span class="lg">Needs answer</span><span class="sm">To answer</span>', "/?kind=ask&state=open", {"kind": "ask", "state": "open"}),
         ("Info", "/?kind=post", {"kind": "post"}), ("History", "/?history=1", {"history": "1"}))
 
 

@@ -291,9 +291,9 @@ def test_filters_narrow_the_current_tab_and_count_what_they_change(conn, http):
     assert '<a class="btn" href="/?kind=post">Clear</a>' in info
     # A tab's own state is not a filter; a different one is.
     _, needs = _get(http, "/?kind=ask&state=open")
-    assert '<a href="/?kind=ask&state=open" aria-current="page">Needs answer</a>' in needs and 'class="filt"' in needs
+    assert '<a href="/?kind=ask&state=open" aria-current="page"><span class="lg">Needs answer</span><span class="sm">To answer</span></a>' in needs and 'class="filt"' in needs
     _, other = _get(http, "/?kind=ask&state=expired")
-    assert 'aria-current="page">Needs answer</a>' in other and 'Filters, 1 on' in other
+    assert 'aria-current="page"><span class="lg">Needs answer</span><span class="sm">To answer</span></a>' in other and 'Filters, 1 on' in other
 
 
 def test_next_walks_the_feed_and_survives_reading_and_answering(conn, http):
