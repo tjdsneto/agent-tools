@@ -25,7 +25,8 @@ reload_agent() {
 
 link_bin agt "$ROOT/agt/agt"
 for s in agent-registry session-waker claude-budget session-report active-sessions \
-         rename-session list-sessions agent-say agent-read agent-inbox; do
+         rename-session list-sessions rename-claude-sessions session-context session-review \
+         session-waker-deregister agent-say agent-read agent-inbox; do
   link_bin "$s" "$ROOT/shims/$s"
 done
 
@@ -51,6 +52,8 @@ link_skill() {
 for sk in session-waker agent-say agent-read glue-miner session-awareness; do
   link_skill "$sk"
 done
+# Claude-only: it reads Claude Code transcripts.
+link_skill session-review "$HOME/.claude/skills"
 # Any agent can ask Tiago through the inbox, so Codex gets this one too.
 link_skill agent-inbox "$HOME/.claude/skills" "$HOME/.cursor/skills" "$HOME/.codex/skills"
 

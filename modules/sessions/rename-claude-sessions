@@ -1,0 +1,749 @@
+#!/usr/bin/env python3
+"""
+rename-claude-sessions - Auto-rename Claude Code sessions to meaningful
+titles based on issue/PR context.
+
+Strategies (in order):
+  1. GitHub URL in first message -> fetch title via gh
+  2. Issue number in branch name -> fetch title via gh  (skipped for monorepo roots)
+  3. PR lookup for the branch -> fetch title via gh     (skipped for monorepo roots)
+  4. AI-generated title from first messages via `claude -p`
+  5. Skip only when there's truly no clue
+
+Monorepo detection: If the session's cwd is a git repo that contains nested
+git repos (up to 2 levels deep), it's treated as a monorepo root. The branch
+in a monorepo belongs to the monorepo itself, not to the session's actual work,
+so branch-based strategies are skipped.
+
+Uses the same custom-title JSONL record as Ctrl+R rename.
+
+Usage:
+    rename-claude-sessions              # run for all sessions
+    rename-claude-sessions --current-only  # rename current session (reads stdin from hook)
+    rename-claude-sessions --dry-run    # preview changes only
+    rename-claude-sessions --verbose    # show all decisions
+    rename-claude-sessions --no-ai      # skip AI title generation
+
+Install as cron (every 30 minutes):
+    crontab -e
+    */30 * * * * PATH="$HOME/.local/bin:$PATH" rename-claude-sessions >> /tmp/rename-claude-sessions.log 2>&1
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+import urllib.request
+import urllib.error
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+
+CLAUDE_PROJECTS_DIR = Path.home() / ".claude" / "projects"
+SKIP_BRANCHES = {"master", "main", "develop", "staging"}
+ACTIVE_THRESHOLD_SECONDS = 300
+_monorepo_cache: dict[str, bool] = {}
+
+# AI title generation settings
+AI_TITLE_ENABLED = True
+AI_TIMEOUT = 30
+GEMINI_MODEL = "gemini-2.5-flash"
+CLAUDE_CLI_MODEL = "haiku"
+
+# Load Gemini API key: check env, then ~/.config/claude-tools/.env
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+if not GEMINI_API_KEY:
+    _env_file = Path.home() / ".config" / "claude-tools" / ".env"
+    if _env_file.exists():
+        for _line in _env_file.read_text().splitlines():
+            _line = _line.strip()
+            if _line.startswith("GEMINI_API_KEY="):
+                GEMINI_API_KEY = _line.split("=", 1)[1].strip().strip("'\"")
+                break
+
+# Regex for GitHub issue/PR URLs
+GH_URL_RE = re.compile(
+    r"github\.com/([^/\s]+/[^/\s]+)/(issues|pull)/(\d+)"
+)
+
+
+def log(msg: str, verbose_only: bool = False):
+    """Log to stderr so hook stdout stays clean."""
+    if verbose_only and "--verbose" not in sys.argv and "--dry-run" not in sys.argv:
+        return
+    print(msg, file=sys.stderr)
+
+
+def is_monorepo_root(cwd: str) -> bool:
+    """Detect if a cwd is a monorepo root (a git repo containing other git repos)."""
+    if cwd in _monorepo_cache:
+        return _monorepo_cache[cwd]
+    if not os.path.isdir(cwd) or not os.path.exists(os.path.join(cwd, ".git")):
+        _monorepo_cache[cwd] = False
+        return False
+    try:
+        for child in os.listdir(cwd):
+            child_path = os.path.join(cwd, child)
+            if not os.path.isdir(child_path) or child.startswith("."):
+                continue
+            if os.path.exists(os.path.join(child_path, ".git")):
+                _monorepo_cache[cwd] = True
+                return True
+            try:
+                for grandchild in os.listdir(child_path):
+                    gc_path = os.path.join(child_path, grandchild)
+                    if os.path.isdir(gc_path) and os.path.exists(os.path.join(gc_path, ".git")):
+                        _monorepo_cache[cwd] = True
+                        return True
+            except OSError:
+                continue
+    except OSError:
+        pass
+    _monorepo_cache[cwd] = False
+    return False
+
+
+def extract_issue_number(branch: str) -> str | None:
+    """Extract issue/PR number from branch name like fd/feat/554-description."""
+    if not branch or branch in SKIP_BRANCHES:
+        return None
+    match = re.search(r"/(\d+)[-_]", branch)
+    if match:
+        return match.group(1)
+    match = re.search(r"/(\d+)$", branch)
+    if match:
+        return match.group(1)
+    return None
+
+
+def extract_github_urls(text: str) -> list[tuple[str, str, str]]:
+    """Extract (repo, type, number) tuples from GitHub URLs in text."""
+    if not text:
+        return []
+    return GH_URL_RE.findall(text)
+
+
+def extract_review_pr_number(text: str) -> str | None:
+    """Detect 'review' keyword + PR number in text. Returns the PR number or None."""
+    if not re.search(r"\breview\b", text, re.IGNORECASE):
+        return None
+    # Explicit PR/# prefix: "PR 123", "PR#123", "#123"
+    m = re.search(r"(?:PR\s*#?|#)(\d{3,6})\b", text, re.IGNORECASE)
+    if m:
+        return m.group(1)
+    # Bare number after "review" with up to 3 words in between
+    # Handles: "let's review 123", "review the PR 123", "review 123 and ..."
+    m = re.search(r"\breview\b\s+(?:\w+\s+){0,3}(\d{3,6})\b", text, re.IGNORECASE)
+    if m:
+        return m.group(1)
+    return None
+
+
+def is_review_context(meta: dict, combined_text: str) -> bool:
+    """Return True if this session looks like reviewing someone else's PR."""
+    if re.search(r"\breview\b", combined_text, re.IGNORECASE):
+        return True
+    branch = meta.get("branch", "")
+    return branch in SKIP_BRANCHES
+
+
+def run_gh(args: list[str], cwd: str | None = None, timeout: int = 15) -> str | None:
+    """Run a gh CLI command and return stdout, or None on failure."""
+    try:
+        result = subprocess.run(
+            ["gh"] + args,
+            cwd=cwd, capture_output=True, text=True, timeout=timeout,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip()
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        pass
+    return None
+
+
+def get_repo_for_cwd(cwd: str, cache: dict) -> str | None:
+    """Get GitHub repo (owner/name) for a working directory."""
+    if cwd in cache:
+        return cache[cwd]
+    if not os.path.isdir(cwd):
+        cache[cwd] = None
+        return None
+    repo = run_gh(
+        ["repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"],
+        cwd=cwd,
+    )
+    cache[cwd] = repo
+    return repo
+
+
+def infer_repo_for_cwd(cwd: str, repo_cache: dict) -> str | None:
+    """Try to infer the repo when cwd doesn't exist anymore."""
+    if cwd in repo_cache:
+        return repo_cache[cwd]
+    parent = os.path.dirname(cwd)
+    attempts = 0
+    while parent and parent != "/" and attempts < 5:
+        if os.path.isdir(parent):
+            if os.path.isdir(os.path.join(parent, ".git")):
+                repo = get_repo_for_cwd(parent, repo_cache)
+                if repo:
+                    repo_cache[cwd] = repo
+                    return repo
+            try:
+                for sibling in os.listdir(parent):
+                    sibling_path = os.path.join(parent, sibling)
+                    if os.path.isdir(os.path.join(sibling_path, ".git")):
+                        repo = get_repo_for_cwd(sibling_path, repo_cache)
+                        if repo:
+                            repo_cache[cwd] = repo
+                            return repo
+            except OSError:
+                pass
+            break
+        parent = os.path.dirname(parent)
+        attempts += 1
+    repo_cache[cwd] = None
+    return None
+
+
+def get_issue_or_pr_title(number: str, repo: str, cache: dict) -> tuple[str, str] | None:
+    """Fetch issue/PR title. Returns (type, title) or None."""
+    cache_key = f"{repo}:{number}"
+    if cache_key in cache:
+        return cache[cache_key]
+    title = run_gh(["issue", "view", number, "--repo", repo, "--json", "title", "-q", ".title"])
+    if title:
+        val = ("issue", title)
+        cache[cache_key] = val
+        return val
+    title = run_gh(["pr", "view", number, "--repo", repo, "--json", "title", "-q", ".title"])
+    if title:
+        val = ("pr", title)
+        cache[cache_key] = val
+        return val
+    cache[cache_key] = None
+    return None
+
+
+def find_pr_for_branch(branch: str, repo: str, cache: dict) -> tuple[str, str] | None:
+    """Find a PR for a branch. Returns (number, title) or None."""
+    cache_key = f"{repo}:branch:{branch}"
+    if cache_key in cache:
+        return cache[cache_key]
+    output = run_gh([
+        "pr", "list", "--repo", repo, "--head", branch,
+        "--state", "all", "--json", "number,title", "--limit", "1",
+    ])
+    if output:
+        try:
+            prs = json.loads(output)
+            if prs:
+                val = (str(prs[0]["number"]), prs[0]["title"])
+                cache[cache_key] = val
+                return val
+        except (json.JSONDecodeError, KeyError, IndexError):
+            pass
+    cache[cache_key] = None
+    return None
+
+
+def clean_message_preview(text: str) -> str:
+    """Clean up a message snippet for display — strip XML tags, collapse whitespace."""
+    if not text:
+        return "(empty)"
+    # Strip common XML-like tags from Claude session messages
+    text = re.sub(r"<[^>]+>", "", text)
+    # Collapse whitespace and newlines
+    text = re.sub(r"\s+", " ", text).strip()
+    # Strip leading slash-command noise
+    text = re.sub(r"^/\S+\s*", "", text).strip()
+    return text[:70] if text else "(empty)"
+
+
+def read_session_metadata(filepath: Path) -> dict | None:
+    """Read sessionId, branch, cwd, first message text, and check for custom-title."""
+    session_id = branch = cwd = first_text = None
+    all_user_texts: list[str] = []
+    has_custom_title = False
+    custom_title_value = None
+    try:
+        with open(filepath) as f:
+            for i, line in enumerate(f):
+                if i > 50:
+                    break
+                try:
+                    d = json.loads(line)
+                    if d.get("type") == "custom-title":
+                        has_custom_title = True
+                        custom_title_value = d.get("customTitle")
+                        break
+                    if not session_id and d.get("sessionId"):
+                        session_id = d["sessionId"]
+                    if not branch and d.get("gitBranch"):
+                        branch = d["gitBranch"]
+                    if not cwd and d.get("cwd"):
+                        cwd = d["cwd"]
+                    if d.get("type") == "user":
+                        msg = d.get("message", {})
+                        if isinstance(msg, dict):
+                            content = msg.get("content", [])
+                            if isinstance(content, str):
+                                all_user_texts.append(content)
+                                if not first_text and not content.startswith("<ide_opened_file>"):
+                                    first_text = content
+                            else:
+                                for c in content:
+                                    if isinstance(c, dict) and c.get("type") == "text":
+                                        text = c["text"]
+                                        all_user_texts.append(text)
+                                        if not first_text and not text.startswith("<ide_opened_file>"):
+                                            first_text = text
+                        elif isinstance(msg, str):
+                            all_user_texts.append(msg)
+                            if not first_text:
+                                first_text = msg
+                except json.JSONDecodeError:
+                    continue
+        if not has_custom_title:
+            with open(filepath, "rb") as f:
+                f.seek(0, 2)
+                size = f.tell()
+                f.seek(max(0, size - 2048))
+                tail = f.read().decode("utf-8", errors="replace")
+                if '"custom-title"' in tail:
+                    for line in tail.strip().split("\n"):
+                        try:
+                            d = json.loads(line)
+                            if d.get("type") == "custom-title":
+                                has_custom_title = True
+                                custom_title_value = d.get("customTitle")
+                                break
+                        except json.JSONDecodeError:
+                            continue
+    except OSError:
+        return None
+
+    if not session_id:
+        return None
+
+    return {
+        "sessionId": session_id,
+        "branch": branch,
+        "cwd": cwd,
+        "firstText": first_text,
+        "allUserTexts": all_user_texts,
+        "hasCustomTitle": has_custom_title,
+        "customTitleValue": custom_title_value,
+    }
+
+
+def set_custom_title(filepath: Path, session_id: str, title: str) -> bool:
+    """Append a custom-title record to the session JSONL."""
+    record = {
+        "type": "custom-title",
+        "customTitle": title,
+        "sessionId": session_id,
+    }
+    try:
+        with open(filepath, "a") as f:
+            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+        return True
+    except OSError as e:
+        log(f"  ERROR writing {filepath}: {e}")
+        return False
+
+
+def _build_ai_prompt(meta: dict) -> str | None:
+    """Build the prompt for AI title generation from session metadata."""
+    messages = meta.get("allUserTexts", [])
+    if not messages:
+        return None
+
+    # Build a clean snippet from the first few messages (strip XML tags)
+    snippets = []
+    for msg in messages[:5]:
+        cleaned = re.sub(r"<[^>]+>", "", msg).strip()
+        cleaned = re.sub(r"\s+", " ", cleaned)
+        if cleaned:
+            snippets.append(cleaned[:300])
+    if not snippets:
+        return None
+
+    combined = "\n---\n".join(snippets)
+    branch = meta.get("branch", "")
+
+    prompt = (
+        "Generate a descriptive title (4 to 8 words) for a Claude Code coding session. "
+        "The title MUST be at least 4 words and should describe the main task or topic. "
+        "Do NOT include issue/PR numbers, branch names, or prefixes like 'Session:'. "
+        "Reply with ONLY the title text on a single line, nothing else.\n\n"
+        "Examples of good titles:\n"
+        "- Review PR for subscriber import optimization\n"
+        "- Debug campaign delivery worker restart loop\n"
+        "- Setup MySQL database command aliases\n"
+        "- Clean up dead code after PHP migration\n\n"
+    )
+    if branch:
+        prompt += f"Branch: {branch}\n\n"
+    prompt += f"First messages from user:\n{combined}"
+    return prompt
+
+
+def _sanitize_ai_title(raw: str) -> str | None:
+    """Clean up and validate an AI-generated title."""
+    title = raw.strip().split("\n")[0].strip()
+    # Strip surrounding quotes if present
+    if (title.startswith('"') and title.endswith('"')) or (title.startswith("'") and title.endswith("'")):
+        title = title[1:-1].strip()
+    # Reject error messages
+    if title.lower().startswith("error:"):
+        return None
+    # Truncate if too long
+    if len(title) > 80:
+        title = title[:77] + "..."
+    return title if title else None
+
+
+def _generate_title_gemini(prompt: str) -> str | None:
+    """Generate a title using the Gemini API (fast, cheap)."""
+    api_key = GEMINI_API_KEY
+    if not api_key:
+        return None
+
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={api_key}"
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {
+            "maxOutputTokens": 256,
+            "temperature": 0.7,
+        },
+    }
+
+    try:
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(payload).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=AI_TIMEOUT) as resp:
+            data = json.loads(resp.read().decode())
+            candidates = data.get("candidates", [])
+            if not candidates:
+                log("  Gemini: no candidates in response", verbose_only=True)
+                return None
+            content = candidates[0].get("content", {})
+            parts = content.get("parts", [])
+            if not parts or "text" not in parts[0]:
+                log("  Gemini: empty response (possibly safety-filtered)", verbose_only=True)
+                return None
+            text = parts[0]["text"]
+            title = _sanitize_ai_title(text)
+            # Reject very short titles (single word) - likely incomplete
+            if title and len(title.split()) < 2:
+                log(f"  Gemini: title too short ({title!r}), falling back", verbose_only=True)
+                return None
+            return title
+    except Exception as e:
+        log(f"  Gemini API failed: {e}", verbose_only=True)
+        return None
+
+
+def _generate_title_claude_cli(prompt: str) -> str | None:
+    """Generate a title using claude CLI (slower, uses OAuth)."""
+    try:
+        result = subprocess.run(
+            [
+                "claude", "-p",
+                "--model", CLAUDE_CLI_MODEL,
+                "--no-session-persistence",
+                "--allowedTools", "none",
+            ],
+            input=prompt,
+            capture_output=True,
+            text=True,
+            timeout=AI_TIMEOUT,
+            env={k: v for k, v in os.environ.items() if k != "CLAUDECODE"},
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return _sanitize_ai_title(result.stdout)
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as e:
+        log(f"  Claude CLI failed: {e}", verbose_only=True)
+    return None
+
+
+def generate_ai_title(meta: dict) -> str | None:
+    """Generate a title using AI. Tries Gemini API first, falls back to Claude CLI."""
+    if not AI_TITLE_ENABLED:
+        return None
+
+    prompt = _build_ai_prompt(meta)
+    if not prompt:
+        return None
+
+    # Try Gemini first (faster, cheaper)
+    if GEMINI_API_KEY:
+        title = _generate_title_gemini(prompt)
+        if title:
+            return title
+
+    # Fall back to Claude CLI
+    title = _generate_title_claude_cli(prompt)
+    if title:
+        return title
+
+    return None
+
+
+def resolve_title(meta: dict, repo_cache: dict, title_cache: dict, pr_cache: dict) -> str | None:
+    """Try all strategies to find a meaningful title for a session."""
+    branch = meta.get("branch")
+    cwd = meta.get("cwd")
+    first_text = meta.get("firstText") or ""
+    skip_branch = meta.get("is_monorepo", False)
+
+    # Strategy 1: GitHub URL in any early user message
+    combined_text = "\n".join(meta.get("allUserTexts", [first_text]))
+    gh_urls = extract_github_urls(combined_text)
+    for repo, url_type, number in gh_urls:
+        if url_type == "pull":
+            title = run_gh(["pr", "view", number, "--repo", repo, "--json", "title", "-q", ".title"])
+            if title:
+                if is_review_context(meta, combined_text):
+                    return f"PR Review #{number}: {title}"
+                return f"PR {number}: {title}"
+        else:
+            title = run_gh(["issue", "view", number, "--repo", repo, "--json", "title", "-q", ".title"])
+            if title:
+                return f"#{number}: {title}"
+
+    if skip_branch:
+        log(f"    (monorepo root — skipping branch-based strategies)", verbose_only=True)
+        # Still try AI-generated title
+        ai_title = generate_ai_title(meta)
+        if ai_title:
+            return ai_title
+        return None
+
+    # Need a repo for remaining strategies
+    repo = None
+    if cwd:
+        if os.path.isdir(cwd):
+            repo = get_repo_for_cwd(cwd, repo_cache)
+        else:
+            repo = infer_repo_for_cwd(cwd, repo_cache)
+
+    if not repo and not branch:
+        return None
+
+    # Strategy 1b: "review" keyword + bare PR number in message (no GitHub URL)
+    if not gh_urls and repo:
+        pr_num = extract_review_pr_number(combined_text)
+        if pr_num:
+            title = run_gh(["pr", "view", pr_num, "--repo", repo, "--json", "title", "-q", ".title"])
+            if title:
+                return f"PR Review #{pr_num}: {title}"
+
+    # Strategy 2: Issue number in branch name
+    if branch and repo:
+        issue_num = extract_issue_number(branch)
+        if issue_num:
+            result = get_issue_or_pr_title(issue_num, repo, title_cache)
+            if result:
+                kind, title = result
+                prefix = f"PR {issue_num}" if kind == "pr" else f"#{issue_num}"
+                return f"{prefix}: {title}"
+
+    # Strategy 3: Find a PR for the branch
+    if branch and branch not in SKIP_BRANCHES and repo:
+        pr_info = find_pr_for_branch(branch, repo, pr_cache)
+        if pr_info:
+            pr_num, pr_title = pr_info
+            return f"PR {pr_num}: {pr_title}"
+
+    # Strategy 4: AI-generated title from first messages
+    ai_title = generate_ai_title(meta)
+    if ai_title:
+        return ai_title
+
+    return None
+
+
+def run_current_only():
+    """Handle --current-only mode: read hook stdin, rename just the current session."""
+    try:
+        hook_input = json.loads(sys.stdin.read())
+    except (json.JSONDecodeError, ValueError):
+        log("ERROR: Could not parse hook stdin as JSON")
+        sys.exit(1)
+
+    transcript_path = hook_input.get("transcript_path")
+    session_id = hook_input.get("session_id")
+
+    if not transcript_path or not session_id:
+        log("ERROR: Missing transcript_path or session_id in hook input")
+        sys.exit(1)
+
+    filepath = Path(transcript_path).expanduser()
+    if not filepath.exists():
+        log(f"ERROR: Transcript file not found: {filepath}")
+        sys.exit(1)
+
+    # Don't interfere if stop_hook_active (prevent loops)
+    if hook_input.get("stop_hook_active"):
+        sys.exit(0)
+
+    meta = read_session_metadata(filepath)
+    if not meta:
+        log("No metadata found in session", verbose_only=True)
+        sys.exit(0)
+
+    # Already has a custom title — nothing to do
+    if meta["hasCustomTitle"]:
+        sys.exit(0)
+
+    # Skip if no useful metadata yet
+    if not meta.get("branch") and not meta.get("firstText"):
+        sys.exit(0)
+
+    # Detect monorepo
+    cwd = meta.get("cwd")
+    if cwd and is_monorepo_root(cwd):
+        meta["is_monorepo"] = True
+
+    repo_cache: dict = {}
+    title_cache: dict = {}
+    pr_cache: dict = {}
+
+    new_title = resolve_title(meta, repo_cache, title_cache, pr_cache)
+
+    if not new_title:
+        log(f"No match for session {session_id}", verbose_only=True)
+        sys.exit(0)
+
+    dry_run = "--dry-run" in sys.argv
+
+    if dry_run:
+        log(f"WOULD RENAME: {new_title}")
+    else:
+        if set_custom_title(filepath, session_id, new_title):
+            log(f"RENAMED: {new_title}")
+        else:
+            log(f"FAILED to rename session {session_id}")
+            sys.exit(1)
+
+
+def run_all():
+    """Handle batch mode: scan all sessions and rename untitled ones."""
+    dry_run = "--dry-run" in sys.argv
+    verbose = "--verbose" in sys.argv or dry_run
+
+    if not CLAUDE_PROJECTS_DIR.is_dir():
+        log(f"No Claude projects directory at {CLAUDE_PROJECTS_DIR}")
+        return
+
+    repo_cache: dict = {}
+    title_cache: dict = {}
+    pr_cache: dict = {}
+    renamed = 0
+    skipped_has_title = 0
+    skipped_no_match = 0
+    skipped_empty = 0
+    skipped_active = 0
+    current_project = None
+
+    for project_dir in sorted(CLAUDE_PROJECTS_DIR.iterdir()):
+        if not project_dir.is_dir():
+            continue
+
+        # Decode the project dir name for display (it's URL-encoded path)
+        project_label = project_dir.name.replace("-", "/")
+
+        for session_file in sorted(project_dir.glob("*.jsonl")):
+            try:
+                mtime = session_file.stat().st_mtime
+            except OSError:
+                continue
+            if time.time() - mtime < ACTIVE_THRESHOLD_SECONDS:
+                skipped_active += 1
+                if verbose:
+                    log(f"  SKIP (active session, modified {int(time.time() - mtime)}s ago)")
+                continue
+
+            meta = read_session_metadata(session_file)
+            if not meta:
+                skipped_empty += 1
+                continue
+
+            if meta["hasCustomTitle"]:
+                skipped_has_title += 1
+                continue
+
+            if not meta.get("branch") and not meta.get("firstText"):
+                skipped_empty += 1
+                continue
+
+            # Show project header when we first encounter sessions in a new project
+            if verbose and project_label != current_project:
+                current_project = project_label
+                log(f"\n{'=' * 70}")
+                log(f"  {project_label}")
+                log(f"{'=' * 70}")
+
+            cwd = meta.get("cwd")
+            if cwd and is_monorepo_root(cwd):
+                meta["is_monorepo"] = True
+
+            current_display = clean_message_preview(meta.get("firstText"))
+            branch = meta.get("branch", "(none)")
+
+            new_title = resolve_title(meta, repo_cache, title_cache, pr_cache)
+
+            if not new_title:
+                skipped_no_match += 1
+                if verbose:
+                    reason = "monorepo root, no URL in message" if meta.get("is_monorepo") else "no issue/PR match"
+                    log(f"  SKIP  \"{current_display}\"")
+                    log(f"        branch: {branch} | reason: {reason}")
+                continue
+
+            if verbose:
+                log(f"  RENAME \"{current_display}\"")
+                log(f"     --> \"{new_title}\"")
+                log(f"         branch: {branch}")
+
+            if not dry_run:
+                if set_custom_title(session_file, meta["sessionId"], new_title):
+                    renamed += 1
+                else:
+                    log(f"  FAILED: {session_file.name}")
+            else:
+                renamed += 1
+
+    # Summary
+    action = "Would rename" if dry_run else "Renamed"
+    log(f"\n{'─' * 50}")
+    log(f"  {action}: {renamed}")
+    log(f"  Already titled: {skipped_has_title}")
+    log(f"  No match: {skipped_no_match}")
+    log(f"  Active (skipped): {skipped_active}")
+    log(f"  Empty/no metadata: {skipped_empty}")
+    log(f"{'─' * 50}")
+
+
+def main():
+    global AI_TITLE_ENABLED
+    if "--no-ai" in sys.argv:
+        AI_TITLE_ENABLED = False
+
+    if "--current-only" in sys.argv:
+        run_current_only()
+    else:
+        run_all()
+
+
+if __name__ == "__main__":
+    main()

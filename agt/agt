@@ -29,6 +29,9 @@ case "$cmd" in
   waker)
     exec "$ROOT/modules/waker/session-waker" "$@"
     ;;
+  waker-deregister)
+    exec "$ROOT/modules/waker/session-waker-deregister" "$@"
+    ;;
   budget)
     exec "$ROOT/modules/waker/claude-budget" "$@"
     ;;
@@ -39,7 +42,10 @@ case "$cmd" in
       active) exec "$ROOT/modules/sessions/active-sessions" "$@" ;;
       rename) exec "$ROOT/modules/sessions/rename-session" "$@" ;;
       list) exec "$ROOT/modules/sessions/list-sessions" "$@" ;;
-      *) die "sessions: need report|active|rename|list" ;;
+      autorename) exec "$ROOT/modules/sessions/rename-claude-sessions" "$@" ;;
+      context) exec "$ROOT/modules/sessions/session-context" "$@" ;;
+      review) exec "$ROOT/modules/sessions/session-review" "$@" ;;
+      *) die "sessions: need report|active|rename|list|autorename|context|review" ;;
     esac
     ;;
   say)
@@ -63,8 +69,9 @@ case "$cmd" in
 agt — agent-tools
   agt registry …          agent-registry
   agt waker …             session-waker
+  agt waker-deregister    SessionEnd hook: de-register from session-waker
   agt budget …            claude-budget
-  agt sessions report|active|rename|list …
+  agt sessions report|active|rename|list|autorename|context|review …
   agt say …               agent-say
   agt read …              agent-read
   agt inbox …             agent-inbox

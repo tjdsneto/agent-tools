@@ -1,0 +1,42 @@
+#!/usr/bin/env python3
+"""
+session-context - Inject session metadata into Claude's context.
+
+Reads hook stdin JSON and outputs session_id so Claude is aware of
+its own session identity. Used as a SessionStart hook.
+"""
+from __future__ import annotations
+
+import json
+import sys
+
+
+def main():
+    # Debug: log that the hook was called
+    import datetime
+    with open("/tmp/session-context-debug.log", "a") as f:
+        f.write(f"\n--- {datetime.datetime.now().isoformat()} ---\n")
+
+    try:
+        raw = sys.stdin.read()
+        # Log raw input
+        with open("/tmp/session-context-debug.log", "a") as f:
+            f.write(f"stdin: {raw[:500]}\n")
+        hook_input = json.loads(raw)
+    except (json.JSONDecodeError, ValueError) as e:
+        with open("/tmp/session-context-debug.log", "a") as f:
+            f.write(f"ERROR: {e}\n")
+        sys.exit(0)
+
+    session_id = hook_input.get("session_id", "")
+    transcript_path = hook_input.get("transcript_path", "")
+
+    if session_id:
+        # stdout goes into Claude's context
+        print(f"This chat session's ID is: {session_id}")
+        if transcript_path:
+            print(f"The transcript for this session is stored at: {transcript_path}")
+
+
+if __name__ == "__main__":
+    main()

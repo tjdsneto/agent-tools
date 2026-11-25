@@ -1,0 +1,244 @@
+#!/usr/bin/env python3
+"""session-review — analyse a Claude Code session transcript for tool usage and context events."""
+
+import argparse
+import json
+import sys
+from collections import Counter, defaultdict
+from datetime import datetime
+from pathlib import Path
+
+
+def parse_transcript(path: Path) -> dict:
+    events = []
+    with open(path) as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                events.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+    return _extract(events)
+
+
+def _extract(events: list) -> dict:
+    tool_calls = []
+    attachments = []
+    timeline = []
+    stop_summaries: list[dict] = []
+    seen_prompts: list[str] = []
+    turn = 0
+
+    for event in events:
+        t = event.get("type", "")
+        ts = event.get("timestamp", "")
+
+        if t == "user" and not event.get("isMeta"):
+            msg = event.get("message", {})
+            content = msg.get("content", "")
+            # content is a plain string in CLI sessions; a list of blocks in Cursor sessions
+            if isinstance(content, list):
+                text_blocks = [b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text"]
+                user_text = next((txt for txt in text_blocks if txt and not txt.startswith("<")), None)
+            else:
+                user_text = content if isinstance(content, str) and content and not content.startswith("<") else None
+            if user_text is not None:
+                prompt_id = event.get("promptId", "")
+                if prompt_id not in seen_prompts:
+                    seen_prompts.append(prompt_id)
+                    turn += 1
+                    timeline.append({
+                        "turn": turn, "ts": ts, "kind": "user_message",
+                        "name": "user", "detail": user_text[:60].replace("\n", " "),
+                    })
+
+        elif t == "assistant":
+            msg = event.get("message", {})
+            for block in msg.get("content", []):
+                if isinstance(block, dict) and block.get("type") == "tool_use":
+                    name = block.get("name", "")
+                    inp = block.get("input", {})
+                    detail = _tool_detail(name, inp)
+                    call = {"name": name, "input": inp, "turn": turn, "ts": ts, "detail": detail}
+                    tool_calls.append(call)
+                    timeline.append({"turn": turn, "ts": ts, "kind": "tool_use", "name": name, "detail": detail})
+
+        elif t == "attachment":
+            att = event.get("attachment", {})
+            att_type = att.get("type", "?")
+            detail = _attachment_detail(att)
+            attachments.append({"type": att_type, "raw": att, "turn": turn, "ts": ts})
+            timeline.append({"turn": turn, "ts": ts, "kind": "attachment", "name": att_type, "detail": detail})
+
+        elif t == "system" and event.get("subtype") in ("turn_duration", "stop_hook_summary", "away_summary"):
+            sub = event.get("subtype", "")
+            detail = _system_detail(event)
+            if sub == "stop_hook_summary":
+                stop_summaries.append(event)
+            timeline.append({"turn": turn, "ts": ts, "kind": f"system/{sub}", "name": sub, "detail": detail})
+
+    return {"tool_calls": tool_calls, "attachments": attachments, "timeline": timeline, "total_turns": turn, "stop_hook_summaries": stop_summaries}
+
+
+def _tool_detail(name: str, inp: dict) -> str:
+    if name == "Bash":
+        return (inp.get("description") or inp.get("command", ""))[:60]
+    if name in ("Read", "Edit", "Write"):
+        return inp.get("file_path", "")
+    if name == "Skill":
+        return inp.get("skill", "")
+    if name == "Agent":
+        return inp.get("description", "")[:60]
+    return ""
+
+
+def _attachment_detail(att: dict) -> str:
+    att_type = att.get("type", "")
+    if att_type == "hook_success":
+        s = att.get("hookName", "")
+        dur = att.get("durationMs")
+        code = att.get("exitCode")
+        if dur is not None:
+            s += f" ({dur}ms)"
+        if code not in (None, "", 0):
+            s += f" exit={code}"
+        return s
+    if att_type == "deferred_tools_delta":
+        return f"+{len(att.get('addedNames', []))} tools"
+    return ""
+
+
+def _system_detail(event: dict) -> str:
+    sub = event.get("subtype", "")
+    if sub == "turn_duration":
+        return f"{event.get('durationMs', 0)}ms"
+    if sub == "stop_hook_summary":
+        return f"{event.get('hookCount', 0)} hooks"
+    return ""
+
+
+def _bar(n: int, max_n: int, width: int = 20) -> str:
+    if max_n == 0:
+        return ""
+    return "█" * round(n / max_n * width)
+
+
+def _fmt_ts(ts: str) -> str:
+    if not ts:
+        return "??:??:??"
+    try:
+        return datetime.fromisoformat(ts.replace("Z", "+00:00")).strftime("%H:%M:%S")
+    except Exception:
+        return ts[11:19] if len(ts) >= 19 else ts
+
+
+def render_summary(data: dict, session_id: str) -> None:
+    tool_calls = data["tool_calls"]
+    attachments = data["attachments"]
+    turns = data["total_turns"]
+
+    print(f"\nSession Review: {session_id[:8]}  ({turns} turns, {len(tool_calls)} tool calls)")
+    print("━" * 60)
+
+    counts = Counter(c["name"] for c in tool_calls)
+    if counts:
+        print("\nTOOL USAGE")
+        max_c = max(counts.values())
+        for name, n in counts.most_common():
+            print(f"  {name:<14} {n:>3}  {_bar(n, max_c)}")
+
+    bash_calls = [c for c in tool_calls if c["name"] == "Bash"]
+    if bash_calls:
+        print("\nBASH COMMANDS")
+        groups: dict[str, list[str]] = defaultdict(list)
+        for c in bash_calls:
+            cmd = c["input"].get("command", "").strip()
+            leading = cmd.split()[0] if cmd.split() else cmd
+            groups[leading].append(cmd)
+        for leading, cmds in sorted(groups.items(), key=lambda x: -len(x[1]))[:8]:
+            top = Counter(cmds).most_common(1)[0][0]
+            print(f"  {leading:<14} {len(cmds):>3}x   {top[:50]}")
+
+    read_calls = [c for c in tool_calls if c["name"] == "Read"]
+    file_counts = Counter(c["input"].get("file_path", "?") for c in read_calls)
+    if read_calls:
+        print("\nREAD FILES")
+        for path, n in file_counts.most_common():
+            flag = "⚠ " if n > 1 else "  "
+            print(f"  {flag}{n}x  {path}")
+
+    skill_calls = [c for c in tool_calls if c["name"] == "Skill"]
+    if skill_calls:
+        print("\nSKILLS INVOKED")
+        seen: list[str] = []
+        for c in skill_calls:
+            s = c["input"].get("skill", "?")
+            if s not in seen:
+                seen.append(s)
+        for s in seen:
+            print(f"  {s}")
+
+    if attachments:
+        print("\nCONTEXT INJECTIONS")
+        att_counts = Counter(a["type"] for a in attachments)
+        for att_type, n in att_counts.most_common():
+            print(f"  {att_type:<32} {n:>3}x")
+
+    warnings: list[str] = []
+    for p, n in file_counts.items():
+        if n > 1:
+            warnings.append(f"Read `{p}` called {n}x — consider caching the content")
+    for a in attachments:
+        att = a["raw"]
+        code = att.get("exitCode")
+        if code not in (None, "", 0):
+            hook = att.get("hookName", "unknown hook")
+            warnings.append(f"Hook `{hook}` exited with code {code}")
+    for summary in data.get("stop_hook_summaries", []):
+        for err in summary.get("hookErrors", []):
+            cmd = err.get("command", "unknown command") if isinstance(err, dict) else str(err)
+            warnings.append(f"Hook error in stop summary: {cmd}")
+
+    if warnings:
+        print("\nWARNINGS")
+        for w in warnings:
+            print(f"  ⚠ {w}")
+
+    print()
+
+
+def render_timeline(data: dict, session_id: str) -> None:
+    print(f"\nTimeline: {session_id[:8]}")
+    print("━" * 80)
+    for ev in data["timeline"]:
+        line = (
+            f"[turn {ev['turn']:>2} | {_fmt_ts(ev['ts'])}]"
+            f"  {ev['kind']:<22}  {ev['name']:<25}  {ev['detail']}"
+        )
+        print(line[:130])
+    print()
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Analyse a Claude Code session transcript.")
+    parser.add_argument("transcript", type=Path, help="Path to the session .jsonl transcript")
+    parser.add_argument("--timeline", action="store_true", help="Show full chronological event list")
+    args = parser.parse_args()
+
+    if not args.transcript.exists():
+        print(f"Error: file not found: {args.transcript}", file=sys.stderr)
+        sys.exit(1)
+
+    session_id = args.transcript.stem
+    data = parse_transcript(args.transcript)
+
+    if args.timeline:
+        render_timeline(data, session_id)
+    else:
+        render_summary(data, session_id)
+
+
+if __name__ == "__main__":
+    main()

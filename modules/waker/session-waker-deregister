@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# session-waker-deregister — SessionEnd backstop for session-waker.
+#
+# Reads Claude Code's SessionEnd hook JSON from stdin and de-registers this session ONLY on an
+# unambiguous user exit: reason="logout" or "prompt_input_exit". It deliberately does NOT act on
+# reason "clear" (session persists after /clear), "resume" (session switched, may return), or
+# "other" (a documented catch-all we cannot prove excludes a rate-limit-related end). Tiago's
+# hard constraint: never de-register a session that was merely interrupted by token exhaustion —
+# and the docs could not confirm SessionEnd stays silent on a rate-limit pause, so we only trust
+# the two reasons that plainly mean "the user left." (A Stop hook was ruled out: it fires every
+# turn.) Dead/crashed sessions are instead cleaned up by session-waker's own failed-wake reaper.
+#
+# This is only a backstop. Primary de-registration is explicit (the agent unregisters itself when
+# done) + the wake-ack self-eviction. Fail open: always exit 0, never block session end. Keep it
+# fast — SessionEnd hooks have a ~1.5s default budget.
+set -u
+
+SW_HOME="${SESSION_WAKER_HOME:-$HOME/.session-waker}"
+
+# Resolve session-waker: env override, else PATH, else the module binary next to this script.
+BIN="${SESSION_WAKER_BIN:-$(command -v session-waker || true)}"
+if [ -z "$BIN" ]; then
+  CAND="$(cd "$(dirname "$0")" 2>/dev/null && pwd)/session-waker"
+  [ -x "$CAND" ] && BIN="$CAND"
+fi
+[ -n "$BIN" ] || exit 0
+
+read -r INPUT || true
+[ -n "${INPUT:-}" ] || exit 0
+
+eval "$(SW_INPUT="$INPUT" python3 - <<'PY' 2>/dev/null || true
+import json, os, shlex
+try:
+    d = json.loads(os.environ.get("SW_INPUT") or "{}")
+except Exception:
+    d = {}
+sid = d.get("session_id") or ""
+reason = d.get("reason") or ""
+print(f"SID={shlex.quote(sid)}")
+print(f"REASON={shlex.quote(reason)}")
+PY
+)"
+
+[ -n "${SID:-}" ] || exit 0
+case "${REASON:-}" in
+  logout|prompt_input_exit) ;;                    # genuine user exit → de-register
+  *) exit 0 ;;                                     # clear/resume/other/unknown → leave registered (reaper handles dead procs)
+esac
+[ -f "$SW_HOME/sessions/$SID.conf" ] || exit 0   # not registered → nothing to do (cheap guard, no CLI spawn)
+
+"$BIN" unregister "$SID" >/dev/null 2>&1 || true
+exit 0
