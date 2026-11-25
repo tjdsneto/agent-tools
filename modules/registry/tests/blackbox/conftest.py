@@ -4,6 +4,7 @@ import os
 import signal
 import socket
 import subprocess
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -69,7 +70,11 @@ def box(tmp_path):
     b = Box(root=tmp_path, env=env)
     yield b
     # A command may have started a private daemon on the temp registry; stop it.
+    # A daemon a hook started in the background may still be writing its pid file; give it up to 3s.
     pid_file = b.data / "daemon.pid"
+    deadline = time.monotonic() + 3
+    while not pid_file.exists() and time.monotonic() < deadline:
+        time.sleep(0.1)
     if pid_file.exists():
         try:
             os.kill(int(pid_file.read_text().strip()), signal.SIGTERM)
