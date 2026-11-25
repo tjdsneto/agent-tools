@@ -36,9 +36,12 @@ class Box:
         assert proc.returncode == 0, proc.stderr
         return json.loads(proc.stdout)
 
-    def hook(self, host, event, payload, timeout=60):
+    def hook(self, host, event, payload, timeout=60, shell=None, env=None):
+        cmd = [str(HOOK), host, event]
+        if shell:
+            cmd = [shell, *cmd]
         return subprocess.run(
-            [str(HOOK), host, event], input=json.dumps(payload), env=self.env,
+            cmd, input=json.dumps(payload), env=env or self.env,
             capture_output=True, text=True, timeout=timeout,
         )
 
@@ -70,9 +73,10 @@ def box(tmp_path):
     b = Box(root=tmp_path, env=env)
     yield b
     # A command may have started a private daemon on the temp registry; stop it.
-    # A daemon a hook started in the background may still be writing its pid file; give it up to 3s.
+    # The client creates daemon.log just before spawning a daemon, which may still be writing its
+    # pid file; wait up to 3s, but only when one was started.
     pid_file = b.data / "daemon.pid"
-    deadline = time.monotonic() + 3
+    deadline = time.monotonic() + (3 if (b.data / "daemon.log").exists() else 0)
     while not pid_file.exists() and time.monotonic() < deadline:
         time.sleep(0.1)
     if pid_file.exists():
