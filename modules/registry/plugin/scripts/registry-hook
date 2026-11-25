@@ -166,7 +166,7 @@ if [[ "$EVENT" == "ping" ]]; then
   HB_ARGS=(heartbeat --type "$HOST" --session-id "$SESSION_ID" --status working)
   [[ -n "$MODEL" ]] && HB_ARGS+=(--model "$MODEL")
   [[ -n "$TITLE" ]] && HB_ARGS+=(--title "$TITLE")
-  HB_ARGS+=("${ADDRESS_ARGS[@]}")
+  HB_ARGS+=(${ADDRESS_ARGS[@]+"${ADDRESS_ARGS[@]}"})
   "$BIN" "${HB_ARGS[@]}" >/dev/null 2>&1 || true
   if [[ "$HOST" != "cursor" && "$HOOK_EVENT" == "UserPromptSubmit" ]]; then
     emit_prompt_context
@@ -190,7 +190,7 @@ case "$EVENT" in
     [[ -n "$PARENT" ]] && ENSURE_ARGS+=(--parent-session "$PARENT")
     [[ -n "$MODEL" ]] && ENSURE_ARGS+=(--model "$MODEL")
     [[ -n "$TITLE" ]] && ENSURE_ARGS+=(--title "$TITLE")
-    ENSURE_ARGS+=("${ADDRESS_ARGS[@]}")
+    ENSURE_ARGS+=(${ADDRESS_ARGS[@]+"${ADDRESS_ARGS[@]}"})
     if ! "$BIN" "${ENSURE_ARGS[@]}" >/dev/null 2>&1; then
       if [[ "$HOST" == "claude" ]]; then
         echo "registry-hook: ensure failed for session_id=$SESSION_ID" >&2
@@ -214,7 +214,7 @@ case "$EVENT" in
     HB_ARGS=(heartbeat --type "$HOST" --session-id "$SESSION_ID" --status idle)
     [[ -n "$MODEL" ]] && HB_ARGS+=(--model "$MODEL")
     [[ -n "$TITLE" ]] && HB_ARGS+=(--title "$TITLE")
-    HB_ARGS+=("${ADDRESS_ARGS[@]}")
+    HB_ARGS+=(${ADDRESS_ARGS[@]+"${ADDRESS_ARGS[@]}"})
     "$BIN" "${HB_ARGS[@]}" >/dev/null 2>&1 || true
     SUM_ARGS=(summarize --type "$HOST" --session-id "$SESSION_ID")
     [[ -n "$TRANSCRIPT" ]] && SUM_ARGS+=(--transcript "$TRANSCRIPT")

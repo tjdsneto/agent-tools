@@ -1,5 +1,7 @@
 import json
 
+from conftest import HOOK
+
 WHO = ["--type", "claude", "--session-id", "s1"]
 
 
@@ -68,3 +70,17 @@ def test_unreadable_log_fails_open(box):
         assert r.stdout == ""
     finally:
         log.chmod(0o600)
+
+
+def test_hook_runs_under_macos_bash(box):
+    # /bin/bash is 3.2 on macOS, where expanding an empty array under set -u is an error.
+    import subprocess
+
+    env = dict(box.env, PATH="/usr/bin:/bin")
+    r = subprocess.run(
+        ["/bin/bash", str(HOOK), "codex", "ping"],
+        input=json.dumps({"session_id": "t1", "hook_event_name": "UserPromptSubmit", "cwd": str(box.root)}),
+        env=env, capture_output=True, text=True, timeout=60,
+    )
+    assert r.returncode == 0, r.stderr
+    assert "No intent set" in json.loads(r.stdout)["hookSpecificOutput"]["additionalContext"]
