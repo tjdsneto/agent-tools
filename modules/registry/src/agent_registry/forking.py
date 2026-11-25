@@ -16,7 +16,11 @@ Runner = Callable[[Sequence[str]], subprocess.CompletedProcess]
 
 
 def _run(cmd: Sequence[str]) -> subprocess.CompletedProcess:
-    return subprocess.run(list(cmd), capture_output=True, text=True, timeout=60)
+    try:
+        return subprocess.run(list(cmd), capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        reason = f"{cmd[0]}: {exc.strerror or exc}" if isinstance(exc, OSError) else f"{cmd[0]}: timed out"
+        return subprocess.CompletedProcess(list(cmd), 127, stdout="", stderr=reason)
 
 
 def default_backend(env: Mapping[str, str] = os.environ) -> str:
@@ -61,7 +65,12 @@ def launch_herdr(directory: str, prompt: str, engine: str, name: str, run: Runne
     if started.returncode != 0:
         return {"launched": False, "pane": pane, "error": started.stderr.strip() or "herdr agent start failed"}
     sent = run(["herdr", "agent", "prompt", name, prompt])
-    return {"launched": sent.returncode == 0, "pane": pane, "agent": name}
+    if sent.returncode != 0:
+        return {
+            "launched": False, "pane": pane, "agent": name,
+            "error": sent.stderr.strip() or "herdr agent prompt failed",
+        }
+    return {"launched": True, "pane": pane, "agent": name}
 
 
 def fork(

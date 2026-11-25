@@ -77,3 +77,21 @@ def test_unknown_backend_writes_nothing(tmp_registry):
 def test_default_backend():
     assert forking.default_backend({"HERDR_ENV": "1"}) == "herdr"
     assert forking.default_backend({}) == "cursor"
+
+
+def test_run_missing_binary_returns_127():
+    res = forking._run(["definitely-not-a-binary-xyz"])
+    assert res.returncode == 127
+    assert res.stderr
+
+
+def test_herdr_failed_prompt_reports_error(tmp_registry):
+    topics.set_intent("claude", "p", "A")
+    run = FakeRun(
+        {("herdr", "pane", "split"): json.dumps({"result": {"pane": {"id": "p-9"}}})},
+        codes={("herdr", "agent", "prompt"): 1},
+    )
+    res = forking.fork("claude", "p", "Side", mode="side", brief_text="b", backend="herdr", directory="/proj", run=run)
+    assert res["launched"] is False
+    assert res["error"] == "herdr agent prompt failed"
+    assert res["pane"] == "p-9"
