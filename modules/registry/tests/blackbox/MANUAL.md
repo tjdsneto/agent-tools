@@ -4,7 +4,7 @@ What a test can't see. Run after any change to forking or the hook. Record the d
 
 ## Setup
 
-- `./install.sh` from the repo root.
+- `./install.sh`, run from the main checkout (`~/projects/agent-tools`) after merging, never from a worktree.
 - `claude plugin update agent-registry@agent-registry`, then restart Claude Code. Confirm the cache matches the repo: `diff ~/.claude/plugins/cache/agent-registry/agent-registry/*/scripts/registry-hook modules/registry/plugin/scripts/registry-hook` prints nothing.
 
 ## Checks

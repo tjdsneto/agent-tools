@@ -46,7 +46,7 @@ A topic's status is the last of `done`, `parked` or `forked` recorded for it. Wi
 
 **Live entry.** `list` and the board add `intent` and `topic` (each `{id, title}` or null) to every row, derived from the session's log when the list is built. They are not stored in `registry.json`, so a daemon running older code can't drop them. `summary` stays as it is.
 
-**Writes** take the registry's existing file lock, so two hooks or commands writing at once don't corrupt a log.
+**Writes** take a topics-wide lock (`topics/.lock`), not the registry lock, so two hooks or commands writing at once don't corrupt a log.
 
 ## 2. CLI (`agt registry …`)
 
@@ -70,7 +70,7 @@ Every command prints JSON on stdout and diagnostics on stderr, like the rest of 
 The reminder is added to the existing `plugin/scripts/registry-hook`, so `plugin/install` deploys it with the hooks already in place.
 
 - **On prompt (Claude Code `UserPromptSubmit`, Codex `UserPromptSubmit`):** `ping` also prints the additional-context JSON, with one line:
-  - with an intent: `Intent: <title> · Topic: <title or none>. If this prompt changes the subject, run the topic-awareness drift check.`
+  - with an intent: `Intent: <title> (tp-…) · Topic: <title> (tp-…) or none. If this prompt changes the subject, run the topic-awareness drift check.`
   - without one: `No intent set for this session. Once the first prompt makes it clear, set it: agt registry intent "<title>".`
 - **On session start:** `ensure` adds the same line to the SessionStart context it already prints.
 - **Cursor's own agent:** its `beforeSubmitPrompt` can only return `continue` and `user_message` (Cursor forum, 2026), so the line goes only in the `sessionStart` `additional_context`, which has reported bugs. This is a known limit. Claude Code running inside Cursor uses Claude Code's hooks and is not affected.
