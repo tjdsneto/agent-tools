@@ -4,7 +4,7 @@ Blocking CLI for AI agents to **interrupt the human**: show a native macOS modal
 
 Agents and skills call `bin/agent-say`, block until the user responds (or a wait policy fires), then continue from the parsed result. No product logic lives in the CLI — only the interrupt protocol.
 
-**Design spec:** [`~/projects/tjdsneto-setup/docs/superpowers/specs/2026-09-25-agent-say-design.md`](~/projects/tjdsneto-setup/docs/superpowers/specs/2026-09-25-agent-say-design.md)
+**Design spec:** [`docs/superpowers/specs/2026-09-25-agent-say-design.md`](docs/superpowers/specs/2026-09-25-agent-say-design.md)
 
 **Skill:** [`skills/agent-say`](~/projects/agent-tools/skills/agent-say/SKILL.md) in this repo — when to call, payload shape, how to branch on the result.
 

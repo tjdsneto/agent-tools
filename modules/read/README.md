@@ -6,7 +6,7 @@ Blocking by default so the agent knows when reading finished or was stopped. Opt
 
 This is **not** an interrupt/ask modal — that remains `agent-ping`. agent-read is for *listening*.
 
-**Design spec:** [`~/projects/tjdsneto-setup/docs/superpowers/specs/2026-09-24-agent-read-design.md`](~/projects/tjdsneto-setup/docs/superpowers/specs/2026-09-24-agent-read-design.md)
+**Design spec:** [`docs/superpowers/specs/2026-09-24-agent-read-design.md`](docs/superpowers/specs/2026-09-24-agent-read-design.md)
 
 **Skill:** [`skills/agent-read`](~/projects/agent-tools/skills/agent-read/SKILL.md) in this repo — when to call, how to pass text/file, how to branch on the result.
 

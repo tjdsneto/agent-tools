@@ -9,4 +9,4 @@ git clone https://github.com/tjdsneto/agent-tools.git ~/projects/agent-tools
 cd ~/projects/agent-tools && ./install.sh
 ```
 
-See `docs/` (or the design spec in tjdsneto-setup until docs are copied) for architecture.
+Architecture: [`docs/superpowers/specs/2026-11-19-agent-tools-design.md`](docs/superpowers/specs/2026-11-19-agent-tools-design.md). Each module keeps its own design docs under `modules/<name>/docs/`.
