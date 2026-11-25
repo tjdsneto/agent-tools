@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from agent_registry import archive, store
+from agent_registry import archive, store, topics
 from agent_registry.constants import ACTIVE_GAP_SECONDS, STATUSES
 from agent_registry.models import (
     RegistryFile,
@@ -323,6 +323,7 @@ def list_split(*, now: datetime | None = None) -> tuple[list[dict], list[dict]]:
     active, stale = [], []
     for s in reg.sessions:
         view = public_view(s)
+        view.update(topics.current(s.agent_type, s.session_id))
         (stale if is_stale(s, now=now) else active).append(view)
     return active, stale
 
@@ -334,6 +335,7 @@ def live_views(*, now: datetime | None = None) -> dict[str, list[dict]]:
     for s in reg.sessions:
         view = public_view(s)
         view["project"] = project_key(s.directory)
+        view.update(topics.current(s.agent_type, s.session_id))
         stale_flag = is_stale(s, now=now)
         blocked = s.status == "blocked"
         if blocked or stale_flag:
