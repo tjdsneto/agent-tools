@@ -56,7 +56,7 @@ Work the report top-down. **Budget: the top ~10 glue groups plus any retry/block
 For each group:
 
 1. **Read the job.** Descriptions + representative snippet. If unclear, open one listed session transcript at that call.
-2. **Check what exists before proposing anything.** Run `python3 ~/projects/tjdsneto-setup/ai/skills/shared/tool-registry/registry.py --search <term>` (still lives in setup) and `<tool> --help` for the feeder. Half the value is finding the tool that already does it — e.g. 66 sessions read a GoFlow note through `gtr list --json | python3` because CLAUDE.md said to, while `gtr edit --append-note` already existed.
+2. **Check what exists before proposing anything.** Run `agt tools --search <term>` (the `tool-registry` skill) and `<tool> --help` for the feeder. Half the value is finding the tool that already does it — e.g. 66 sessions read a GoFlow note through `gtr list --json | python3` because CLAUDE.md said to, while `gtr edit --append-note` already existed.
 3. **Classify** into exactly one:
 
    | Class | When | Fix |

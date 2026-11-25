@@ -32,3 +32,7 @@ Below that threshold, a plain report is enough.
 When invoked as a background check rather than an explicit request (e.g. from a persona's
 `start` mode), run the same command but only surface the 5-hour session number if it's
 ≥85% — otherwise say nothing about usage at all.
+
+## Related
+
+- `claude-budget check` reads the same two windows for scripts (`agt budget`), and session-waker gates its wakes on them. Each `claude -p "/usage"` call leaves a small transcript in `~/.claude/projects/-/`.
