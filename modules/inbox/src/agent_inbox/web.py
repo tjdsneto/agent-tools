@@ -77,6 +77,13 @@ main {{ max-width: 720px; margin: 0 auto; padding: 20px 16px 48px; }}
 .chip.red {{ background: var(--red-t); color: var(--red-i); }} .chip.red i {{ background: var(--red-d); }}
 .chip .ticks {{ width: 15px; height: 14px; margin-left: -2px; }}
 .av {{ flex: none; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; font-size: 16px; font-weight: 650; }}
+.av {{ position: relative; }}
+.kb {{ position: absolute; right: -3px; bottom: -3px; display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--bg); }}
+.kb svg {{ width: 12px; height: 12px; }}
+.kb.q {{ background: var(--accent); color: #fff; }}
+.kb.r {{ background: var(--grey-i); color: var(--bg); }}
+.row:hover .kb {{ box-shadow: 0 0 0 2px var(--surf); }}
 .av.sm {{ width: 28px; height: 28px; font-size: 13px; }}
 .av0 {{ background: #fde2e1; color: #9f1c1c; }} .av1 {{ background: #feebc8; color: #8a4b08; }} .av2 {{ background: #dcfce7; color: #166534; }}
 .av3 {{ background: #dbeafe; color: #1d4ed8; }} .av4 {{ background: #e0f2fe; color: #075985; }} .av5 {{ background: #ccfbf1; color: #115e59; }}
@@ -245,6 +252,7 @@ fieldset:disabled .opt, fieldset:disabled legend {{ color: var(--mute); cursor: 
   .pane .row .rid {{ display: none; }}
   .pane .row .chips {{ justify-content: flex-start; margin-top: 4px; }}
   .pane .row[aria-current="page"] {{ background: var(--line); }}
+  .pane .row[aria-current="page"] .kb {{ box-shadow: 0 0 0 2px var(--line); }}
   .split-body main {{ max-width: 760px; margin: 0; padding: 24px 40px 48px; }}
 }}
 @media (prefers-reduced-motion: reduce) {{
@@ -540,11 +548,26 @@ def _who(row: dict) -> str:
     return Path(project).name if project else (asker.get("script") or "")
 
 
-def _avatar(row: dict, small: bool = False) -> str:
+_KIND_BADGE = {
+    "ask": ("q", "Question", '<path d="M4.3 4.5a1.75 1.75 0 1 1 2.5 1.6c-.5.3-.8.7-.8 1.2v.2" fill="none" stroke="currentColor" '
+            'stroke-width="1.6" stroke-linecap="round"/><circle cx="6" cy="9.6" r=".9" fill="currentColor"/>'),
+    "post": ("r", "Report", '<path d="M3.5 4h5M3.5 6h5M3.5 8h3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>'),
+}
+
+
+def _avatar(row: dict, small: bool = False, kind: bool = False) -> str:
+    """The project's initial. kind adds a corner badge: a question mark for a question, lines for a report."""
     name = _who(row) or (row.get("asker") or {}).get("engine") or "?"
     tone = sum(name.encode()) % 7
     size = " sm" if small else ""
-    return f'<span class="av av{tone}{size}" aria-hidden="true">{_esc(name[:1].upper())}</span>'
+    initial = _esc(name[:1].upper())
+    if not kind or row.get("kind") not in _KIND_BADGE:
+        return f'<span class="av av{tone}{size}" aria-hidden="true">{initial}</span>'
+    cls, label, icon = _KIND_BADGE[row["kind"]]
+    return (
+        f'<span class="av av{tone}{size}" role="img" aria-label="{label}">{initial}'
+        f'<i class="kb {cls}"><svg viewBox="0 0 12 12" aria-hidden="true">{icon}</svg></i></span>'
+    )
 
 
 def _bar(left: str, count: int | None, tools: str = "") -> str:
@@ -567,7 +590,7 @@ def _card(row: dict, *, pick: bool = True, current: bool = False, by_day: bool =
     here = ' aria-current="page"' if current else ""
     return (
         f'<li class="item">{box}'
-        f'<a class="row{unread}" href="/e/{_esc(row["id"])}"{here}>{_avatar(row)}<b>{_esc(row["title"])}</b>'
+        f'<a class="row{unread}" href="/e/{_esc(row["id"])}"{here}>{_avatar(row, kind=True)}<b>{_esc(row["title"])}</b>'
         f'<time>{_esc(_hour(row.get("created_at")) if by_day else _clock(row.get("created_at")))}</time>'
         f'<small>{meta}<span class="rid"> · <span class="id">{_esc(row["id"])}</span></span></small>'
         f'<span class="chips">{_urgent(row)}{_chip(row)}</span></a>'

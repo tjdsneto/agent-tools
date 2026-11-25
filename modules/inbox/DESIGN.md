@@ -472,7 +472,7 @@ Softly rounded rectangles for anything you type into or press (10px), slightly s
 ### Tabs
 - **Style:** pills on Cool Surface, ink text, 15px/550, 36px tall with a 44px hit area.
 - **State:** hover fills with Hairline grey; the current view is Action Blue with white text. Views are Active (the default: everything not yet done; answered questions and read reports leave it), Needs answer, Info, History (answered, delivered, read and closed entries).
-- **Filters:** a 44×36 pill button with a three-line filter icon in the header bar, right of the waiting count. It opens a popover panel (14px radius, `pop` fill, soft shadow, no border) holding the engine and state selects; a change applies at once (the Apply button shows only without JS), and Clear returns to the current tab. The filters narrow the current tab rather than replacing it. When a filter differs from the tab, the button takes the blue tint and an accent count badge. Escape or a click outside closes it.
+- **Filters:** a 44×36 pill button with a three-line filter icon in the header bar, right of the waiting count. It opens a popover panel (14px radius, `pop` fill, soft shadow, no border) holding the Type (question or report), Project (most recently active first), Engine and State selects; a change applies at once (the Apply button shows only without JS), and Clear returns to the current tab. The filters narrow the current tab rather than replacing it. In History, Type narrows the tab instead of switching to Info. When a filter differs from the tab, the button takes the blue tint and an accent count badge. Escape or a click outside closes it.
 - **Next:** on an entry page, a 36px pill in the header bar right of the waiting count ("Next" and a right chevron, `surf` fill). It opens the entry below this one in the feed, even after opening marked it read or it was answered: the feed is read before the report is marked, and the answer form carries the next id through the post. At the end of the feed it becomes Finish (with a check), back to the inbox. J presses it and K goes back to the inbox, except while a field has focus.
 
 ### Chips
@@ -483,11 +483,12 @@ Softly rounded rectangles for anything you type into or press (10px), slightly s
 - **The Dot Means State Rule.** The dot marks a session's or a delivery's live state. A label that is not a state (Urgent) never gets one.
 
 ### Avatars
-- **Style:** a circle with the project's initial, 40px (16px/650) in feed rows, 28px (13px) in the entry's meta line, in the project's fixed tint-and-ink pair. Decorative: hidden from assistive tech, because the meta line names the project.
+- **Style:** a circle with the project's initial, 40px (16px/650) in feed rows, 28px (13px) in the entry's meta line, in the project's fixed tint-and-ink pair. In the entry's meta line it is decorative and hidden from assistive tech, because the meta line names the project.
+- **Kind badge:** on feed and pane rows, an 18px circle on the avatar's bottom-right corner, ringed 2px in the row's own fill, tells a question from a report at a glance: Action Blue with a white question mark for a question, grey ink with three white lines for a report. The avatar then carries `role="img"` named Question or Report.
 
 ### Feed rows
 - **Style:** a 44px checkbox column, then the row: avatar, 600-weight title, right-aligned 13px time, a 14px Grey Meta line "project · engine · You: <answer> · id" (the answer part only once answered, like a chat preview), and the chips. 72px minimum, hairline below.
-- **States:** hover fills with Cool Surface. An unread post shows an 8px Action Blue dot before the title. Order is open questions, then unread posts, then the rest.
+- **States:** hover fills with Cool Surface. An unread post shows an 8px Action Blue dot before the title. Order is open questions, then unread posts, then the rest. History is newest first and grouped by day: a 13px/650 Grey Meta heading (Today, Yesterday, "Sun, Nov 22", with the year once it is not this one) that sticks below the bar, and rows under it show only the time.
 - **Empty:** centred Grey Meta text under a 17px ink "Nothing here".
 
 ### Entry header

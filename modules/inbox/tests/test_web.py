@@ -356,3 +356,11 @@ def test_history_groups_entries_by_day(conn, http):
     assert body.index("<h2>Today</h2>") < body.index(today["id"]) < body.index("<h2>Yesterday</h2>") < body.index(before["id"])
     _, feed = _get(http, "/")
     assert 'class="day"' not in feed
+
+
+def test_rows_mark_questions_and_reports_apart(conn, http):
+    store.create_entry(conn, "ask", validate_request({"title": "Q", "control": CHOICE}, "ask"), engine="claude", session_id="s-1")
+    store.create_entry(conn, "post", validate_request({"title": "R"}, "post"), script="cron")
+    _, feed = _get(http, "/")
+    assert 'role="img" aria-label="Question"' in feed and '<i class="kb q">' in feed
+    assert 'role="img" aria-label="Report"' in feed and '<i class="kb r">' in feed
