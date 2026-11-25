@@ -219,3 +219,23 @@ def test_unreadable_topics_dir_gives_no_reminder(tmp_registry):
             topics.context_line("claude", "s1")
     finally:
         root.chmod(0o700)
+
+
+def test_malformed_parent_and_at_do_not_crash_readers(tmp_registry):
+    root = topics.set_intent("claude", "m", "Root")
+    path = topics.log_path("claude", "m")
+    bad = [
+        {"event": "topic", "at": "2026-01-01T00:00:00Z", "parent": {"x": 1}, "topic": {"id": "tp-bad1", "title": "dict parent"}},
+        {"event": "topic", "at": 12345, "parent": root["topic"]["id"], "topic": {"id": "tp-bad2", "title": "int at"}},
+        {"event": "topic", "at": ["a"], "parent": "", "topic": {"id": "tp-bad3", "title": "list at"}},
+    ]
+    with open(path, "a", encoding="utf-8") as f:
+        for ev in bad:
+            f.write(json.dumps(ev) + "\n")
+    events = topics.read_events("claude", "m")
+    by_id = {e["topic"]["id"]: e for e in events}
+    assert {"tp-bad1", "tp-bad2", "tp-bad3"} <= set(by_id)
+    assert "parent" not in by_id["tp-bad1"] and by_id["tp-bad2"]["at"] is None
+    assert topics.tree()
+    assert {r["id"] for r in topics.open_topics()} >= {"tp-bad1", "tp-bad2", "tp-bad3"}
+    assert topics.state("claude", "m")["topic"] is not None

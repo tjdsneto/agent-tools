@@ -86,6 +86,10 @@ def read_events(agent_type: str, session_id: str) -> list[dict]:
             continue
         if topic.get("title") is not None and not isinstance(topic["title"], str):
             continue
+        if "parent" in event and not (isinstance(event["parent"], str) and event["parent"]):
+            del event["parent"]
+        if "at" in event and not isinstance(event["at"], str):
+            event["at"] = None
         events.append(event)
     return events
 
