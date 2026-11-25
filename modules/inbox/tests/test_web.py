@@ -442,6 +442,22 @@ def test_group_by_is_remembered_in_a_cookie(conn, http, fake_registry):
     assert cookie is None and 'class="grp"' not in odd and '<option value="none" selected>None</option>' in odd
 
 
+@pytest.mark.parametrize("cookie", [
+    'a={"x":1}; ib_group=tree',
+    "ib_group=tree; a={\"x\":1}",
+    "a=has a space; b=2; ib_group=tree",
+])
+def test_group_by_survives_other_cookies(conn, http, fake_registry, cookie):
+    _with_path(conn, fake_registry, [ROOT, PLAN], title="On plan")
+    _, _, body = _get_resp(http, "/", headers={"Cookie": cookie})
+    assert '<option value="tree" selected>Topic tree</option>' in body
+
+
+def test_group_by_ignores_a_garbage_cookie_value_beside_others(conn, http, fake_registry):
+    _, _, body = _get_resp(http, "/", headers={"Cookie": 'a={"x":1}; ib_group=sideways'})
+    assert '<option value="none" selected>None</option>' in body
+
+
 def test_group_by_tree_nests_forks_and_ends_with_no_topic(conn, http, fake_registry):
     fork_q = _with_path(conn, fake_registry, [ROOT, PLAN, FORK], title="Fork question")
     root_r = _with_path(conn, fake_registry, [ROOT, PLAN], title="Root report", kind="post")

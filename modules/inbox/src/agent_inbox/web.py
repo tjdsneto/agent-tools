@@ -4,7 +4,6 @@ import html
 import os
 import re
 from datetime import datetime
-from http.cookies import CookieError, SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, urlparse
@@ -443,13 +442,12 @@ def _group_choice(qs: dict, cookie_header: str | None) -> tuple[str, str | None]
     asked = _query_value(qs, "group")
     if asked in grouping.GROUPS:
         return asked, f"{GROUP_COOKIE}={asked}; Path=/; Max-Age={GROUP_MAX_AGE}; SameSite=Lax"
-    jar = SimpleCookie()
-    try:
-        jar.load(cookie_header or "")
-    except CookieError:
-        return "none", None
-    saved = jar.get(GROUP_COOKIE)
-    return (saved.value if saved and saved.value in grouping.GROUPS else "none"), None
+    # By hand: http.cookies gives up on every cookie after one that holds a space or JSON.
+    for part in (cookie_header or "").split(";"):
+        name, _, value = part.strip().partition("=")
+        if name == GROUP_COOKIE:
+            return (value if value in grouping.GROUPS else "none"), None
+    return "none", None
 
 
 def load_feed(conn, qs: dict) -> list[dict]:
