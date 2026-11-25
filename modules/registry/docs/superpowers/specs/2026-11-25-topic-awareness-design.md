@@ -70,7 +70,7 @@ Every command prints JSON on stdout and diagnostics on stderr, like the rest of 
 The reminder is added to the existing `plugin/scripts/registry-hook`, so `plugin/install` deploys it with the hooks already in place.
 
 - **On prompt (Claude Code `UserPromptSubmit`, Codex `UserPromptSubmit`):** `ping` also prints the additional-context JSON, with one line:
-  - with an intent: `Intent: <title> · Topic: <title or none>. If this prompt opens a new thread, run the topic-awareness drift check.`
+  - with an intent: `Intent: <title> · Topic: <title or none>. If this prompt changes the subject, run the topic-awareness drift check.`
   - without one: `No intent set for this session. Once the first prompt makes it clear, set it: agt registry intent "<title>".`
 - **On session start:** `ensure` adds the same line to the SessionStart context it already prints.
 - **Cursor's own agent:** its `beforeSubmitPrompt` can only return `continue` and `user_message` (Cursor forum, 2026), so the line goes only in the `sessionStart` `additional_context`, which has reported bugs. This is a known limit. Claude Code running inside Cursor uses Claude Code's hooks and is not affected.
@@ -82,7 +82,7 @@ The reminder is added to the existing `plugin/scripts/registry-hook`, so `plugin
 
 - Set the intent once the first prompt makes it clear: one line, the outcome the session exists for.
 - Open a new topic when the main line moves on. Mark a topic done when it is done.
-- **Drift check**, run when a prompt or the agent's own work opens a new thread:
+- **Drift check**, run only when the work changes subject (a prompt, or the agent's own work):
 
 | The new thread is… | Then |
 |---|---|

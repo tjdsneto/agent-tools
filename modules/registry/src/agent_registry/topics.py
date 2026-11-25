@@ -284,7 +284,7 @@ def context_line(agent_type: str, session_id: str) -> str:
     topic = f"{st['topic']['title']} ({st['topic']['id']})" if st["topic"] else "none"
     return (
         f"Intent: {intent['title']} ({intent['id']}) · Topic: {topic}. "
-        "If this prompt opens a new thread, run the topic-awareness drift check."
+        "If this prompt changes the subject, run the topic-awareness drift check."
     )
 
 

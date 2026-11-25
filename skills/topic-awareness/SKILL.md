@@ -10,7 +10,7 @@ Tiago runs many sessions at once. A session that drifts through several threads 
 Each prompt starts with a line from the hook:
 
 ```
-Intent: Make inbox entries topic-aware (tp-7k3q) · Topic: Decide where topic records live (tp-9m2c). If this prompt opens a new thread, run the topic-awareness drift check.
+Intent: Make inbox entries topic-aware (tp-7k3q) · Topic: Decide where topic records live (tp-9m2c). If this prompt changes the subject, run the topic-awareness drift check.
 ```
 
 or, in a new session, `No intent set for this session. …`.

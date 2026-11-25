@@ -151,7 +151,7 @@ def test_current_and_context_line(tmp_registry):
     line = topics.context_line("claude", "s")
     assert line == (
         f"Intent: Ship it ({intent['topic']['id']}) · Topic: Plan ({opened['topic']['id']}). "
-        "If this prompt opens a new thread, run the topic-awareness drift check."
+        "If this prompt changes the subject, run the topic-awareness drift check."
     )
     topics.close_topic("claude", "s", "done")
     assert "· Topic: none." in topics.context_line("claude", "s")
