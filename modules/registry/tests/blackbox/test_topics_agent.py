@@ -2,7 +2,8 @@
 
 Run explicitly: .venv/bin/python -m pytest tests/blackbox/test_topics_agent.py -v
 The agent's wording varies, so the off-intent check looks for the fork / park words, not a sentence.
-Agents run with box.env, so their hooks and Bash commands write to the temp registry, never the real one.
+Agents run with the box's environment, so their hooks and Bash commands write to the temp registry, never the real one.
+The prompts never name the skill: the intent has to come from the hook reminder plus the installed skill.
 """
 import json
 import shutil
@@ -10,21 +11,20 @@ import subprocess
 
 import pytest
 
-FIRST = (
-    "This session's goal: write a haiku about autumn leaves into haiku.txt in this directory. "
-    "Before anything else, follow the topic-awareness skill. Then write the haiku."
-)
-OFF_INTENT = (
-    "Unrelated: I also need to design a retry policy for a payment webhook. "
-    "Follow the topic-awareness skill for this new thread."
-)
+FIRST = "Write a haiku about autumn leaves into haiku.txt in this directory."
+OFF_INTENT = "Unrelated: I also need to design a retry policy for a payment webhook."
 ALLOWED = "Bash(agt registry:*) Write Read"
+
+
+def _agent_env(box):
+    # A fork must never open a real Cursor tab or Herdr pane from a test.
+    return {**box.env, "AGENT_REGISTRY_FORK_BACKEND": "none"}
 
 
 def _claude(box, *args):
     return subprocess.run(
         [shutil.which("claude"), "-p", *args, "--output-format", "json", "--allowedTools", ALLOWED],
-        cwd=box.root, env=box.env, capture_output=True, text=True, timeout=300,
+        cwd=box.root, env=_agent_env(box), capture_output=True, text=True, timeout=300,
     )
 
 
@@ -42,14 +42,15 @@ def test_claude_sets_intent_then_asks_on_drift(box):
     assert "fork" in reply and "park" in reply, reply
     after = box.log("claude", sid)
     assert not any(e["event"] == "topic" and "retry" in e["topic"]["title"].lower() for e in after), after
+    assert not any(e["event"] in ("forked", "parked") for e in after[len(events):]), after
 
 
 @pytest.mark.skipif(not shutil.which("codex"), reason="codex is not on PATH")
 def test_codex_sets_intent(box):
     proc = subprocess.run(
         [shutil.which("codex"), "exec", "--dangerously-bypass-hook-trust", "-s", "workspace-write",
-         "-C", str(box.root), "--json", FIRST],
-        env=box.env, capture_output=True, text=True, timeout=300,
+         "--skip-git-repo-check", "-C", str(box.root), "--json", FIRST],
+        env=_agent_env(box), capture_output=True, text=True, timeout=300,
     )
     assert proc.returncode == 0, proc.stderr
     logs = list((box.data / "topics" / "codex").glob("*.jsonl")) if (box.data / "topics" / "codex").exists() else []
