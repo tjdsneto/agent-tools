@@ -207,3 +207,15 @@ def test_list_survives_garbage_log(tmp_registry):
     _write_garbage_log("claude", "s1")
     active, _ = ops.list_split()
     assert active[0]["intent"] == {"id": "tp-good", "title": "Valid"}
+
+
+def test_unreadable_topics_dir_gives_no_reminder(tmp_registry):
+    topics.set_intent("claude", "s1", "Ship it")
+    root = topics.topics_dir()
+    root.chmod(0)
+    try:
+        assert topics.current("claude", "s1") == {"intent": None, "topic": None}
+        with pytest.raises(OSError):
+            topics.context_line("claude", "s1")
+    finally:
+        root.chmod(0o700)

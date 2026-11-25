@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import fcntl
 import json
+import os
 import secrets
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -64,6 +65,9 @@ def _locked():
 
 def read_events(agent_type: str, session_id: str) -> list[dict]:
     path = log_path(agent_type, session_id)
+    root = topics_dir()
+    if root.exists() and not os.access(root, os.R_OK | os.X_OK):
+        raise PermissionError(f"topics dir not readable: {root}")
     if not path.exists():
         return []
     events = []
