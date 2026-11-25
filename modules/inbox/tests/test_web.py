@@ -294,3 +294,27 @@ def test_filters_narrow_the_current_tab_and_count_what_they_change(conn, http):
     assert '<a href="/?kind=ask&state=open" aria-current="page">Needs answer</a>' in needs and 'class="filt"' in needs
     _, other = _get(http, "/?kind=ask&state=expired")
     assert 'aria-current="page">Needs answer</a>' in other and 'Filters, 1 on' in other
+
+
+def test_next_walks_the_feed_and_survives_reading_and_answering(conn, http):
+    first = store.create_entry(conn, "post", validate_request({"title": "First"}, "post"), script="cron")
+    second = store.create_entry(conn, "post", validate_request({"title": "Second"}, "post"), script="cron")
+    third = store.create_entry(conn, "post", validate_request({"title": "Third"}, "post"), script="cron")
+    _, feed = _get(http, "/")
+    order = [e["id"] for e in (first, second, third)]
+    order.sort(key=feed.index)
+    top, middle, last = order
+    # Opening the middle report marks it read, but Next still goes to the row below it, not the top.
+    _, page = _get(http, f"/e/{middle}")
+    assert f'<a class="step" href="/e/{last}" rel="next">' in page
+    _, page = _get(http, f"/e/{last}")
+    assert '<span class="step" aria-disabled="true">' in page
+    # An answered question has left the feed; the answer form carries Next through the post.
+    q = store.create_entry(conn, "ask", validate_request({"title": "Q", "control": CHOICE}, "ask"), engine="claude", session_id="s-1")
+    conn.execute("UPDATE entries SET delivery = delivery || '{\"reachability\": \"live\"}' WHERE id = %s", (q["id"],))
+    _, page = _get(http, f"/e/{q['id']}")
+    assert f'action="/e/{q["id"]}/answer?next={top}"' in page
+    status, location, _ = _post(http, f"/e/{q['id']}/answer?next={top}", "value=a")
+    assert status == 303 and location == f"/e/{q['id']}?next={top}"
+    _, page = _get(http, location)
+    assert f'<a class="step" href="/e/{top}" rel="next">' in page

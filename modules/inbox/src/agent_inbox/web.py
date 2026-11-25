@@ -99,6 +99,13 @@ main {{ max-width: 720px; margin: 0 auto; padding: 20px 16px 48px; }}
 @media (max-width: 479px) {{ .tabs {{ gap: 6px; }} .tabs a {{ padding: 0 12px; }} }}
 @media (max-width: 379px) {{ .tabs a {{ padding: 0 10px; }} }}
 .tools {{ display: flex; align-items: center; gap: 12px; }}
+.step {{ position: relative; display: inline-flex; align-items: center; gap: 2px; height: 36px; padding: 0 10px 0 14px; border-radius: 18px;
+  background: var(--surf); color: var(--ink); font-size: 15px; font-weight: 600; text-decoration: none; }}
+.step::after {{ content: ""; position: absolute; inset: -4px 0; }}
+.step svg {{ width: 18px; height: 18px; }}
+a.step:hover {{ background: var(--line); }}
+a.step:active {{ transform: translateY(1px); }}
+.step[aria-disabled] {{ color: var(--mute); opacity: .6; }}
 .filt {{ position: relative; flex: none; }}
 .filt summary {{ position: relative; display: grid; place-items: center; width: 44px; height: 36px; border-radius: 18px;
   background: var(--surf); list-style: none; cursor: pointer; }}
@@ -287,6 +294,11 @@ _FUNNEL = (
     'aria-hidden="true"><path d="M3.5 6h13M6 10h8M8.5 14h3"/></svg>'
 )
 
+_CHEVRON = (
+    '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" '
+    'stroke-linejoin="round" aria-hidden="true"><path d="M7.5 4.5 13 10l-5.5 5.5"/></svg>'
+)
+
 _BACK = (
     '<a class="back" href="/"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" '
     'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.5 4.5 7 10l5.5 5.5"/></svg>Inbox</a>'
@@ -384,6 +396,15 @@ def load_feed(conn, qs: dict) -> list[dict]:
     seen = {row["id"] for row in opened + unread}
     rest = [row for row in visible if row["id"] not in seen]
     return opened + unread + rest
+
+
+def next_entry(listed: list[dict], entry_id: str, after: str | None = None) -> str | None:
+    """The entry to open after this one: the one the page was opened with, while it is still listed, else the next row."""
+    ids = [row["id"] for row in listed]
+    if after and after != entry_id and after in ids:
+        return after
+    at = ids.index(entry_id) if entry_id in ids else -1
+    return ids[at + 1] if at + 1 < len(ids) else None
 
 
 LOCAL = ZoneInfo("America/Sao_Paulo")
@@ -704,12 +725,22 @@ def _thread(entry: dict) -> str:
     return f'<section class="thread" aria-label="Conversation"><h2>Conversation</h2>{bubbles}</section>'
 
 
+def _step(next_id: str | None) -> str:
+    """The Next button: the entry after this one in the feed, or a dimmed button at the end."""
+    label = f'Next{_CHEVRON}'
+    if not next_id:
+        return f'<span class="step" aria-disabled="true">{label}</span>'
+    return f'<a class="step" href="/e/{_esc(next_id)}" rel="next">{label}</a>'
+
+
 def _entry_page(
     entry: dict, error: str | None = None, frame_origin: str | None = None, waiting: int | None = None,
-    sidebar: list[dict] | None = None,
+    sidebar: list[dict] | None = None, next_id: str | None = None,
 ) -> str:
     """One entry. sidebar is the feed, shown beside the entry on wide screens only."""
     eid = _esc(entry["id"])
+    # A form posts back with the next entry, so Next still points past this one once it is answered.
+    then = f"?next={quote(next_id)}" if next_id else ""
     engine = (entry.get("asker") or {}).get("engine") or ""
     created = entry.get("created_at")
     # Each piece wraps as a unit, so a narrow screen never splits "3 min / ago".
@@ -718,7 +749,7 @@ def _entry_page(
     # An urgent entry already carries the Urgent chip.
     kind = "Report" if entry["kind"] == "post" else ("Question" if entry.get("priority") == "urgent" else "Normal priority")
     body = ' class="split"' if sidebar is not None else ""
-    parts = [_HEAD.format(title=_esc(entry["title"]), body=body), _bar(_BACK, waiting)]
+    parts = [_HEAD.format(title=_esc(entry["title"]), body=body), _bar(_BACK, waiting, _step(next_id))]
     if sidebar is not None:
         # An answered entry has left the default feed; keep it in the pane so the page says where you are.
         listed = sidebar if any(row["id"] == entry["id"] for row in sidebar) else [entry, *sidebar]
@@ -754,7 +785,7 @@ def _entry_page(
         control = entry.get("control") or {}
         hint = "Comment (a reason is required to revise)" if control.get("type") == "approve" else "Comment (optional)"
         parts.append(
-            f'<form method="post" action="/e/{eid}/answer"><fieldset{closed}><legend>Your answer</legend>'
+            f'<form method="post" action="/e/{eid}/answer{then}"><fieldset{closed}><legend>Your answer</legend>'
             f"{_control_fields(control)}"
             f'<input class="field" name="comment" placeholder="{hint}" aria-label="Comment">'
             f"{_control_buttons(control)}</fieldset></form>"
@@ -762,7 +793,7 @@ def _entry_page(
     parts.append(_thread(entry))
     if (entry.get("asker") or {}).get("session_id"):
         parts.append(
-            f'<form class="follow" method="post" action="/e/{eid}/followup"><h2>Follow up</h2><div class="pair">'
+            f'<form class="follow" method="post" action="/e/{eid}/followup{then}"><h2>Follow up</h2><div class="pair">'
             '<textarea class="field" name="text" rows="1" placeholder="Message the agent" aria-label="Follow-up message"></textarea>'
             '<button class="btn" type="submit">Send</button></div></form>'
         )
@@ -834,28 +865,34 @@ class InboxHandler(BaseHTTPRequestHandler):
             return
         match = re.fullmatch(r"/e/([^/]+)", path)
         if method == "GET" and match:
-            self._show(match.group(1), 200, None)
+            self._show(match.group(1), 200, None, _query_value(qs, "next"))
             return
         match = re.fullmatch(r"/e/([^/]+)/(answer|followup)", path)
         if method == "POST" and match:
-            self._post_entry(match.group(1), match.group(2))
+            self._post_entry(match.group(1), match.group(2), _query_value(qs, "next"))
             return
         if method == "POST" and path == "/batch":
             self._batch()
             return
         self._bytes(404, b"not found", "text/plain; charset=utf-8")
 
-    def _show(self, entry_id: str, status: int, error: str | None) -> None:
+    def _show(self, entry_id: str, status: int, error: str | None, after: str | None = None) -> None:
         with db.connect() as conn:
+            # The feed is read before opening marks a report read, so the entry keeps its place in it.
+            feed = load_feed(conn, {})
             entry = store.get_entry(conn, entry_id)
             if entry["kind"] == "post" and entry["state"] in ("unread", "read"):
                 store.mark_read(conn, entry_id)
                 entry = store.get_entry(conn, entry_id)
+            listed = [entry if row["id"] == entry_id else row for row in feed]
+            if not any(row["id"] == entry_id for row in listed):
+                listed = [entry, *listed]
             self._html(status, _entry_page(
-                entry, error, _frame_origin(self.headers.get("Host")), open_count(conn), sidebar=load_feed(conn, {}),
+                entry, error, _frame_origin(self.headers.get("Host")), open_count(conn), sidebar=listed,
+                next_id=next_entry(listed, entry_id, after),
             ))
 
-    def _post_entry(self, entry_id: str, action: str) -> None:
+    def _post_entry(self, entry_id: str, action: str, after: str | None = None) -> None:
         form = self._form()
         try:
             with db.connect() as conn:
@@ -875,12 +912,12 @@ class InboxHandler(BaseHTTPRequestHandler):
                         via="web",
                     )
         except ConflictError as exc:
-            self._show(entry_id, 409, str(exc))
+            self._show(entry_id, 409, str(exc), after)
             return
         except ValidationError as exc:
-            self._show(entry_id, 400, str(exc))
+            self._show(entry_id, 400, str(exc), after)
             return
-        self._redirect(f"/e/{quote(entry_id)}")
+        self._redirect(f"/e/{quote(entry_id)}" + (f"?next={quote(after)}" if after else ""))
 
     def _batch(self) -> None:
         form = self._form()

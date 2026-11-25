@@ -473,6 +473,7 @@ Softly rounded rectangles for anything you type into or press (10px), slightly s
 - **Style:** pills on Cool Surface, ink text, 15px/550, 36px tall with a 44px hit area.
 - **State:** hover fills with Hairline grey; the current view is Action Blue with white text. Views are Active (the default: everything not yet done; answered questions and read reports leave it), Needs answer, Info, History (answered, delivered, read and closed entries).
 - **Filters:** a 44×36 pill button with a three-line filter icon in the header bar, right of the waiting count. It opens a popover panel (14px radius, `pop` fill, soft shadow, no border) holding the engine and state selects; a change applies at once (the Apply button shows only without JS), and Clear returns to the current tab. The filters narrow the current tab rather than replacing it. When a filter differs from the tab, the button takes the blue tint and an accent count badge. Escape or a click outside closes it.
+- **Next:** on an entry page, a 36px pill in the header bar right of the waiting count ("Next" and a right chevron, `surf` fill). It opens the entry below this one in the feed, even after opening marked it read or it was answered: the feed is read before the report is marked, and the answer form carries the next id through the post. At the end of the feed it stays in place, dimmed.
 
 ### Chips
 - **Style:** 26px pills, 13px/600, 10px side padding, tint background and ink text per tone.
