@@ -17,7 +17,7 @@ its work is done.
 **Why it exists:** `ScheduleWakeup` (the `/loop` timer) is in-process — it only fires inside a
 live turn of the same session, so a rate-limited or backgrounded session stalls. launchd is the
 only truly session-independent local trigger. Full design + locked decisions live in
-`~/projects/tjdsneto-setup/docs/session-waker-design.md` until copied into this repo.
+`~/projects/agent-tools/modules/waker/docs/session-waker-design.md`.
 
 ## If you are a session about to run a long unattended task — register yourself
 
@@ -67,7 +67,8 @@ agt waker register --session <your-session-id> --prompt-file ./continue.txt \
 3. **Dead-process reaper:** a session whose wake fails (unreachable + `--resume` fails)
    `MAX_RESUME_FAILS` times (3) is reaped as dead — this, not the SessionEnd hook, is what cleans
    up crashed/closed sessions.
-4. **SessionEnd backstop:** the `session-waker-deregister` hook de-registers **only** on
+4. **SessionEnd backstop:** the `session-waker-deregister` hook (`agt waker-deregister`,
+   `modules/waker/session-waker-deregister`) de-registers **only** on
    `reason` `logout` or `prompt_input_exit` (unambiguous user exits). It deliberately ignores
    `clear`/`resume`/`other`, because the docs don't confirm `SessionEnd` stays silent on a
    rate-limit pause and `other` is a catch-all — so it never risks de-registering a session that

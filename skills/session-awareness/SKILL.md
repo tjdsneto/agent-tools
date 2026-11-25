@@ -7,7 +7,7 @@ argument-hint: "[--all]"
 
 # Session Awareness
 
-Run **`agt sessions active`** to show currently running Claude Code sessions. Legacy shims (`active-sessions`, `list-sessions`, `rename-session`) still work.
+Run **`agt sessions active`** to show currently running Claude Code sessions. Legacy shims (`active-sessions`, `list-sessions`, `rename-session`, `rename-claude-sessions`, `session-review`) still work.
 
 ## Default (recently active)
 
@@ -33,7 +33,7 @@ Shows every running `claude` process — one per open Cursor tab, regardless of 
 | Last active | When the transcript was last written to |
 | Session | First 8 chars of the session UUID (`~` = best-guess, not `--resume`) |
 | CWD | Working directory the session was started in |
-| ▸ | Custom title (if `rename-claude-sessions` has run) or first user message |
+| ▸ | Custom title (if `agt sessions autorename` has run) or first user message |
 
 ## How it works
 
@@ -47,7 +47,7 @@ To manually rename any session by ID:
 agt sessions rename <session-id> "New Title"
 ```
 
-Searches across all projects for the session and appends a `custom-title` record to the JSONL transcript — the same mechanism used by Ctrl+R rename and `rename-claude-sessions`.
+Searches across all projects for the session and appends a `custom-title` record to the JSONL transcript — the same mechanism used by Ctrl+R rename and `agt sessions autorename`.
 
 To get the session ID, run `agt sessions active` and copy the Session column value (prefix with the full UUID from `agt sessions list --all` if needed).
 
@@ -63,8 +63,22 @@ agt sessions list --stuck      # sessions that are very large or have many messa
 
 The `--all` flag is the cross-project view — it groups sessions by project and shows title, size, message count, and timestamps.
 
+## Session hooks
+
+Two Claude Code hooks feed this view; they live in `modules/sessions/` and are wired in `~/.claude/settings.json` by tjdsneto-setup's `ai/claude/scripts/install`:
+
+- **`agt sessions context`** (`session-context`, SessionStart) — injects the session ID and transcript path into the agent's context. This is where an agent finds its own transcript.
+- **`agt sessions autorename`** (`rename-claude-sessions`, Stop) — gives an untitled session a title from its GitHub URL, branch issue, branch PR, or an AI summary. Runs as `--current-only` from the hook.
+
+Run `autorename` by hand only with `--dry-run`. With no flags (or an unknown one, it has no `--help`) it titles **every** idle untitled session across all projects, one `claude -p` call each.
+
+```bash
+echo '{"session_id":"<id>","transcript_path":"<path>"}' | agt sessions autorename --current-only --dry-run --no-ai
+agt sessions autorename --dry-run     # preview the all-sessions pass
+```
+
 ## Related
 
-- `rename-claude-sessions` — auto-title sessions from PR/issue context or AI
 - `agt sessions rename <id> <title>` — manually rename a specific session
-- `agt sessions report` — today's session-report table (tokens / running / closed)
+- `agt sessions report` — today's session-report table (tokens / running / closed); skill `claude-session-mngr`
+- `agt sessions review <transcript.jsonl>` — tool-usage and context-injection audit of one session; skill `session-review`

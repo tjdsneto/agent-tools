@@ -52,8 +52,10 @@ link_skill() {
 for sk in session-waker agent-say agent-read glue-miner session-awareness; do
   link_skill "$sk"
 done
-# Claude-only: it reads Claude Code transcripts.
-link_skill session-review "$HOME/.claude/skills"
+# Claude-only: they read Claude Code transcripts.
+for sk in session-review claude-session-mngr; do
+  link_skill "$sk" "$HOME/.claude/skills"
+done
 # Any agent can ask Tiago through the inbox, so Codex gets this one too.
 link_skill agent-inbox "$HOME/.claude/skills" "$HOME/.cursor/skills" "$HOME/.codex/skills"
 
