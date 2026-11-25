@@ -395,9 +395,9 @@ def test_rows_show_the_last_two_path_names_above_the_title(conn, http, fake_regi
     _, body = _get(http, "/")
     # The last name has its own span so a narrow row cuts the names before it, never the topic.
     assert (
-        '<span class="ctx" title="Topic awareness › Write the plan › Manual check">'
+        '<b>Deep</b><span class="ctx" title="Topic awareness › Write the plan › Manual check">'
         '<span class="ctx-more">…&nbsp;›&nbsp;</span><span class="ctx-lead">Write the plan</span>'
-        '<span class="ctx-last">&nbsp;› Manual check</span></span><b>Deep</b>'
+        '<span class="ctx-last">&nbsp;› Manual check</span></span>'
     ) in body
     assert f'<a class="row has-ctx" href="/e/{deep["id"]}"' in body
     assert f'<a class="row" href="/e/{flat["id"]}"' in body
@@ -406,15 +406,15 @@ def test_rows_show_the_last_two_path_names_above_the_title(conn, http, fake_regi
 def test_a_one_name_context_line_is_just_its_last_name(conn, http, fake_registry):
     _with_path(conn, fake_registry, [ROOT], title="Root only")
     _, body = _get(http, "/")
-    assert '<span class="ctx" title="Topic awareness"><span class="ctx-last">Topic awareness</span></span><b>Root only</b>' in body
+    assert '<b>Root only</b><span class="ctx" title="Topic awareness"><span class="ctx-last">Topic awareness</span></span>' in body
 
 
 def test_a_two_name_context_line_has_no_leading_ellipsis(conn, http, fake_registry):
     _with_path(conn, fake_registry, [ROOT, PLAN], title="Two")
     _, body = _get(http, "/")
     assert (
-        '<span class="ctx" title="Topic awareness › Write the plan"><span class="ctx-lead">Topic awareness</span>'
-        '<span class="ctx-last">&nbsp;› Write the plan</span></span><b>Two</b>'
+        '<b>Two</b><span class="ctx" title="Topic awareness › Write the plan"><span class="ctx-lead">Topic awareness</span>'
+        '<span class="ctx-last">&nbsp;› Write the plan</span></span>'
     ) in body
 
 
@@ -440,6 +440,13 @@ def test_group_by_is_remembered_in_a_cookie(conn, http, fake_registry):
     # A bad value, in the URL or the cookie, is today's feed.
     _, cookie, odd = _get_resp(http, "/?group=sideways", headers={"Cookie": "ib_group=sideways"})
     assert cookie is None and 'class="grp"' not in odd and '<option value="none" selected>None</option>' in odd
+
+
+def test_a_row_reads_its_title_before_its_topic_path(conn, http, fake_registry):
+    _with_path(conn, fake_registry, [ROOT, PLAN], title="On plan")
+    _, body = _get(http, "/")
+    row = body[body.index('<a class="row'):]
+    assert row.index("On plan</b>") < row.index('class="ctx"')
 
 
 @pytest.mark.parametrize("cookie", [

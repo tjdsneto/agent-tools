@@ -669,7 +669,7 @@ def _card(row: dict, *, pick: bool = True, current: bool = False, by_day: bool =
     here = ' aria-current="page"' if current else ""
     return (
         f'<li class="item">{box}'
-        f'<a class="row{unread}{has}" href="/e/{_esc(row["id"])}"{here}>{_avatar(row, kind=True)}{line}<b>{_esc(row["title"])}</b>'
+        f'<a class="row{unread}{has}" href="/e/{_esc(row["id"])}"{here}>{_avatar(row, kind=True)}<b>{_esc(row["title"])}</b>{line}'
         f'<time>{_esc(_hour(row.get("created_at")) if by_day else _clock(row.get("created_at")))}</time>'
         f'<small>{meta}<span class="rid"> · <span class="id">{_esc(row["id"])}</span></span></small>'
         f'<span class="chips">{_urgent(row)}{_chip(row)}</span></a>'
