@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from typing import Any
 
@@ -14,6 +15,7 @@ from agent_inbox.constants import (
 from agent_inbox.errors import ValidationError
 
 SOURCE_KEYS = {"kind", "ref", "url"}
+TOPIC_ID = re.compile(r"tp-[a-z0-9]+")
 
 
 def _options(ctype: str, options: Any) -> list[dict]:
@@ -117,6 +119,9 @@ def validate_request(raw: Any, kind: str) -> dict:
     source = raw.get("source")
     if source is not None and (not isinstance(source, dict) or not set(source) <= SOURCE_KEYS):
         raise ValidationError("source takes only kind, ref, url")
+    topic = raw.get("topic")
+    if topic is not None and not (isinstance(topic, str) and TOPIC_ID.fullmatch(topic)):
+        raise ValidationError("topic must be a topic id like tp-7k3q")
     out = {
         "title": title,
         "summary": raw.get("summary"),
@@ -125,6 +130,7 @@ def validate_request(raw: Any, kind: str) -> dict:
         "priority": priority,
         "source": source,
         "expires_at": _expires(raw.get("expires_at")),
+        "topic": topic,
     }
     if kind == "ask":
         if "control" not in raw:

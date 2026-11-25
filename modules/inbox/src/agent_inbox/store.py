@@ -8,6 +8,7 @@ from typing import Any
 import psycopg
 from psycopg.types.json import Jsonb
 
+from agent_inbox import topics
 from agent_inbox.constants import ASK_LIVE_STATES, CLOSED_STATES, HTML_MAX_BYTES, VIAS
 from agent_inbox.errors import ConflictError, NotFoundError, StoreError, ValidationError
 from agent_inbox.ids import new_id
@@ -88,6 +89,7 @@ def _shape(row: dict, events: list[dict] | None = None) -> dict:
         "superseded_by": row["superseded_by"],
         "waiter_pid": row["waiter_pid"],
         "delivery": row.get("delivery") or {},
+        "topic_path": row.get("topic_path"),
     }
     if events is not None:
         entry["thread"] = [_shape_event(e) for e in events if e["type"] in ("followup", "reply")]
@@ -119,30 +121,38 @@ def create_entry(
         if session_id and not engine:
             raise ValidationError("--session-id needs --engine")
         mode, state = None, "unread"
+    # Resolved before the insert: an unknown named topic must not leave an entry behind.
+    path = topics.path_for(engine=engine, session_id=session_id, topic=req.get("topic"))
     params = {
         "kind": kind, "engine": engine, "model": model, "session_id": session_id,
         "cwd": cwd, "project": project_root(cwd), "script": script,
         "priority": req["priority"], "mode": mode, "title": req["title"],
         "summary": req.get("summary"), "detail": req.get("detail"), "html": req.get("html"),
         "control": _jsonb(req.get("control")), "source": _jsonb(req.get("source")),
-        "expires_at": req.get("expires_at"), "state": state,
+        "expires_at": req.get("expires_at"), "state": state, "topic_path": _jsonb(path),
     }
     for _ in range(ID_ATTEMPTS):
         params["id"] = new_id()
         row = conn.execute(
             """
             INSERT INTO entries (id, kind, engine, model, session_id, cwd, project, script, priority, mode,
-                                 title, summary, detail, html, control, source, expires_at, state)
+                                 title, summary, detail, html, control, source, expires_at, state, topic_path)
             VALUES (%(id)s, %(kind)s, %(engine)s, %(model)s, %(session_id)s, %(cwd)s, %(project)s, %(script)s,
                     %(priority)s, %(mode)s, %(title)s, %(summary)s, %(detail)s, %(html)s, %(control)s,
-                    %(source)s, %(expires_at)s, %(state)s)
+                    %(source)s, %(expires_at)s, %(state)s, %(topic_path)s)
             ON CONFLICT (id) DO NOTHING
             RETURNING id
             """,
             params,
         ).fetchone()
         if row:
-            return get_entry(conn, row["id"])
+            entry = get_entry(conn, row["id"])
+            # The connection autocommits, so the insert is committed before the note names it.
+            topics.note(
+                "asked" if kind == "ask" else "posted", entry["id"], path,
+                engine=engine, session_id=session_id, title=entry["title"],
+            )
+            return entry
     raise StoreError("could not allocate an entry id")
 
 

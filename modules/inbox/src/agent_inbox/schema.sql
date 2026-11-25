@@ -24,12 +24,14 @@ CREATE TABLE IF NOT EXISTS entries (
     answer        jsonb,
     waiter_pid    integer,
     delivery      jsonb NOT NULL DEFAULT '{}'::jsonb,
+    topic_path    jsonb,
     superseded_by text REFERENCES entries (id)
 );
 
 CREATE INDEX IF NOT EXISTS entries_state ON entries (state);
 CREATE INDEX IF NOT EXISTS entries_project ON entries (project);
 CREATE INDEX IF NOT EXISTS entries_session ON entries (session_id);
+CREATE INDEX IF NOT EXISTS entries_topic ON entries ((topic_path->-1->>'id'));
 
 CREATE TABLE IF NOT EXISTS events (
     seq      bigserial PRIMARY KEY,

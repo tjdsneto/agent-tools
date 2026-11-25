@@ -10,7 +10,12 @@ from agent_inbox.constants import DEFAULT_DSN
 from agent_inbox.errors import StoreError
 
 SCHEMA_LOCK = 7_204_811  # arbitrary advisory-lock key for schema setup
-MIGRATION = "ALTER TABLE entries ADD COLUMN IF NOT EXISTS delivery jsonb NOT NULL DEFAULT '{}'::jsonb"
+MIGRATIONS = (
+    "ALTER TABLE entries ADD COLUMN IF NOT EXISTS delivery jsonb NOT NULL DEFAULT '{}'::jsonb",
+    # The asking session's topic path, root intent first, as it was when the entry was created.
+    "ALTER TABLE entries ADD COLUMN IF NOT EXISTS topic_path jsonb",
+    "CREATE INDEX IF NOT EXISTS entries_topic ON entries ((topic_path->-1->>'id'))",
+)
 OPS = """
 CREATE TABLE IF NOT EXISTS ops (
     key   text PRIMARY KEY,
@@ -38,16 +43,13 @@ def connect() -> psycopg.Connection:
 
 
 def ensure_schema(conn: psycopg.Connection) -> None:
-    missing = conn.execute("SELECT to_regclass('events') AS t").fetchone()["t"] is None
-    if not missing:
-        conn.execute(MIGRATION)
-        conn.execute(OPS)
-        return
+    # Always under the lock: two first connects after a deploy would otherwise race on CREATE INDEX.
     conn.execute("SELECT pg_advisory_lock(%s)", (SCHEMA_LOCK,))
     try:
         if conn.execute("SELECT to_regclass('events') AS t").fetchone()["t"] is None:
             conn.execute(schema_sql())
-        conn.execute(MIGRATION)
+        for sql in MIGRATIONS:
+            conn.execute(sql)
         conn.execute(OPS)
     finally:
         conn.execute("SELECT pg_advisory_unlock(%s)", (SCHEMA_LOCK,))

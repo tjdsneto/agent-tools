@@ -46,3 +46,14 @@ def test_unreachable_store_is_a_store_error(monkeypatch):
     monkeypatch.setenv("AGENT_INBOX_DSN", "host=127.0.0.1 port=1 dbname=nope connect_timeout=1")
     with pytest.raises(StoreError, match="cannot reach the inbox store"):
         db.connect()
+
+
+def test_existing_database_gains_topic_path_and_its_index(conn):
+    conn.execute("ALTER TABLE entries DROP COLUMN IF EXISTS topic_path")  # drops the index with it
+    assert conn.execute("SELECT to_regclass('entries_topic') AS t").fetchone()["t"] is None
+    db.ensure_schema(conn)
+    col = conn.execute(
+        "SELECT data_type FROM information_schema.columns WHERE table_name = 'entries' AND column_name = 'topic_path'"
+    ).fetchone()
+    assert col is not None and col["data_type"] == "jsonb"
+    assert conn.execute("SELECT to_regclass('entries_topic') AS t").fetchone()["t"] is not None
