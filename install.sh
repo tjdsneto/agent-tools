@@ -58,6 +58,8 @@ for sk in session-review claude-session-mngr; do
 done
 # Any agent can ask Tiago through the inbox, so Codex gets this one too.
 link_skill agent-inbox "$HOME/.claude/skills" "$HOME/.cursor/skills" "$HOME/.codex/skills"
+# Every engine follows the topic rules, so Codex gets this one too.
+link_skill topic-awareness "$HOME/.claude/skills" "$HOME/.cursor/skills" "$HOME/.codex/skills"
 
 if [ -d "$HOME/.hermes/skills" ]; then
   mkdir -p "$HOME/.hermes/skills/inbox"

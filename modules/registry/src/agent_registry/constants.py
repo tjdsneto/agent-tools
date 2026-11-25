@@ -11,3 +11,14 @@ EXIT_OK = 0
 EXIT_USAGE = 1
 EXIT_NOT_FOUND = 2
 EXIT_IO = 3
+EXIT_CONFLICT = 4
+# Same alphabet as inbox ids (no 0/1/i/l/o): topic ids are read and typed by a person.
+TOPIC_ALPHABET = "23456789abcdefghjkmnpqrstuvwxyz"
+TOPIC_ID_PREFIX = "tp-"
+TOPIC_ID_LEN = 4
+# Where each engine puts the session's own id in its shell environment.
+SESSION_ENV = {
+    "claude": "CLAUDE_CODE_SESSION_ID",
+    "codex": "CODEX_THREAD_ID",
+    "cursor": "CURSOR_CONVERSATION_ID",
+}

@@ -40,13 +40,13 @@ Why: Tiago runs many sessions at once. A long session that drifts through severa
 | `topic` | `parent` (the intent's id) | Opens a child topic. It becomes the current topic. |
 | `done` | | Closes a topic. |
 | `parked` | `ref` (the `park` id, when parked through `park`) | Sets a topic aside, unfinished. |
-| `forked` | `side` or `new_intent`, `backend`, `brief` (path) | A topic handed to a new session. |
+| `forked` | `parent`, `mode` (`side` or `new_intent`), `backend`, `brief` (path) | A topic handed to a new session. |
 
 A topic's status is the last of `done`, `parked` or `forked` recorded for it. With none of those, it is open.
 
-**Live entry.** The live registry row gains `intent` and `topic`, each `{id, title}` or null. `list` and the board show them. `summary` stays as it is: it is still the free-text focus line.
+**Live entry.** `list` and the board add `intent` and `topic` (each `{id, title}` or null) to every row, derived from the session's log when the list is built. They are not stored in `registry.json`, so a daemon running older code can't drop them. `summary` stays as it is.
 
-**Writes** take the registry's existing file lock, so two hooks or commands writing at once don't corrupt a log.
+**Writes** take a topics-wide lock (`topics/.lock`), not the registry lock, so two hooks or commands writing at once don't corrupt a log.
 
 ## 2. CLI (`agt registry …`)
 
@@ -70,7 +70,7 @@ Every command prints JSON on stdout and diagnostics on stderr, like the rest of 
 The reminder is added to the existing `plugin/scripts/registry-hook`, so `plugin/install` deploys it with the hooks already in place.
 
 - **On prompt (Claude Code `UserPromptSubmit`, Codex `UserPromptSubmit`):** `ping` also prints the additional-context JSON, with one line:
-  - with an intent: `Intent: <title> · Topic: <title or none>. If this prompt opens a new thread, run the topic-awareness drift check.`
+  - with an intent: `Intent: <title> (tp-…) · Topic: <title> (tp-…) or none. If this prompt changes the subject, run the topic-awareness drift check.`
   - without one: `No intent set for this session. Once the first prompt makes it clear, set it: agt registry intent "<title>".`
 - **On session start:** `ensure` adds the same line to the SessionStart context it already prints.
 - **Cursor's own agent:** its `beforeSubmitPrompt` can only return `continue` and `user_message` (Cursor forum, 2026), so the line goes only in the `sessionStart` `additional_context`, which has reported bugs. This is a known limit. Claude Code running inside Cursor uses Claude Code's hooks and is not affected.
@@ -82,7 +82,7 @@ The reminder is added to the existing `plugin/scripts/registry-hook`, so `plugin
 
 - Set the intent once the first prompt makes it clear: one line, the outcome the session exists for.
 - Open a new topic when the main line moves on. Mark a topic done when it is done.
-- **Drift check**, run when a prompt or the agent's own work opens a new thread:
+- **Drift check**, run only when the work changes subject (a prompt, or the agent's own work):
 
 | The new thread is… | Then |
 |---|---|
@@ -111,7 +111,7 @@ The reminder is added to the existing `plugin/scripts/registry-hook`, so `plugin
 
 Unit tests sit beside the existing ones in `modules/registry/tests/`. The **black-box suite** is the part left behind for re-checking this feature. It touches only the public surfaces: `agt` commands, the hook script fed hook JSON on stdin, and the files on disk. It never imports the package.
 
-**Tier 1, `tests/blackbox/test_topics_cli.py`.** Fast, needs no agent, run with `pytest tests/blackbox/test_topics_cli.py`. Each test uses a temp `AGENT_REGISTRY_PATH`.
+**Tier 1, `tests/blackbox/test_topics_cli.py` and `tests/blackbox/test_topics_hook.py`.** Fast, needs no agent, run with `pytest tests/blackbox/test_topics_cli.py tests/blackbox/test_topics_hook.py`. Each test uses a temp `AGENT_REGISTRY_PATH`.
 
 - intent → topic → done → topics: the history comes back in order, and the statuses are right.
 - A second `intent` on the same session exits 4. `topic` with no intent exits 1. `--done` on an unknown id exits 2.

@@ -18,6 +18,10 @@ def _line(s: dict, *, indent: str = "") -> str:
         bits.append(s["title"].strip())
     elif (s.get("summary") or "").strip():
         bits.append(s["summary"].strip())
+    if s.get("intent"):
+        bits.append(f'intent:{s["intent"]["title"]}')
+    if s.get("topic"):
+        bits.append(f'topic:{s["topic"]["title"]}')
     pr = s.get("pr") or {}
     if pr.get("title"):
         bits.append(f'PR:"{pr["title"]}"')

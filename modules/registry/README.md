@@ -107,6 +107,26 @@ agent-registry self --type cursor --session-id "$SESSION_ID"
 
 Prints full session JSON including `registry_id` on success (exit 0). Exit 2 if no sidecar or the registry entry is gone.
 
+### intent / topic / topics / fork
+
+A session's intent (fixed) and its current topic (changes under the intent), kept in a per-session log at `topics/<type>/<session_id>.jsonl` next to the registry file. Prune and unregister never touch it. These commands run in the CLI process, not through the daemon. The session comes from `--type` and `--session-id`, or from the engine's env (`CLAUDE_CODE_SESSION_ID`, `CODEX_THREAD_ID`, `CURSOR_CONVERSATION_ID`).
+
+```bash
+agent-registry intent "Make inbox entries topic-aware"   # once per session; exit 4 if set
+agent-registry intent --adopt tp-7k3q                     # a forked child binds to its topic
+agent-registry topic "Decide where topic records live"    # exit 1 without an intent
+agent-registry topic --done [tp-…]                        # or --park [tp-…] --ref <park id>
+agent-registry topics [--session S | --open | --tree]
+agent-registry fork "Retry policy" --side --brief-file brief.md [--backend cursor|herdr|none]
+agent-registry topic-context                              # the hook's one-line reminder
+```
+
+`fork` takes exactly one of `--side` (continues the parent's intent) or `--new-intent`, and reads the brief from `--brief-file` or stdin. It writes the brief to `briefs/<tp-id>.md` and opens a visible session in `--dir` (default: the current directory). `cursor` (the default) brings the project window forward, then opens a Claude Code tab with the prompt filled in; you press Enter. `herdr` (the default when `HERDR_ENV=1`) splits a pane and starts the agent; if a Herdr step fails, the output has `launched: false` and an `error`. `none` only prints the prompt. Set `AGENT_REGISTRY_FORK_BACKEND` to `cursor`, `herdr` or `none` to pick the default backend regardless of `HERDR_ENV` (tests use `none` so a fork never opens a real tab). A missing `cursor` or `herdr` binary is reported the same way, not raised. `list` shows each row's `intent:` and `topic:`, derived from the session's log. The rules agents follow live in the `topic-awareness` skill.
+
+`topics` skips malformed events and reads the log with `errors="replace"`; an unreadable topics directory exits 3.
+
+Black-box checks: `.venv/bin/python -m pytest tests/blackbox/test_topics_cli.py tests/blackbox/test_topics_hook.py` (the hook file includes a `/bin/bash` 3.2 test); with real agents, `tests/blackbox/test_topics_agent.py`; by hand, `tests/blackbox/MANUAL.md`.
+
 ### summarize
 
 Fill an empty `summary` from session metadata (+ optional transcript) via local Ollama.
@@ -374,6 +394,7 @@ archive: /Users/you/.local/share/agent-registry/archive.jsonl
 | 1 | Usage / validation error (duplicate session, invalid status, empty update, prune without `--yes` or `--dry-run`, purge without `--yes`) |
 | 2 | Unknown `registry_id` or archive `session_id` not found |
 | 3 | I/O or corrupt registry/archive file |
+| 4 | Conflict (`intent` when the session already has one) |
 
 ## Agent skill
 
