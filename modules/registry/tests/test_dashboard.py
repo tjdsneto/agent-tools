@@ -248,3 +248,23 @@ def test_board_actions_in_script(tmp_registry):
         daemon.shutdown()
         daemon.server_close()
     assert claude.registry_id
+
+
+def test_board_renders_intent_and_topic(tmp_registry):
+    httpd = make_server("127.0.0.1", 0)
+    port = httpd.server_address[1]
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    try:
+        home = urllib.request.urlopen(f"http://127.0.0.1:{port}/").read().decode()
+    finally:
+        httpd.shutdown()
+    script = home[home.index("<script"):]
+    assert "function intentLine" in script
+    assert "sess.intent" in script and "sess.topic" in script
+    # null-safe: no intent -> no line; no topic -> intent only
+    assert "if (!intent) return" in script
+    assert 'class="meta intent-line"' in script
+    assert "intentLine(sess) +" in script
+    # agent-written titles go through esc()
+    assert "esc(intent)" in script and "esc(topic)" in script
+    assert "intent-line" in home[: home.index("<script")]

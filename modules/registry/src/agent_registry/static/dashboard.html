@@ -446,6 +446,7 @@
       overflow: hidden;
       text-overflow: ellipsis;
     }
+    .meta.intent-line .sep { margin: 0 0.4em; }
     .meta .status-word { color: var(--state); font-weight: 500; }
     .meta .mono, .ids .mono, .usage.mono {
       font-family: var(--mono);
@@ -1235,6 +1236,7 @@
           (titleText && summaryText && summaryText !== titleText
             ? '<div class="meta">' + esc(summaryText) + "</div>"
             : "") +
+          intentLine(sess) +
           '<div class="meta">' + metaBits(sess, {
             reason: opts.reason,
             statusLabel: shownStatus,
@@ -1247,6 +1249,21 @@
           ? '<div class="age" title="last ping ' + esc(ageIso || "") + '">' + esc(age) + "</div>"
           : "<div></div>") +
       "</div>"
+    );
+  }
+
+  function topicTitle(t) {
+    return (t && t.title && String(t.title).trim()) || "";
+  }
+
+  function intentLine(sess) {
+    const intent = topicTitle(sess.intent);
+    if (!intent) return "";
+    const topic = topicTitle(sess.topic);
+    const full = topic ? intent + " › " + topic : intent;
+    return (
+      '<div class="meta intent-line" title="' + esc(full) + '">' + esc(intent) +
+      (topic ? '<span class="sep">›</span>' + esc(topic) : "") + "</div>"
     );
   }
 
