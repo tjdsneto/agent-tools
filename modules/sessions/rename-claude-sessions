@@ -734,8 +734,21 @@ def run_all():
     log(f"{'─' * 50}")
 
 
+KNOWN_FLAGS = {"--current-only", "--dry-run", "--verbose", "--no-ai"}
+
+
 def main():
     global AI_TITLE_ENABLED
+    args = sys.argv[1:]
+    if "-h" in args or "--help" in args:
+        print(__doc__.strip())
+        return
+    # An unknown flag must not fall through to run_all(), which titles every idle session.
+    unknown = [a for a in args if a not in KNOWN_FLAGS]
+    if unknown:
+        print(f"rename-claude-sessions: unknown argument(s): {' '.join(unknown)} (try --help)", file=sys.stderr)
+        sys.exit(2)
+
     if "--no-ai" in sys.argv:
         AI_TITLE_ENABLED = False
 
