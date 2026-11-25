@@ -344,3 +344,15 @@ def test_filters_pick_a_type_and_a_project(conn, http):
     store.mark_read(conn, here["id"])
     _, page = _get(http, "/?history=1&kind=post")
     assert 'aria-current="page">History</a>' in page and here["id"] in page and "Filters, 1 on" in page
+
+
+def test_history_groups_entries_by_day(conn, http):
+    today = store.create_entry(conn, "post", validate_request({"title": "Today"}, "post"), script="cron")
+    before = store.create_entry(conn, "post", validate_request({"title": "Before"}, "post"), script="cron")
+    conn.execute("UPDATE entries SET created_at = now() - interval '1 day' WHERE id = %s", (before["id"],))
+    for e in (today, before):
+        store.mark_read(conn, e["id"])
+    _, body = _get(http, "/?history=1")
+    assert body.index("<h2>Today</h2>") < body.index(today["id"]) < body.index("<h2>Yesterday</h2>") < body.index(before["id"])
+    _, feed = _get(http, "/")
+    assert 'class="day"' not in feed

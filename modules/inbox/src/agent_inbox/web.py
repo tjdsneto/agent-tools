@@ -149,6 +149,9 @@ select {{ min-height: 44px; padding: 0 12px; border: 1px solid var(--field); bor
   .row .rid {{ display: none; }}
 }}
 .row .chips {{ grid-area: chips; display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }}
+.day h2 {{ position: sticky; top: 56px; z-index: 1; margin: 0 -16px; padding: 16px 16px 8px; background: var(--bg);
+  color: var(--mute); font-size: 13px; font-weight: 650; line-height: 1.2; }}
+.day:first-child h2 {{ padding-top: 4px; }}
 .empty {{ padding: 48px 0; text-align: center; color: var(--mute); }}
 .empty b {{ display: block; color: var(--ink); font-size: 17px; margin-bottom: 4px; }}
 .actions {{ position: sticky; bottom: 0; display: none; gap: 8px; margin: 0 -16px; padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
@@ -227,6 +230,7 @@ fieldset:disabled .opt, fieldset:disabled legend {{ color: var(--mute); cursor: 
   .row {{ grid-template-areas: "av title time" "av meta chips"; }}
   .row .chips {{ justify-content: flex-end; margin-top: 0; }}
   .list {{ margin: 0; border-top: 1px solid var(--line); }}
+  .day h2 {{ margin: 0; padding-inline: 0; }}
   .actions {{ margin: 0; padding-inline: 0; }}
   .title {{ font-size: 26px; }}
 }}
@@ -448,6 +452,42 @@ def _clock(value) -> str:
     return f"{when.strftime('%b')} {when.day}"
 
 
+def _hour(value) -> str:
+    when = _local(value)
+    return when.strftime("%H:%M") if when else ""
+
+
+def _day(value) -> str:
+    """Today, Yesterday, "Mon, Nov 23", and the year once it is not this one."""
+    when = _local(value)
+    if when is None:
+        return "Undated"
+    today = datetime.now(LOCAL).date()
+    gap = (today - when.date()).days
+    if gap == 0:
+        return "Today"
+    if gap == 1:
+        return "Yesterday"
+    label = f"{when.strftime('%a')}, {when.strftime('%b')} {when.day}"
+    return label if when.year == today.year else f"{label}, {when.year}"
+
+
+def _by_day(rows: list[dict]) -> str:
+    """History, one list per day under a heading that sticks below the bar."""
+    groups: list[tuple[str, list[dict]]] = []
+    for row in rows:
+        label = _day(row.get("created_at"))
+        if not groups or groups[-1][0] != label:
+            groups.append((label, []))
+        groups[-1][1].append(row)
+    return "".join(
+        f'<section class="day"><h2>{_esc(label)}</h2><ul class="list">'
+        + "".join(_card(row, by_day=True) for row in items)
+        + "</ul></section>"
+        for label, items in groups
+    )
+
+
 def _ago(value) -> str:
     when = _local(value)
     if when is None:
@@ -514,7 +554,7 @@ def _bar(left: str, count: int | None, tools: str = "") -> str:
     return f'<header class="bar"><div class="bar-in">{left}{right}</div></header>'
 
 
-def _card(row: dict, *, pick: bool = True, current: bool = False) -> str:
+def _card(row: dict, *, pick: bool = True, current: bool = False, by_day: bool = False) -> str:
     engine = (row.get("asker") or {}).get("engine") or ""
     answer = row.get("answer") or {}
     said = f"You: {_shown(row, answer.get('value'))}" if row["kind"] == "ask" and answer else ""
@@ -528,7 +568,7 @@ def _card(row: dict, *, pick: bool = True, current: bool = False) -> str:
     return (
         f'<li class="item">{box}'
         f'<a class="row{unread}" href="/e/{_esc(row["id"])}"{here}>{_avatar(row)}<b>{_esc(row["title"])}</b>'
-        f'<time>{_esc(_clock(row.get("created_at")))}</time>'
+        f'<time>{_esc(_hour(row.get("created_at")) if by_day else _clock(row.get("created_at")))}</time>'
         f'<small>{meta}<span class="rid"> · <span class="id">{_esc(row["id"])}</span></span></small>'
         f'<span class="chips">{_urgent(row)}{_chip(row)}</span></a>'
         "</li>"
@@ -604,9 +644,10 @@ def _feed_page(
     line = f'<p class="notice warn">{_esc(banner)}</p>' if banner else ""
     if rows:
         body = (
-            '<form method="post" action="/batch"><ul class="list">'
-            + "".join(_card(row) for row in rows)
-            + '</ul><div class="actions">'
+            '<form method="post" action="/batch">'
+            + (_by_day(rows) if _query_value(qs, "history") == "1"
+               else '<ul class="list">' + "".join(_card(row) for row in rows) + "</ul>")
+            + '<div class="actions">'
             '<button class="btn danger" type="submit" name="action" value="withdraw">Withdraw</button>'
             '<button class="btn" type="submit" name="action" value="dismiss">Dismiss</button>'
             "</div></form>"
