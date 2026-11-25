@@ -489,10 +489,14 @@ Softly rounded rectangles for anything you type into or press (10px), slightly s
 ### Feed rows
 - **Style:** a 44px checkbox column, then the row: avatar, 600-weight title, right-aligned 13px time, a 14px Grey Meta line "project · engine · You: <answer> · id" (the answer part only once answered, like a chat preview), and the chips. 72px minimum, hairline below.
 - **States:** hover fills with Cool Surface. An unread post shows an 8px Action Blue dot before the title. Order is open questions, then unread posts, then the rest. History is newest first and grouped by day: a 13px/650 Grey Meta heading (Today, Yesterday, "Sun, Nov 22", with the year once it is not this one) that sticks below the bar, and rows under it show only the time.
+- **Context line:** when the row's entry has a topic path, a 12px Grey Meta line above the title names its last two steps, "Intent › Topic", with "… ›" in front of a longer path. One line; on a narrow row the middle name is cut with an ellipsis first and the topic keeps its room. The full path is its tooltip. Rows without a path have no line and keep their height.
+- **Group by:** the filter panel's Group by (none, intent, topic tree) splits the feed into sections under 13px/650 Grey Meta headings that stick below the bar, one line each, "Intent · project". Topic tree nests forked intents one level under their root with a 13px/600 sub-heading, indented 32px (16px on a phone). Sections with an open question come first; "No topic" is last. Rows inside are unchanged. The choice is kept in the `ib_group` cookie and also applies to History, where the sections replace the day headings.
 - **Empty:** centred Grey Meta text under a 17px ink "Nothing here".
 
 ### Entry header
 - Title, then the meta line (small avatar plus "project · engine · time · ago"), then a chip line (Urgent if any, the state chip, then "priority · id" in Grey Meta with the id in mono), then the summary in a Cool Surface panel (12px radius, 14px 16px padding).
+
+- When the entry has a topic path, it shows first, above the title, as a 14px Grey Meta breadcrumb (root intent first, "›" between steps) that wraps on a phone.
 
 ### Option rows
 - **Style:** 52px rows of a 20px radio or checkbox (Action Blue when checked), the label, an optional 14px description under it, and an optional "Recommended" tag right-aligned in Resumable Blue ink at 600. Hairline between rows, none after the last.
@@ -522,6 +526,9 @@ Softly rounded rectangles for anything you type into or press (10px), slightly s
 ### Conversation bubbles
 - **Style:** up to 85% wide, 8px 12px padding, 16px radius with a 4px tail corner. The agent's replies sit left on Cool Surface; the person's follow-ups sit right on My Bubble blue. A 12px tabular timestamp sits right-aligned under the text, Quiet Grey ink for the agent, Resumable Blue ink for the person. The person's bubbles end with delivery ticks after the time: one while the follow-up waits, two once the session has it (its seq is at or below the entry's delivered_seq).
 - **Follow up:** below the thread, a one-line textarea and a secondary "Send" button side by side, both 48px.
+
+### On this topic
+- Closes the entry page when other entries share its topic, after the follow-up form: a 16px heading, then up to 10 rows, newest first, each a 48px link with the title (550, one line, ellipsis) on the left and the state chip plus a 13px Grey Meta age on the right. Hairline between rows, none after the last; hover underlines the title.
 
 ### Delivery ticks
 - **Character:** Telegram's grammar for "it reached them".

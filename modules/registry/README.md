@@ -119,11 +119,15 @@ agent-registry topic --done [tp-…]                        # or --park [tp-…]
 agent-registry topics [--session S | --open | --tree]
 agent-registry fork "Retry policy" --side --brief-file brief.md [--backend cursor|herdr|none]
 agent-registry topic-context                              # the hook's one-line reminder
+agent-registry topic-path [--topic tp-…]                  # root-first path for the session, or from a topic; null without an intent
+agent-registry topic-note asked|posted|answered|closed --topic tp-… --entry ib-… [--title|--value --via|--state] [--type T --session-id S]
 ```
 
 `fork` takes exactly one of `--side` (continues the parent's intent) or `--new-intent`, and reads the brief from `--brief-file` or stdin. It writes the brief to `briefs/<tp-id>.md` and opens a visible session in `--dir` (default: the current directory). `cursor` (the default) brings the project window forward, then opens a Claude Code tab with the prompt filled in; you press Enter. `herdr` (the default when `HERDR_ENV=1`) splits a pane and starts the agent; if a Herdr step fails, the output has `launched: false` and an `error`. `none` only prints the prompt. Set `AGENT_REGISTRY_FORK_BACKEND` to `cursor`, `herdr` or `none` to pick the default backend regardless of `HERDR_ENV` (tests use `none` so a fork never opens a real tab). A missing `cursor` or `herdr` binary is reported the same way, not raised. `list` shows each row's `intent:` and `topic:`, derived from the session's log. The rules agents follow live in the `topic-awareness` skill.
 
 `topics` skips malformed events and reads the log with `errors="replace"`; an unreadable topics directory exits 3.
+
+`topic-path` prints `[{id, title, kind}, …]` from the root intent down to the session's current topic (or its intent), following parent links across sessions and forks; `kind` is `intent` when some session holds that topic as its intent. A missing parent or a cycle ends the walk. An unknown `--topic` exits 2. `topic-note` is how the inbox records its activity in a topic's history: `asked` and `posted` take `--title`, `answered` takes `--value` (capped at 200 characters, on write and again on read) and `--via` (web, telegram, chat, cli), `closed` takes `--state` (withdrawn, expired, superseded). The note goes to the given session's log when that session holds the topic, otherwise to the log of the session that minted it. Notes never change a topic's status; `topics` shows them under each topic's `notes` (text fields are always str or null), and `topic --done` adds `open_questions`, the entry ids asked with no `answered` or `closed` note.
 
 Black-box checks: `.venv/bin/python -m pytest tests/blackbox/test_topics_cli.py tests/blackbox/test_topics_hook.py` (the hook file includes a `/bin/bash` 3.2 test); with real agents, `tests/blackbox/test_topics_agent.py`; by hand, `tests/blackbox/MANUAL.md`.
 

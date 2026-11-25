@@ -29,7 +29,7 @@ It's added with `ALTER TABLE entries ADD COLUMN IF NOT EXISTS topic_path jsonb` 
 
 **How it's filled.**
 - An `ask` or `post` with `--engine` and `--session-id` runs `agt registry topic-path --type <engine> --session-id <id>`. It prints the path as JSON, or `null`.
-- A `--script` asker may put `"topic": "tp-xxxx"` in its request JSON. The inbox then runs `agt registry topic-path --topic tp-xxxx`, which builds the path up from that topic.
+- A request may name a topic with `"topic": "tp-xxxx"`. The inbox then runs `agt registry topic-path --topic tp-xxxx`, which builds the path up from that topic. A named topic wins over the session's own path; it is how a `--script` asker joins a discussion, and any asker may use it.
 - An unknown topic id is a validation error (exit 1), because the asker named it on purpose.
 - A registry that's missing, too slow (2 s timeout) or failing is not an error. The entry is created with `topic_path = null`, and a one-line warning goes to stderr.
 
@@ -51,19 +51,19 @@ All three carry `topic` (`{id, title}`) like every other event. They never chang
 - `ask` and `post` write `asked` or `posted` after the entry commits.
 - `answer` (`store.answer`, which the web, Telegram and chat paths all go through) writes `answered` after the answer commits.
 
-All three are best effort. A failure is logged to stderr and the inbox operation still succeeds. The plan picks between a background call and the inline 2 s timeout; nothing needs a retry queue.
+All three are best effort. A failure is logged to stderr and the inbox operation still succeeds. They run inline, after the commit, with the same 2 s timeout; nothing needs a retry queue.
 
 **Open questions at done.**
 - `agt registry topic --done` still succeeds when the topic has `asked` events with no matching `answered`. It adds `"open_questions": ["ib-…"]` to its JSON output.
 - The topic-awareness skill tells the agent: if `open_questions` isn't empty, withdraw each question that's no longer needed (`agt inbox withdraw`), or say in chat that it's still waiting.
-- Withdrawn, expired and superseded asks are not "open". So the inbox also writes a `closed` note (`entry`, `state`) when an ask leaves `open` without an answer. Then the registry can tell an ask that's still waiting from one that's gone.
+- Withdrawn, expired and superseded asks are not "open". So the inbox also writes a `closed` note (`entry`, `state`: `withdrawn`, `expired` or `superseded`) when an ask leaves `open` without an answer. Then the registry can tell an ask that's still waiting from one that's gone.
 
 ## 3. The feed
 
 - **Context line.** Each row shows the last two elements of the path, small and muted, above the title: `Intent › Topic`, or just `Intent`. If the path is longer than two, the line starts with `…`. Rows without a path show no line. The full path goes in a `title` attribute. Text is escaped like every other agent-written string.
 - **Group by.** The filter menu gets "Group by: none | intent | topic tree". The choice is remembered in a cookie, so it works without JS, survives the page's server-sent-event reloads, and works on the phone. None is today's feed, unchanged.
   - **Intent:** one section per intent (the last path element whose `kind` is `intent`, which is the asking session's own intent), titled with the intent and its project. Rows inside keep the current order.
-  - **Topic tree:** sections by root (`path[0]`), with forked intents nested under it as sub-sections.
+  - **Topic tree:** sections by root (`path[0]`), with forked intents nested under it as sub-sections. Nesting is one level: a fork of a fork is also a sub-section of the root. Group by applies in History too, where its sections replace the day headings.
   - Sections follow the feed's existing priority: a section holding an open question comes before one holding only reports.
   - Entries without a path go into a last "No topic" section.
 - **Filter.** An intent filter lists the intents present in the current view, next to the existing filters.
@@ -72,7 +72,7 @@ All three are best effort. A failure is logged to stderr and the inbox operation
 ## 4. The entry page
 
 - The full path shows as a breadcrumb above the title.
-- Under the thread, "On this topic" lists the other entries whose path ends in the same topic (title, state, age), newest first, up to 10. Each one links to its page.
+- At the end of the page, after the follow-up form, "On this topic" lists the other entries whose path ends in the same topic (title, state, age), newest first, up to 10. Each one links to its page.
 
 ## 5. Registry additions
 
@@ -116,4 +116,4 @@ agt registry topic-note closed --topic tp-x --entry ib-y --state withdrawn [--ty
 
 - **Stale titles.** A snapshot keeps the old name if a topic is renamed later. Nothing in spec 1 renames topics today, so this is accepted.
 - **Silent gaps.** A best-effort note that fails leaves the history without that event. The feed is unaffected. Spec 3 must tolerate an `answered` with no `asked`, and the reverse.
-- **Latency.** The extra registry call adds to every `agt inbox ask`. The 2 s timeout bounds it. The plan should measure it on this machine and say what it found.
+- **Latency.** Each `agt inbox ask` and `post` makes two registry calls (path, then note), each bounded by the 2 s timeout. Measured on this machine: median 0.38 s with the registry against 0.20 s without, about 0.18 s more.
