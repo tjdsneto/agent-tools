@@ -155,8 +155,13 @@ select {{ min-height: 44px; padding: 0 12px; border: 1px solid var(--field); bor
 .row.unread b::before {{ content: ""; display: inline-block; width: 8px; height: 8px; margin: 0 8px 2px 0; border-radius: 50%; background: var(--accent); }}
 .row small {{ grid-area: meta; color: var(--mute); font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
 .row time {{ grid-area: time; justify-self: end; color: var(--mute); font-size: 13px; font-variant-numeric: tabular-nums; }}
-.row .ctx {{ grid-area: ctx; min-width: 0; color: var(--mute); font-size: 12px; line-height: 1.3;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
+.row .ctx {{ grid-area: ctx; display: flex; min-width: 0; color: var(--mute); font-size: 12px; line-height: 1.3; white-space: nowrap; }}
+.row .ctx-more {{ flex: none; }}
+.row .ctx-lead {{ flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }}
+.row .ctx-last {{ flex: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }}
+/* A long last name still leaves the names before it room for an ellipsis. */
+.row .ctx-lead + .ctx-last {{ max-width: calc(100% - 1.5em); }}
+.row .ctx-more + .ctx-lead + .ctx-last {{ max-width: calc(100% - 3.5em); }}
 .row.has-ctx {{ grid-template-areas: "av ctx ctx" "av title time" "av meta meta" "av chips chips"; }}
 @media (max-width: 759px) {{
   .row b {{ white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }}
@@ -648,8 +653,16 @@ def _card(row: dict, *, pick: bool = True, current: bool = False, by_day: bool =
     meta = " · ".join(_esc(bit) for bit in (_who(row), engine, said) if bit)
     unread = " unread" if row["kind"] == "post" and row["state"] == "unread" else ""
     # The discussion the row belongs to, above its title: the last two names of its topic path.
-    ctx = grouping.context(grouping.path_of(row))
-    line = f'<span class="ctx" title="{_esc(ctx[1])}">{_esc(ctx[0])}</span>' if ctx else ""
+    path = grouping.path_of(row)
+    ctx = grouping.context(path)
+    line = ""
+    if ctx:
+        # One span per part, so a narrow row ellipsizes the name in the middle, never the topic.
+        names = [grouping.name(node) for node in path]
+        more = '<span class="ctx-more">…&nbsp;›&nbsp;</span>' if len(names) > 2 else ""
+        lead = f'<span class="ctx-lead">{_esc(names[-2])}</span>' if len(names) > 1 else ""
+        last = f'<span class="ctx-last">{"&nbsp;› " if lead else ""}{_esc(names[-1])}</span>'
+        line = f'<span class="ctx" title="{_esc(ctx[1])}">{more}{lead}{last}</span>'
     has = " has-ctx" if ctx else ""
     box = (
         f'<label class="pick"><input type="checkbox" name="id" value="{_esc(row["id"])}" aria-label="Select {_esc(row["id"])}"></label>'
