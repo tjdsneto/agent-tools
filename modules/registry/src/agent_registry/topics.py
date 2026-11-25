@@ -176,6 +176,45 @@ def find_topic(topic_id: str) -> dict | None:
     return None
 
 
+def _index() -> tuple[dict[str, dict], set[str]]:
+    """One pass over every log: each minted topic (the first minting event wins, as in
+    find_topic) and the ids some session holds as its intent."""
+    minted: dict[str, dict] = {}
+    intents: set[str] = set()
+    for _agent_type, _session_id, events in _all_logs():
+        for ev in events:
+            tid = ev["topic"]["id"]
+            if ev.get("event") in MINTING and tid not in minted:
+                minted[tid] = {"title": ev["topic"].get("title"), "parent": ev.get("parent")}
+        held = _replay(events)["intent"]
+        if held:
+            intents.add(held["id"])
+    return minted, intents
+
+
+def path_from(topic_id: str) -> list[dict] | None:
+    """The topic and its ancestors, root first, as {id, title, kind}. A missing parent or a
+    cycle ends the walk. None when the topic itself was never minted."""
+    minted, intents = _index()
+    chain: list[dict] = []
+    seen: set[str] = set()
+    tid: str | None = topic_id
+    while tid and tid in minted and tid not in seen:
+        seen.add(tid)
+        node = minted[tid]
+        chain.append({"id": tid, "title": node["title"], "kind": "intent" if tid in intents else "topic"})
+        tid = node["parent"]
+    return list(reversed(chain)) or None
+
+
+def session_path(agent_type: str, session_id: str) -> list[dict] | None:
+    """Root intent down to the session's current topic, or to its intent when it has none."""
+    st = state(agent_type, session_id)
+    if not st["intent"]:
+        return None
+    return path_from((st["topic"] or st["intent"])["id"])
+
+
 def set_intent(agent_type: str, session_id: str, title: str) -> dict:
     title = _title(title)
     with _locked():
