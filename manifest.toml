@@ -1,0 +1,240 @@
+# Every tool agent-tools offers, once.
+#   install.sh links each [skill.*] into its engines' skill dirs.
+#   scripts/manifest readme writes the README's tool tables from [group.*] and [[tool]].
+#   tests/test_manifest.sh fails when this drifts from skills/, agt/agt or the README.
+#
+# works_in uses the README legend: C Claude Code, Cu Cursor, Cx Codex, H Hermes.
+
+[engines]
+claude = "~/.claude/skills"
+cursor = "~/.cursor/skills"
+codex = "~/.codex/skills"
+hermes = "~/.hermes/skills"   # linked only when Hermes is installed
+
+[group.see]
+title = "See"
+tagline = "what's running and what each session is on"
+
+[group.talk]
+title = "Talk"
+tagline = "between the person and their sessions"
+
+[group.keep-going]
+title = "Keep going"
+tagline = "across token limits, sleep and full context"
+
+[group.wrap-up]
+title = "Wrap up"
+tagline = "close a session without losing anything"
+
+[group.learn]
+title = "Learn"
+tagline = "improve the tools from how sessions went"
+
+# --- See
+
+[[tool]]
+name = "registry"
+group = "see"
+summary = "Presence for every session: where it runs, its intent and topics, forks, and waking a session by id. Engine hooks keep it current."
+cli = ["agt registry"]
+skills = ["session-awareness"]
+works_in = "C Cu Cx"
+
+[[tool]]
+name = "sessions"
+group = "see"
+summary = "List, report on, rename and auto-title sessions; find which session worked on a path, branch or commit."
+cli = ["agt sessions"]
+skills = ["session-awareness", "claude-session-mngr", "session-locate"]
+works_in = "C"
+
+# --- Talk
+
+[[tool]]
+name = "conversation"
+group = "talk"
+summary = "How every session talks to the person: one intent per session, named topics, self-contained decision cards, one reply ending. Its core is injected at session start."
+skills = ["conversation"]
+works_in = "C Cu Cx"
+
+[[tool]]
+name = "inbox"
+group = "talk"
+summary = "Questions and reports that wait for an answer, reach the phone (web and Telegram), and wake the asking session with the answer. Hermes answers through the `inbox` skill."
+cli = ["agt inbox"]
+skills = ["agent-inbox", "inbox"]
+works_in = "C Cu Cx H"
+
+[[tool]]
+name = "say"
+group = "talk"
+summary = "A macOS prompt for attention, a choice or short text; can speak."
+cli = ["agt say"]
+skills = ["agent-say"]
+works_in = "C Cu"
+
+[[tool]]
+name = "read"
+group = "talk"
+summary = "Reads text or a file aloud (Kokoro)."
+cli = ["agt read"]
+skills = ["agent-read"]
+works_in = "C Cu"
+
+[[tool]]
+name = "visual-ask"
+group = "talk"
+summary = "Asks with a page to look at: mockups, diagrams, comparisons. Moving into the inbox ([#10](https://github.com/tjdsneto/agent-tools/issues/10))."
+skills = ["visual-ask"]
+works_in = "C Cu"
+
+[[tool]]
+name = "recover-pasted-files"
+group = "talk"
+summary = "Saves an image or file pasted into the chat as a real file."
+skills = ["recover-pasted-files"]
+works_in = "C"
+
+# --- Keep going
+
+[[tool]]
+name = "waker"
+group = "keep-going"
+summary = "Wakes registered long-running sessions when the token window resets; survives sleep and closed terminals."
+cli = ["agt waker"]
+skills = ["session-waker"]
+works_in = "C"
+
+[[tool]]
+name = "budget"
+group = "keep-going"
+summary = "Reads the account's 5-hour and weekly usage windows."
+cli = ["agt budget"]
+skills = ["check-usage"]
+works_in = "C Cu"
+
+[[tool]]
+name = "fresh-continuation"
+group = "keep-going"
+summary = "Banks a slim continuation and prints the command to resume in a fresh session."
+skills = ["fresh-continuation"]
+works_in = "C Cu"
+
+[[tool]]
+name = "chatgpt-handoff"
+group = "keep-going"
+summary = "Hands work to ChatGPT on the phone through Tray, and picks the answer back up."
+skills = ["chatgpt-handoff", "chatgpt-pickup"]
+works_in = "C Cu (pickup: Cx)"
+
+# --- Wrap up
+
+[[tool]]
+name = "closing-session-sweep"
+group = "wrap-up"
+summary = "Lists loose ends before stopping: unpushed work, running timers, held locks, open topics."
+skills = ["closing-session-sweep"]
+works_in = "C Cu"
+
+[[tool]]
+name = "end-session"
+group = "wrap-up"
+summary = "Ends the Claude Code process, on an explicit request only."
+skills = ["end-session"]
+works_in = "C"
+
+[[tool]]
+name = "session hooks"
+group = "wrap-up"
+summary = "Titles the session and plays a sound when a turn ends; deregisters from the waker on exit."
+cli = ["agt sessions autorename", "agt sessions stop-sound", "agt waker-deregister"]
+works_in = "C"
+
+# --- Learn
+
+[[tool]]
+name = "glue-miner"
+group = "learn"
+summary = "Mines transcripts for glue code that keeps being rewritten and commands that keep failing; weekly report."
+cli = ["agt glue"]
+skills = ["glue-miner"]
+works_in = "C Cu (reads Cx transcripts too)"
+
+[[tool]]
+name = "session-review"
+group = "learn"
+summary = "Finds redundant reads, excess tool calls and bloated context in a transcript."
+cli = ["agt sessions review"]
+skills = ["session-review"]
+works_in = "C"
+
+[[tool]]
+name = "tool-registry"
+group = "learn"
+summary = "What CLIs, models and skills are actually available in this environment."
+cli = ["agt tools"]
+skills = ["tool-registry"]
+works_in = "C Cu"
+
+# --- Skills: which engines' skill dirs install.sh links each into.
+
+[skill.session-awareness]
+engines = ["claude", "cursor"]
+
+[skill.claude-session-mngr]
+engines = ["claude"]
+
+[skill.session-locate]
+engines = ["claude", "cursor"]
+
+[skill.conversation]
+engines = ["claude", "cursor", "codex"]
+
+[skill.agent-inbox]
+engines = ["claude", "cursor", "codex"]
+
+[skill.inbox]
+engines = ["hermes"]
+
+[skill.agent-say]
+engines = ["claude", "cursor"]
+
+[skill.agent-read]
+engines = ["claude", "cursor"]
+
+[skill.visual-ask]
+engines = ["claude", "cursor"]
+
+[skill.recover-pasted-files]
+engines = ["claude"]
+
+[skill.session-waker]
+engines = ["claude", "cursor"]
+
+[skill.check-usage]
+engines = ["claude", "cursor"]
+
+[skill.fresh-continuation]
+engines = ["claude", "cursor"]
+
+[skill.chatgpt-handoff]
+engines = ["claude", "cursor"]
+
+[skill.chatgpt-pickup]
+engines = ["claude", "cursor", "codex"]   # ChatGPT on the Mac runs it through Codex
+
+[skill.closing-session-sweep]
+engines = ["claude", "cursor"]
+
+[skill.end-session]
+engines = ["claude"]
+
+[skill.glue-miner]
+engines = ["claude", "cursor"]
+
+[skill.session-review]
+engines = ["claude"]
+
+[skill.tool-registry]
+engines = ["claude", "cursor"]
