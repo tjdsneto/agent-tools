@@ -1,0 +1,114 @@
+#!/usr/bin/env python3
+"""Measure a reply against the conversation skill's density rules.
+
+check-density < reply.md                     report each measure (exit 1 if any is over its limit)
+check-density --previous last.md < reply.md  also flag a card repeated unchanged from the last reply
+
+The limits are rough, calibrated on a handful of real replies: a pass means none of the
+measured habits showed up, not that the reply reads well.
+"""
+import argparse
+import difflib
+import re
+import sys
+
+LIMITS = {
+    "body_items": 3,    # list items and table rows above the ending
+    "body_words": 250,
+    "body_code": 4,     # code spans above the ending, answer tokens aside
+    "ids": 5,           # distinct issue numbers, PR numbers and commit SHAs in the reply
+    "id_mentions": 8,
+    "card_extra_lines": 0,  # lines under a card: a nested list or a second paragraph
+    "repeated_cards": 0,
+}
+
+ITEM = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+")
+TABLE_ROW = re.compile(r"^\s*\|")
+TABLE_RULE = re.compile(r"^\s*\|[\s:|-]+\|\s*$")
+CARD = re.compile(r"^\s*- F\d+\.\s*")
+CODE = re.compile(r"`[^`\n]+`")
+TOKEN = re.compile(r"`[^`\n]+` \([a-z]\)")
+URL = re.compile(r"\]\([^)]*\)|https?://\S+")
+IDS = (
+    re.compile(r"(?<![\w.:/-])0\d{3}(?![\w-]|\.\d)"),  # zero-padded issue numbers: 0182
+    re.compile(r"(?<![\w&])#\d+\b"),                  # PR and issue numbers: #92
+    re.compile(r"(?<![\w-])(?=[0-9a-f]*[a-f])(?=[0-9a-f]*\d)[0-9a-f]{7,40}(?![\w-])"),  # commit SHAs
+)
+
+
+def split_reply(text):
+    """(body, ending). The ending starts at a `---` rule followed by **Summary:**, or at **Summary:**."""
+    lines = text.splitlines()
+    for i, line in enumerate(lines):
+        if line.strip() == "---" and any(l.startswith("**Summary:**") for l in lines[i + 1:i + 3]):
+            return "\n".join(lines[:i]), "\n".join(lines[i:])
+    for i, line in enumerate(lines):
+        if line.startswith("**Summary:**"):
+            return "\n".join(lines[:i]), "\n".join(lines[i:])
+    return text, ""
+
+
+def cards(ending):
+    """{card line: the indented lines under it}, for every F-item in the ending."""
+    found, current = {}, None
+    for line in ending.splitlines():
+        if CARD.match(line):
+            current = line
+            found[current] = []
+        elif not line.strip():
+            continue
+        elif line[0].isspace() and current is not None:
+            found[current].append(line)
+        else:
+            current = None
+    return found
+
+
+def card_key(line):
+    """A card's text without its F-number and links, for comparing across replies."""
+    return URL.sub("", CARD.sub("", line)).strip()
+
+
+def measure(text, previous=None):
+    body, ending = split_reply(text)
+    body_lines = body.splitlines()
+    items = [l for l in body_lines if ITEM.match(l) or (TABLE_ROW.match(l) and not TABLE_RULE.match(l))]
+    body_code = len(CODE.findall(TOKEN.sub("", body)))
+    plain = URL.sub("", text)
+    mentions = [m.group(0) for pattern in IDS for m in pattern.finditer(plain)]
+    found = cards(ending)
+    repeated = []
+    if previous:
+        before = [card_key(c) for c in cards(split_reply(previous)[1])]
+        for c in found:
+            key = card_key(c)
+            if any(difflib.SequenceMatcher(None, key, b).ratio() > 0.9 for b in before):
+                repeated.append(c)
+    return {
+        "body_items": len(items),
+        "body_words": len(re.findall(r"\S+", body)),
+        "body_code": body_code,
+        "ids": len(set(mentions)),
+        "id_mentions": len(mentions),
+        "card_extra_lines": sum(len(v) for v in found.values()),
+        "repeated_cards": len(repeated),
+    }
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--previous", help="the reply before this one, to catch a card repeated unchanged")
+    args = parser.parse_args()
+    previous = open(args.previous).read() if args.previous else None
+    result = measure(sys.stdin.read(), previous)
+    over = False
+    for name, value in result.items():
+        limit = LIMITS[name]
+        ok = value <= limit
+        over |= not ok
+        print(f"{'ok  ' if ok else 'OVER'} {name}: {value} (limit {limit})")
+    return 1 if over else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
