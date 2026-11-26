@@ -28,6 +28,8 @@ What a test can't see. Run after any change to forking or the hook. Record the d
 
 ## Conversation skill (spec 4) — real-agent runs, 2026-11-26
 
+Rerun these (`RUN_REAL_AGENTS=1`, a few minutes, real tokens) after any of: an edit to `skills/conversation/CORE.md` or `SKILL.md`; a Claude Code, Codex or Cursor update; a maestro update (`install.sh` warns when conduct changed the parts conversation overrides). One pass shows an agent can follow the rules, not that it reliably does.
+
 `RUN_REAL_AGENTS=1 modules/inbox/.venv/bin/python -m pytest modules/inbox/tests/blackbox/test_conversation_agent.py -v`, against the deployed hook (Claude plugin 0.4.0) and `agent_inbox_test`:
 
 - **Codex accepts SessionStart `additionalContext`:** passed. The injected marker came back from `codex exec`, so Codex gets the core like Claude and Cursor.
