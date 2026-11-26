@@ -126,6 +126,12 @@ Conduct is Justin's and is not edited here. Three layers keep his updates from s
 
 Updates only arrive when the marketplace is updated (`claude plugin marketplace update jtsternberg`; no auto-update is set for it in `~/.claude/settings.json`). Cursor's links point into the same clone, so both engines change at the same moment.
 
+Local additions to conduct, carried over from the retired Oslo persona, live in the full `SKILL.md` (loaded on demand, not in `CORE.md`), under "When you orchestrate":
+- **Approve before spawning.** Work out the split of work with Tiago first; nothing is spawned until he approves it.
+- **Every worker brief carries the dev-env claim rule:** a worker that runs tests in a main dir claims it first (`dev-env claim … --pid $$`), as the global instructions say.
+- **Check what's running with the registry:** `agt sessions` and the Topics tab, not a separate log.
+- **Close out at wrap:** finished workers' topics are closed, carry-overs are named in the summary. Conduct's triage sweep covers the rest.
+
 Proposed upstream, optional: a sentence in conduct that the human's own instructions about how replies end take precedence. That would make the override official instead of a conflict resolved by precedence.
 
 ## Out of scope
