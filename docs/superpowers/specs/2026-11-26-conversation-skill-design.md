@@ -9,7 +9,7 @@ A session's replies often end with a list of things for Tiago to decide. Each on
 The rules for how an agent talks to him are also spread out and partly in conflict:
 - **The global instructions** hold "Response density" and "Technical altitude", in three copies: Claude, Codex and Cursor, which have already drifted apart.
 - **The `topic-awareness` skill** holds the session intent, the topics under it, and forking.
-- **The `maestro-conduct` skill** holds a `Next for you:` line ("one action, never a menu") and a decisions ledger, which conflict with the F-numbered footer.
+- **The `conduct` skill** of Justin Sternberg's `maestro` plugin holds a `Next for you:` line ("one action, never a menu") and a decisions ledger, which conflict with the F-numbered footer. agent-tools used to keep a stale copy of it; since 77c5ee5 Claude uses the plugin itself, and Cursor links the plugin's files.
 
 ## Goal
 
@@ -19,8 +19,8 @@ One skill, `conversation`, owns how an agent talks to Tiago. Every decision it a
 
 | Question | Decision |
 |---|---|
-| One skill or several | One skill, `conversation`. It absorbs `topic-awareness`, maestro-conduct's "The human" section and decisions ledger, and the density rules from the global instructions. |
-| What stays in maestro-conduct | The orchestration rules: boss and doer, work orders, fresh agent per phase, waiting, verify before relaying, across repos. It points at `conversation` for everything said to the human. Oslo's ideas are being folded into maestro-conduct in another session; this spec doesn't touch them. |
+| One skill or several | One skill, `conversation`. It absorbs `topic-awareness` and the density rules from the global instructions, and it adopts the ideas of conduct's "The human" section and decisions ledger. |
+| maestro's conduct | Used as Justin ships it, never edited. `conversation` overrides its rules for talking to Tiago (section 6). Its orchestration rules apply unchanged. |
 | What stays global | "Don't claim untested properties" and "Review before handoff". They govern code comments, commits and PR text too, not only chat. Everything else listed in section 4 moves. |
 | Decisions per turn | At most **two** in chat, each self-contained. More than two: the rest go to the inbox, and chat says how many are waiting. Tiago chose two to try; revisit after real use. |
 | Where the ledger lives | In the inbox. Maestro's ledger section becomes the standard shape of an inbox question. The `/tmp/maestro/` file goes away. |
@@ -88,8 +88,8 @@ One ending for every session, replacing both the F-numbered footer and maestro's
 | From | What |
 |---|---|
 | `skills/topic-awareness/SKILL.md` | All of it: the intent, topics, forks, the drift check. `topic-awareness` is removed, and `install.sh` stops linking it. |
-| `skills/maestro-conduct/SKILL.md`, "The human" | The single-ending rule, answer aliases, "questions get assessments, directives get execution", "never cut for brevity". |
-| `skills/maestro-conduct/references/decisions-ledger.md` | The section shape and the rules, rewritten as the card and its inbox long form. The file is removed. |
+| maestro's conduct, "The human" (copied as ideas, not edited) | The single-ending rule, answer aliases, "questions get assessments, directives get execution", "never cut for brevity". |
+| maestro's `references/decisions-ledger.md` (same) | The section shape and the rules, rewritten as the card and its inbox long form. |
 | Global instructions, "Response density" | The ~3-item budget, saying where it might be wrong, the ending, long output to `./tmp/`, the `brief` / `deep` keywords. |
 | Global instructions, "Technical altitude" | The altitude rule, glossing on first use, the `mechanism` / `eli5` keywords. |
 | Global instructions, "Known ground" list | A reference file, `skills/conversation/references/known-ground.md`. "I'm familiar with X" now edits that file. |
@@ -116,6 +116,18 @@ A missing or unreadable `CORE.md` is not an error: the hook prints what it print
 
 Unattended runs (`claude -p` started by a script, with no human) get the same text. The skill says: no human in the chat means skip the ending and the cards; ask through `agt inbox --script` as the agent-inbox skill's "Unattended agents" section says.
 
+## 6. Living with upstream maestro
+
+Conduct is Justin's and is not edited here. Three layers keep his updates from silently overriding `conversation`:
+
+1. **The override is by role, not by quoted text.** `CORE.md` says: any other skill's rules for how to end a message, how to ask Tiago a decision, or where to keep decisions yield to this skill, for example conduct's `Next for you:` line and its `/tmp/maestro/` ledger. Its orchestration rules still apply. A reworded or renamed upstream section is still covered, because the rule names what it does, not its words.
+2. **A fingerprint check.** `skills/conversation/scripts/check-maestro` compares conduct's human-facing parts (its "The human" section and its ledger reference) with a baseline saved in `skills/conversation/references/maestro-baseline/`. A change prints the diff and exits 1. It runs in the conversation black-box suite and, as a warning only, in `install.sh`. A change means: reread it, decide whether the override still holds or there's something worth taking, then refresh the baseline in a commit.
+3. **A behaviour test.** A real Claude run with conduct loaded, asked for two decisions, must end the reply the `conversation` way, not with conduct's single `Next for you:` line. Rerun after any maestro update.
+
+Updates only arrive when the marketplace is updated (`claude plugin marketplace update jtsternberg`; no auto-update is set for it in `~/.claude/settings.json`). Cursor's links point into the same clone, so both engines change at the same moment.
+
+Proposed upstream, optional: a sentence in conduct that the human's own instructions about how replies end take precedence. That would make the override official instead of a conflict resolved by precedence.
+
 ## Out of scope
 
 - Moving "Clickable file links" and "Showing refs TO me" into the skill. They are about chat output too, but they are editor- and GitHub-specific; they can move later.
@@ -128,6 +140,7 @@ Unattended runs (`claude -p` started by a script, with no human) get the same te
 - **Codex:** a real `codex exec` run in a temp registry where the injected text includes a marker sentence, checked by asking the agent to repeat the marker. This settles the unverified Codex point.
 - **Real Claude run:** a scripted session that produces three decisions. The reply shows at most two cards, each with an `Intent › Topic` and aliases, plus a `+1 more waiting` line, and the inbox has three open entries under the topic. Wording varies, so the check looks for the structure, not sentences.
 - **Inbox:** the Topics page renders an `id` per topic, and a fragment opens that branch (unit test plus a screenshot at 390 px).
+- **Upstream maestro:** `check-maestro` passes against today's baseline and fails on an edited copy; the behaviour test in section 6.
 - **Instruction files:** after the move, a check that each removed heading is gone from all three files and that each moved rule appears in `CORE.md` or `SKILL.md`, so nothing is dropped in the move. Then read the three files end to end.
 
 ## Risks
@@ -135,4 +148,4 @@ Unattended runs (`claude -p` started by a script, with no human) get the same te
 - **Context cost.** `CORE.md` is injected in every session. It replaces the density sections it removes from the global files, so the net change should be small; the plan measures both.
 - **Inbox noise.** Every decision becomes an inbox entry, including ones Tiago answers in chat seconds later. They are marked answered at once, so they leave the feed, but History grows faster. If it's too much, raise the threshold: only overflow decisions go to the inbox.
 - **Withholding.** Showing two at a time means the agent chooses what Tiago sees first. The `+N more waiting` line keeps the rest visible.
-- **Concurrent edits.** Another session is folding Oslo into maestro-conduct. The implementation pulls the latest version first and changes only the parts that move.
+- **Upstream changes.** Justin can change conduct at any time. Section 6 covers how that is caught.
