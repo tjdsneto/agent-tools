@@ -52,7 +52,7 @@ link_skill() {
 
 for sk in session-waker agent-say agent-read glue-miner session-awareness session-locate \
           check-usage visual-ask fresh-continuation closing-session-sweep \
-          maestro-patient-waiting maestro-conduct tool-registry; do
+          maestro-patient-waiting maestro-conduct tool-registry chatgpt-handoff; do
   link_skill "$sk"
 done
 # Claude-only: they read Claude Code transcripts.
@@ -63,6 +63,8 @@ done
 link_skill agent-inbox "$HOME/.claude/skills" "$HOME/.cursor/skills" "$HOME/.codex/skills"
 # Every engine follows the topic rules, so Codex gets this one too.
 link_skill topic-awareness "$HOME/.claude/skills" "$HOME/.cursor/skills" "$HOME/.codex/skills"
+# ChatGPT on the Mac runs this one through Codex.
+link_skill chatgpt-pickup "$HOME/.claude/skills" "$HOME/.cursor/skills" "$HOME/.codex/skills"
 
 if [ -d "$HOME/.hermes/skills" ]; then
   mkdir -p "$HOME/.hermes/skills/inbox"
