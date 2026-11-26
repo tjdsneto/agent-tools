@@ -97,3 +97,5 @@ agt registry topics           # this session's history
 agt registry topics --open    # every open topic, every session
 agt registry topics --tree    # the topic tree across sessions, forks included
 ```
+
+Tiago reads the same tree on the inbox's Topics tab, with each topic's questions and each session's state, so a short, specific intent and topic title is what he scans there.
