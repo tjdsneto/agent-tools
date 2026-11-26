@@ -20,7 +20,7 @@ def test_claude_prompt_with_intent_and_topic(box):
     box.agt_json("registry", "topic", "Plan", *WHO)
     ctx = json.loads(_prompt(box).stdout)["hookSpecificOutput"]["additionalContext"]
     assert ctx.startswith(f"Intent: Ship it ({tid}) · Topic: Plan (tp-")
-    assert ctx.endswith("run the topic-awareness drift check.")
+    assert ctx.endswith("run the conversation drift check.")
 
 
 def test_pretooluse_ping_prints_nothing(box):

@@ -425,9 +425,17 @@ def context_line(agent_type: str, session_id: str) -> str:
         )
     intent = st["intent"]
     topic = f"{st['topic']['title']} ({st['topic']['id']})" if st["topic"] else "none"
+    asked = ""
+    if st["topic"]:
+        try:  # best effort: a count that can't be read never breaks the line
+            n = len(open_questions(st["topic"]["id"]))
+        except (OSError, ValueError):
+            n = 0
+        if n:
+            asked = f" · {n} open question{'' if n == 1 else 's'}"
     return (
-        f"Intent: {intent['title']} ({intent['id']}) · Topic: {topic}. "
-        "If this prompt changes the subject, run the topic-awareness drift check."
+        f"Intent: {intent['title']} ({intent['id']}) · Topic: {topic}{asked}. "
+        "If this prompt changes the subject, run the conversation drift check."
     )
 
 

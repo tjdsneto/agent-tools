@@ -76,6 +76,22 @@ def test_topic_context_is_a_plain_line(tmp_registry, capsys):
     assert out.startswith("No intent set for this session.")
 
 
+def test_session_context_is_core_then_line(tmp_registry, tmp_path, monkeypatch, capsys):
+    core = tmp_path / "core.md"
+    core.write_text("CORE RULES\n", encoding="utf-8")
+    monkeypatch.setenv("AGENT_REGISTRY_CONVERSATION_CORE", str(core))
+    code, out, _ = _run(capsys, "session-context", *WHO)
+    assert code == EXIT_OK
+    assert out.startswith("CORE RULES\n\nNo intent set for this session.")
+
+
+def test_session_context_without_core_is_just_the_line(tmp_registry, tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("AGENT_REGISTRY_CONVERSATION_CORE", str(tmp_path / "missing.md"))
+    code, out, _ = _run(capsys, "session-context", *WHO)
+    assert code == EXIT_OK
+    assert out.startswith("No intent set for this session.")
+
+
 def test_topics_other_session_open_and_tree(tmp_registry, capsys):
     _run(capsys, "intent", "A", *WHO)
     code, out, _ = _run(capsys, "topics", "--session", "s1")
