@@ -9,20 +9,17 @@ The inbox is where agents leave Tiago questions and reports. He answers on its w
 
 ## When to use it
 
-- Every question that needs Tiago's decision goes through the inbox, whether or not he is watching this chat. He may answer from his phone instead.
+- Every question that needs Tiago's decision goes through the inbox, whether or not he is watching this chat. He may answer from his phone instead. The one exception is the `conversation` skill's drift ask (fork / park / keep here), which stays a plain chat line.
 - Use a post for a result he should read later: a run summary, what you found, what is blocked.
 - Do not ask about something you can decide yourself or look up.
 
 ## Ask in both places
 
 1. Ask through the inbox (below) and keep the `entry` id and the `url` it prints.
-2. Ask the same question in the chat, in plain text: the question, the options with their ids, and the link to its page, so he can answer either way. Do not use a blocking question tool (such as AskUserQuestion) for it: an inbox answer cannot close that dialog.
+2. Ask the same question in the chat as a decision card, the short form the `conversation` skill defines: its topic, the question, why it matters, the option ids with one-letter aliases, your recommendation, what you do next, and the link to its page, so he can answer either way. At most two cards per reply; any more are asked in the inbox only (see `conversation`). Do not use a blocking question tool (such as AskUserQuestion) for it: an inbox answer cannot close that dialog.
 
    ```
-   Merge the registry refactor before the inbox restart?
-   - merge: Merge now, then restart (recommended)
-   - restart: Restart first, merge after
-   Answer here, or in the inbox: https://…:8444/e/ib-xxxx
+   - F1. *Registry refactor › Deploy order.* Merge the registry refactor before the inbox restart? CI is green; restarting first keeps the old board until the next deploy. Answer `merge` (m) or `restart` (r). Recommended: `merge`, because one restart picks up both. Next: merge, then restart the inbox. https://…:8444/e/ib-xxxx
    ```
 3. End your turn.
 
@@ -88,7 +85,7 @@ Optional fields:
 - `expires_at`: an ISO time with an offset, after which the question closes.
 - `topic`: a topic id (`tp-xxxx`, from `agt registry topics`). You rarely need it: with `--engine` and `--session-id` the inbox records your session's intent and topic by itself, and shows them on the entry. Any asker can pass it to file the question under that discussion, and it wins over your session's own topic. An unknown id is exit 1.
 
-Write for a phone: the title is the question itself, the summary is two or three sentences, and every option label stands on its own.
+Write for a phone: the title is the question itself, the summary is two or three sentences, and every option label stands on its own. Together, the summary and detail are the card's long form (what happened, why it matters, the options, the recommendation, what happens next either way), as the `conversation` skill describes.
 
 ## After asking
 

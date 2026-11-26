@@ -73,9 +73,9 @@ def test_the_tree_nests_intents_topics_and_forks(conn, http, fake_registry):
     assert "Idle" in tree.text["tp-r"] and "Live" in tree.text["tp-f"]
     assert "Parked pk-1" in tree.text["tp-k"]
     # The intent and the topic with a question waiting start open; the parked topic starts closed.
-    assert '<li class="node intent" data-topic="tp-r" data-depth="0"><details open>' in page
-    assert '<li class="node topic" data-topic="tp-p" data-depth="1"><details open>' in page
-    assert '<li class="node topic" data-topic="tp-k" data-depth="1"><details>' in page
+    assert '<li class="node intent" data-topic="tp-r" data-depth="0" id="tp-r"><details open>' in page
+    assert '<li class="node topic" data-topic="tp-p" data-depth="1" id="tp-p"><details open>' in page
+    assert '<li class="node topic" data-topic="tp-k" data-depth="1" id="tp-k"><details>' in page
     assert '<span class="chip blue">1 to answer</span>' in page
 
 
@@ -102,7 +102,7 @@ def test_show_finished_is_remembered_in_a_cookie(conn, http, fake_registry):
     serve(fake_registry, node("tp-done", "Done one", sessions=[sess("a")], events=[ev("intent", 5)]))
     _, cookie, page = get(http, "/topics?finished=1")
     assert cookie.startswith("ib_finished=1;") and "SameSite=Lax" in cookie
-    assert '<li class="node intent" data-topic="tp-done" data-depth="0"><details>' in page
+    assert '<li class="node intent" data-topic="tp-done" data-depth="0" id="tp-done"><details>' in page
     assert '<a class="btn" href="/topics?finished=0">Hide finished</a>' in page
     _, cookie, remembered = get(http, "/topics", headers={"Cookie": 'a={"x":1}; ib_finished=1'})
     assert cookie is None and 'data-topic="tp-done"' in remembered
@@ -173,3 +173,24 @@ def test_a_timestamp_without_a_timezone_is_read_as_utc(conn, http, fake_registry
     serve(fake_registry, node("tp-r", "Root", sessions=[sess("s-1", state="live")], events=[naive]))
     status, _, page = get(http, "/topics")
     assert status == 200 and 'data-topic="tp-r"' in page and " d ago" in page
+
+
+def test_a_link_with_a_topic_id_can_open_that_branch(conn, http, fake_registry):
+    check = node("tp-c", "Check windows", sessions=[sess("s-2", role="topic")], events=[ev("topic", 40, session_id="s-2")])
+    plan = node("tp-p", "Write the plan", sessions=[sess("s-1", role="topic")], children=[check], events=[ev("topic", 90)])
+    serve(fake_registry, node("tp-r", "Ship the inbox", sessions=[sess("s-1", state="idle")], events=[ev("intent", 100)], children=[plan]))
+    _, _, page = get(http, "/topics")
+    for tid in ("tp-r", "tp-p", "tp-c"):
+        assert page.count(f'id="{tid}"') == 1
+    assert "location.hash" in page
+    assert "history.replaceState" in page  # a live reload must not jump back to the anchor
+
+
+def test_a_topic_shown_twice_keeps_its_id_unique(conn, http, fake_registry):
+    def twin():
+        return node("tp-x", "Shared", sessions=[sess("s-1", role="topic")], events=[ev("topic", 50)])
+    a = node("tp-a", "A", sessions=[sess("s-1", role="topic")], children=[twin()], events=[ev("topic", 90)])
+    serve(fake_registry, node("tp-r", "Root", sessions=[sess("s-1", state="idle")], events=[ev("intent", 100)], children=[a, twin()]))
+    _, _, page = get(http, "/topics")
+    assert page.count('data-topic="tp-x"') == 2
+    assert page.count('id="tp-x"') == 1

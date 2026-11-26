@@ -43,7 +43,7 @@ link_skill() {
     mkdir -p "$dest_root/$name"
     ln -sfn "$src/SKILL.md" "$dest_root/$name/SKILL.md"
     # Bundle refs/scripts if present
-    for bundled in references scripts; do
+    for bundled in references scripts CORE.md; do
       [ -e "$src/$bundled" ] && ln -sfn "$src/$bundled" "$dest_root/$name/$bundled"
     done
     echo "skill $name -> $dest_root/$name"
@@ -70,14 +70,30 @@ for pair in conduct:maestro-conduct patient-waiting:maestro-patient-waiting; do
     echo "maestro marketplace clone missing; run: claude plugin install maestro@jtsternberg"
   fi
 done
+# conversation overrides conduct's human-facing parts; warn (never fail) when upstream changed them.
+maestro_rc=0
+"$ROOT/skills/conversation/scripts/check-maestro" >/dev/null 2>&1 || maestro_rc=$?
+case $maestro_rc in
+  1) echo "warning: maestro's conduct changed the parts conversation overrides; run skills/conversation/scripts/check-maestro" ;;
+  2) echo "warning: maestro's conduct not found; conversation's override has nothing to check" ;;
+esac
 # Claude-only: they read Claude Code transcripts.
 for sk in session-review claude-session-mngr end-session recover-pasted-files; do
   link_skill "$sk" "$HOME/.claude/skills"
 done
 # Any agent can ask Tiago through the inbox, so Codex gets this one too.
 link_skill agent-inbox "$HOME/.claude/skills" "$HOME/.cursor/skills" "$HOME/.codex/skills"
-# Every engine follows the topic rules, so Codex gets this one too.
-link_skill topic-awareness "$HOME/.claude/skills" "$HOME/.cursor/skills" "$HOME/.codex/skills"
+# conversation replaced topic-awareness; drop the old links, but only ones that point into this repo.
+for root in "$HOME/.claude/skills" "$HOME/.cursor/skills" "$HOME/.codex/skills"; do
+  link="$root/topic-awareness/SKILL.md"
+  if [ -L "$link" ] && [ "$(readlink "$link")" = "$ROOT/skills/topic-awareness/SKILL.md" ]; then
+    rm -f "$link"
+    rmdir "$root/topic-awareness" 2>/dev/null || true
+    echo "removed $root/topic-awareness (replaced by conversation)"
+  fi
+done
+# Every engine follows how to talk to Tiago, so Codex gets this one too.
+link_skill conversation "$HOME/.claude/skills" "$HOME/.cursor/skills" "$HOME/.codex/skills"
 # ChatGPT on the Mac runs this one through Codex.
 link_skill chatgpt-pickup "$HOME/.claude/skills" "$HOME/.cursor/skills" "$HOME/.codex/skills"
 

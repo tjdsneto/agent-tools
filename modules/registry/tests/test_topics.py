@@ -151,10 +151,35 @@ def test_current_and_context_line(tmp_registry):
     line = topics.context_line("claude", "s")
     assert line == (
         f"Intent: Ship it ({intent['topic']['id']}) · Topic: Plan ({opened['topic']['id']}). "
-        "If this prompt changes the subject, run the topic-awareness drift check."
+        "If this prompt changes the subject, run the conversation drift check."
     )
     topics.close_topic("claude", "s", "done")
     assert "· Topic: none." in topics.context_line("claude", "s")
+
+
+def test_context_line_counts_open_questions(tmp_registry):
+    topics.set_intent("claude", "s", "Ship it")
+    tp = topics.open_topic("claude", "s", "Plan")["topic"]["id"]
+    for entry in ("ib-1", "ib-2"):
+        topics.add_note("asked", tp, entry, agent_type="claude", session_id="s", title="Q")
+    assert "· 2 open questions. If this prompt" in topics.context_line("claude", "s")
+    topics.add_note("answered", tp, "ib-2", value="yes", via="chat")
+    assert "· 1 open question. If this prompt" in topics.context_line("claude", "s")
+    topics.add_note("answered", tp, "ib-1", value="yes", via="chat")
+    assert "open question" not in topics.context_line("claude", "s")
+
+
+def test_context_line_survives_count_failure(tmp_registry, monkeypatch):
+    topics.set_intent("claude", "s", "Ship it")
+    topics.open_topic("claude", "s", "Plan")
+
+    def boom(_topic_id):
+        raise OSError("unreadable")
+
+    monkeypatch.setattr(topics, "open_questions", boom)
+    line = topics.context_line("claude", "s")
+    assert "open question" not in line
+    assert " · Topic: Plan (tp-" in line and "). If this prompt" in line
 
 
 def test_current_survives_unreadable_log(tmp_registry):

@@ -350,6 +350,16 @@ document.addEventListener("input", () => { dirty = true; });
 // Opening or closing a branch of the Topics tree counts as touching the page: a reload would fold it back.
 // A click, not the toggle event: the browser fires toggle for every open branch on load. Enter and Space click too.
 document.addEventListener("click", (e) => { if (e.target.closest(".tree summary")) dirty = true; });
+// A /topics#<id> link opens that topic's branch: every fold above it, then scrolls to it. Not a touch, so no dirty.
+// A malformed fragment (#%E0) makes decodeURIComponent throw; it must not stop the rest of this script.
+let target = null;
+try { target = document.getElementById(decodeURIComponent(location.hash.slice(1))); } catch (e) {}
+if (target && target.closest(".tree")) {
+  for (let d = target.closest("details"); d; d = d.parentElement.closest("details")) d.open = true;
+  target.scrollIntoView({ block: "start" });
+  // Drop the fragment once used, or every live reload would jump back to it.
+  history.replaceState(null, "", location.pathname + location.search);
+}
 // Filters apply as soon as one changes; the panel closes on Escape or a click outside it.
 document.querySelectorAll(".filt select").forEach((el) => el.addEventListener("change", () => el.form.requestSubmit()));
 const filt = document.querySelector(".filt");
@@ -1131,8 +1141,11 @@ def _timeline(view: topic_graph.View) -> str:
     return f'<ol class="tl" aria-label="Timeline">{"".join(items)}</ol>' if items else ""
 
 
-def _tree_node(view: topic_graph.View) -> str:
-    """One intent or topic: a summary row that opens to its sessions, its timeline and the nodes under it."""
+def _tree_node(view: topic_graph.View, seen: set[str]) -> str:
+    """One intent or topic: a summary row that opens to its sessions, its timeline and the nodes under it.
+
+    seen holds the ids already rendered: a forked topic can show twice, and only its first row takes the id
+    (the anchor a /topics#<id> link opens)."""
     intent = view.kind == "intent"
     deep = (
         f'<span class="deep" title="Level {view.depth}">↳ {view.depth}</span>'
@@ -1161,12 +1174,14 @@ def _tree_node(view: topic_graph.View) -> str:
         + (f"<small>{meta}</small>" if meta else "")
         + f'<span class="chips">{chips}</span></summary>'
     )
+    anchor = "" if view.id in seen else f' id="{_esc(view.id)}"'
+    seen.add(view.id)
     inside = (_owners(view) if intent else "") + _timeline(view)
     if view.children:
         flat = " flat" if view.depth + 1 > topic_graph.MAX_INDENT else ""
-        inside += f'<ul class="kids{flat}">' + "".join(_tree_node(child) for child in view.children) + "</ul>"
+        inside += f'<ul class="kids{flat}">' + "".join(_tree_node(child, seen) for child in view.children) + "</ul>"
     return (
-        f'<li class="node {view.kind}" data-topic="{_esc(view.id)}" data-depth="{view.depth}">'
+        f'<li class="node {view.kind}" data-topic="{_esc(view.id)}" data-depth="{view.depth}"{anchor}>'
         f'<details{" open" if opened else ""}>{summary}<div class="nbody">{inside}</div></details></li>'
     )
 
@@ -1178,7 +1193,8 @@ def _topics_page(views: list[topic_graph.View] | None, finished: bool, waiting: 
     else:
         shown, done = topic_graph.order(views)
         listed = shown + done if finished else shown
-        body = ('<ul class="tree">' + "".join(_tree_node(view) for view in listed) + "</ul>") if listed else ""
+        seen: set[str] = set()
+        body = ('<ul class="tree">' + "".join(_tree_node(view, seen) for view in listed) + "</ul>") if listed else ""
         if done:
             href, label = ("/topics?finished=0", "Hide finished") if finished else ("/topics?finished=1", f"Show finished ({len(done)})")
             body += f'<p class="more"><a class="btn" href="{href}">{label}</a></p>'

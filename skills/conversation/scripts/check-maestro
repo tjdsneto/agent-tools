@@ -1,0 +1,82 @@
+#!/usr/bin/env python3
+"""Detect upstream changes to the maestro `conduct` parts that `conversation` overrides.
+
+check-maestro            compare upstream with the stored baseline (exit 1 if changed)
+check-maestro --update   rewrite the baseline from upstream
+Exit 2 when upstream conduct cannot be found.
+"""
+import difflib
+import os
+import sys
+from pathlib import Path
+
+DEFAULT_UPSTREAM = "~/.claude/plugins/marketplaces/jtsternberg/plugins/maestro/skills/conduct"
+HEADING = "## The human"
+
+
+def human_section(skill_md):
+    """Lines from `## The human` up to the next `## ` heading, or None if absent."""
+    lines = skill_md.splitlines(keepends=True)
+    start = next((i for i, l in enumerate(lines) if l.rstrip("\r\n") == HEADING), None)
+    if start is None:
+        return None
+    end = next((i for i in range(start + 1, len(lines)) if lines[i].startswith("## ")), len(lines))
+    return "".join(lines[start:end])
+
+
+def read_upstream(upstream):
+    """Return {baseline filename: text}, or None if upstream is incomplete."""
+    skill, ledger = upstream / "SKILL.md", upstream / "references" / "decisions-ledger.md"
+    if not skill.is_file() or not ledger.is_file():
+        return None
+    human = human_section(skill.read_text())
+    if human is None:
+        return None
+    return {"the-human.md": human, "decisions-ledger.md": ledger.read_text()}
+
+
+def baseline_dir():
+    override = os.environ.get("MAESTRO_BASELINE_DIR")
+    if override:
+        return Path(override)
+    return Path(__file__).resolve().parent.parent / "references" / "maestro-baseline"
+
+
+def update(parts, base):
+    base.mkdir(parents=True, exist_ok=True)
+    for name, text in parts.items():
+        (base / name).write_text(text)
+        print(f"wrote {base / name}")
+    return 0
+
+
+def check(parts, base):
+    changed = False
+    for name, text in parts.items():
+        path = base / name
+        old = path.read_text() if path.is_file() else ""
+        if path.is_file() and old == text:
+            continue
+        changed = True
+        diff = difflib.unified_diff(
+            old.splitlines(keepends=True), text.splitlines(keepends=True),
+            fromfile=f"a/{name}", tofile=f"b/{name}",
+        )
+        sys.stdout.write("".join(diff) or f"baseline missing: {path}\n")
+    if not changed:
+        print("maestro: the parts conversation overrides are unchanged")
+    return 1 if changed else 0
+
+
+def main(argv):
+    upstream = Path(os.environ.get("MAESTRO_CONDUCT_DIR", DEFAULT_UPSTREAM)).expanduser()
+    parts = read_upstream(upstream)
+    if parts is None:
+        print(f"maestro: upstream conduct not found at {upstream}", file=sys.stderr)
+        return 2
+    base = baseline_dir()
+    return update(parts, base) if "--update" in argv else check(parts, base)
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

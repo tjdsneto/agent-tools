@@ -7,7 +7,7 @@ import os
 import sys
 from pathlib import Path
 
-from agent_registry import forking, liveness, topics
+from agent_registry import conversation, forking, liveness, topics
 from agent_registry.constants import (
     EXIT_CONFLICT,
     EXIT_IO,
@@ -17,7 +17,7 @@ from agent_registry.constants import (
     SESSION_ENV,
 )
 
-COMMANDS = frozenset({"intent", "topic", "topics", "fork", "topic-context", "topic-path", "topic-note"})
+COMMANDS = frozenset({"intent", "topic", "topics", "fork", "topic-context", "session-context", "topic-path", "topic-note"})
 
 
 def _add_who(p: argparse.ArgumentParser) -> None:
@@ -57,6 +57,9 @@ def add_parsers(sub) -> None:
     _add_who(p)
 
     p = sub.add_parser("topic-context")
+    _add_who(p)
+
+    p = sub.add_parser("session-context")
     _add_who(p)
 
     p = sub.add_parser("topic-path")
@@ -165,7 +168,11 @@ def _dispatch(args: argparse.Namespace):
             backend=args.backend,
             directory=args.dir,
         )
-    return topics.context_line(agent_type, session_id)
+    line = topics.context_line(agent_type, session_id)
+    if cmd == "session-context":
+        core = conversation.core_text()
+        return f"{core}\n\n{line}" if core else line
+    return line
 
 
 def _fail(error: object, code: int) -> int:

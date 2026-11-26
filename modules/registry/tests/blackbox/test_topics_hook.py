@@ -20,7 +20,7 @@ def test_claude_prompt_with_intent_and_topic(box):
     box.agt_json("registry", "topic", "Plan", *WHO)
     ctx = json.loads(_prompt(box).stdout)["hookSpecificOutput"]["additionalContext"]
     assert ctx.startswith(f"Intent: Ship it ({tid}) · Topic: Plan (tp-")
-    assert ctx.endswith("run the topic-awareness drift check.")
+    assert ctx.endswith("run the conversation drift check.")
 
 
 def test_pretooluse_ping_prints_nothing(box):
@@ -49,7 +49,7 @@ def test_cursor_session_start_carries_line(box):
         "workspace_roots": [str(box.root)],
     })
     assert r.returncode == 0
-    assert json.loads(r.stdout)["additional_context"].startswith("No intent set")
+    assert "No intent set" in json.loads(r.stdout)["additional_context"]
 
 
 def test_claude_session_start_carries_line(box):
@@ -80,3 +80,83 @@ def test_hook_runs_under_macos_bash(box):
     )
     assert r.returncode == 0, r.stderr
     assert "No intent set" in json.loads(r.stdout)["hookSpecificOutput"]["additionalContext"]
+
+
+MARKER = "CORE MARKER 7f3a"
+
+
+def _with_core(box, text=MARKER):
+    core = box.root / "core.md"
+    core.write_text(text, encoding="utf-8")
+    return dict(box.env, AGENT_REGISTRY_CONVERSATION_CORE=str(core))
+
+
+def test_claude_session_start_carries_the_core(box):
+    r = box.hook(
+        "claude", "ensure", {"session_id": "s9", "hook_event_name": "SessionStart", "cwd": str(box.root)},
+        env=_with_core(box),
+    )
+    ctx = json.loads(r.stdout)["hookSpecificOutput"]["additionalContext"]
+    assert MARKER in ctx and "No intent set for this session." in ctx
+
+
+def test_claude_session_start_without_core_file_keeps_the_line(box):
+    env = dict(box.env, AGENT_REGISTRY_CONVERSATION_CORE=str(box.root / "missing.md"))
+    r = box.hook(
+        "claude", "ensure", {"session_id": "s9", "hook_event_name": "SessionStart", "cwd": str(box.root)}, env=env,
+    )
+    ctx = json.loads(r.stdout)["hookSpecificOutput"]["additionalContext"]
+    assert "No intent set" in ctx and MARKER not in ctx
+
+
+def test_cursor_session_start_carries_the_core(box):
+    r = box.hook("cursor", "ensure", {
+        "conversation_id": "c1", "hook_event_name": "sessionStart", "cursor_version": "3",
+        "workspace_roots": [str(box.root)],
+    }, env=_with_core(box))
+    assert MARKER in json.loads(r.stdout)["additional_context"]
+
+
+def test_cursor_subagent_start_prints_nothing_to_add(box):
+    r = box.hook("cursor", "ensure", {
+        "conversation_id": "c2", "hook_event_name": "subagentStart", "cursor_version": "3",
+        "workspace_roots": [str(box.root)],
+    }, env=_with_core(box))
+    assert r.returncode == 0
+    assert r.stdout.strip() == "{}"
+
+
+def test_codex_session_start_carries_the_core(box):
+    r = box.hook(
+        "codex", "ensure", {"session_id": "t9", "hook_event_name": "SessionStart", "cwd": str(box.root)},
+        env=_with_core(box),
+    )
+    assert r.returncode == 0
+    out = json.loads(r.stdout)["hookSpecificOutput"]
+    assert out["hookEventName"] == "SessionStart"
+    assert MARKER in out["additionalContext"]
+
+
+def _failing_ensure_bin(box):
+    # A registry whose ensure fails (say the daemon won't start) while its file-only commands still work.
+    real = box.env["AGENT_REGISTRY_BIN"]
+    fake = box.root / "agent-registry-ensure-fails"
+    fake.write_text(f'#!/bin/bash\n[[ "$1" == "ensure" ]] && exit 1\nexec "{real}" "$@"\n')
+    fake.chmod(0o755)
+    return dict(box.env, AGENT_REGISTRY_BIN=str(fake))
+
+
+def test_core_is_injected_when_registration_fails(box, tmp_path):
+    core = tmp_path / "core.md"
+    core.write_text("CORE MARKER 7f3a")
+    env = dict(_failing_ensure_bin(box), AGENT_REGISTRY_CONVERSATION_CORE=str(core))
+    claude = box.hook("claude", "ensure", {"session_id": "s9", "hook_event_name": "SessionStart", "cwd": str(box.root)}, env=env)
+    ctx = json.loads(claude.stdout)["hookSpecificOutput"]["additionalContext"]
+    assert "registration failed" in ctx and "CORE MARKER 7f3a" in ctx
+    codex = box.hook("codex", "ensure", {"session_id": "t9", "hook_event_name": "SessionStart", "cwd": str(box.root)}, env=env)
+    assert "CORE MARKER 7f3a" in json.loads(codex.stdout)["hookSpecificOutput"]["additionalContext"]
+    cursor = box.hook("cursor", "ensure", {
+        "conversation_id": "c9", "hook_event_name": "sessionStart", "cursor_version": "3",
+        "workspace_roots": [str(box.root)],
+    }, env=env)
+    assert "CORE MARKER 7f3a" in json.loads(cursor.stdout)["additional_context"]
