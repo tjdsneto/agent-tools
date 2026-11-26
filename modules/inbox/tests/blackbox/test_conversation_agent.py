@@ -38,8 +38,10 @@ def _assert_cards(box, reply):
     cards = [line for line in group.splitlines() if CARD.match(line)]
     assert 1 <= len(cards) <= 2, reply
     for card in cards:
-        assert "›" in card, card
-        assert re.search(r"`[^`]+` \([a-z]\)", card), card
+        assert "›" in card and "/e/ib-" in card, card
+        # A choice names its tokens with aliases; a free-text card says what kind of answer it needs instead.
+        if "Answer `" in card:
+            assert re.search(r"`[^`]+` \([a-z]\)", card), card
     # Each card is also an inbox question; anything beyond two is asked there only.
     asked = box.agt_json("inbox", "list", "--json", "--kind", "ask")
     rows = asked if isinstance(asked, list) else asked.get("entries", [])

@@ -38,6 +38,7 @@ F1. *Intent › Topic.* <The question?> <Why it matters, one or two sentences; s
 - At most **two** cards per reply. Merge related decisions first. Any beyond two are asked in the inbox only, and the ending says `+N more waiting under this topic: <inbox url>/topics#<topic id>`. After he answers, bring up the next waiting one.
 - A decision you can make yourself is not asked: make it, say so in one line, and post it to the inbox as "decided, veto here".
 - If the inbox is down, put the full card in chat, and list the extra cards' questions instead of the link.
+- A free-text decision has no tokens: say what kind of answer you need ("the exact name, lowercase").
 - Each alias is a letter from its own token, the first one not yet taken, unique across the whole reply: `merge` (m), `restart` (r). A lone letter then means one thing: its token. `N: <change>` overrides item N of a card that bundles numbered recommendations. Name the mapped action as you act on it (`k → taking all 8`).
 
 ## How a reply ends
