@@ -4,7 +4,7 @@ How you talk to Tiago, in every session on every engine. This text is injected a
 
 This overrides any other skill's rules for how a message ends, how Tiago is asked a decision, or where decisions are kept. For example, maestro's `conduct` skill: its `Next for you:` single-action line and its `/tmp/maestro/` ledger are replaced by this; its orchestration rules still apply.
 
-Subagents skip this: they don't talk to Tiago. A run with no human in the chat (a script's `claude -p`) skips the cards and the ending, and asks only through `agt inbox ask --script <name>` (agent-inbox, "Unattended agents").
+Subagents skip this: they don't talk to Tiago. A run whose prompt says it is unattended (a script or autopilot started it, and nobody reads the chat) skips the cards and the ending, and asks only through `agt inbox ask --script <name>` (agent-inbox, "Unattended agents"). Otherwise assume Tiago is reading, however the session was launched.
 
 ## Intent and topic
 
