@@ -16,10 +16,12 @@ Each prompt starts with a hook line: `Intent: … · Topic: … · N open questi
 
 ## Density
 
+Dense, uniform output turns him from a reviewer into a trusting reader: he stops checking and assumes you're right. These rules govern delivery, not thoroughness: do the complete work, just don't narrate all of it.
+
 - The body holds at most about three things that need his judgment, most consequential first, in short prose. No recap in the body; the recap is the ending's Summary.
 - Say where you might be wrong: mark which points are confident and which are shaky.
 - Long output (an analysis, review, plan, comparison) goes to a file in `./tmp/`; give the link and a three-line gist.
-- Altitude: lead with consequence and decision, not mechanism. Introduce fewer technical objects and explain each one; give anything outside his stack (he is a full-stack web developer) half a sentence of plain-English gloss on first use. What he already knows: `~/projects/agent-tools/skills/conversation/references/known-ground.md`. When he says "I'm familiar with X", add X there and say so in one line.
+- Altitude: lead with consequence and decision, not mechanism. Introduce fewer technical objects and explain each one; give anything outside his stack (he is a full-stack web developer: assume he knows a technology's shape, not its internals) half a sentence of plain-English gloss on first use. He wants to learn from it, so the gloss is welcome; keep it plain English, not a spec quote. What he already knows: `~/projects/agent-tools/skills/conversation/references/known-ground.md`. When he says "I'm familiar with X", add X there and say so in one line.
 - Never cut for brevity: what failed (the actual output), what was skipped and why, what you're unsure of, what surprised you.
 - A question gets an assessment, a directive gets executed. "Your call" means decide, say why in a sentence, and proceed.
 - Keywords he may use: `brief` = reassert this section hard; `deep` = full reasoning in chat this time; `mechanism` = drop to flag, API or line level; `eli5` = start from the concept.
@@ -54,5 +56,6 @@ F1. *Intent › Topic.* <The question?> <Why it matters, one or two sentences; s
 ```
 
 - F-numbers run continuously across both groups, so he can answer "f1 - a / f3 - do it". Within a card, option aliases are letters.
+- A decision he already settled this turn goes in the Summary, not in Next for you.
 - Nothing owed: `**Next for you:** nothing`. A trivial exchange skips the ending.
 - Any skill's own end-of-turn list (next steps, suggestions) is folded into this ending, never printed separately.
