@@ -5,6 +5,8 @@ import fcntl
 import json
 import os
 import secrets
+import tempfile
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -22,6 +24,10 @@ NOTE_VIAS = ("web", "telegram", "chat", "cli")
 NOTE_CLOSED_STATES = ("withdrawn", "expired", "superseded")
 NOTE_VALUE_MAX = 200
 NOTE_FIELDS = ("entry", "title", "value", "via", "state")
+
+# Parsed logs for `topics --tree`, kept beside them. Bump the version when read_events changes what it keeps.
+CACHE_NAME = ".parsed.json"
+CACHE_VERSION = 1
 
 
 class TopicUsageError(Exception):
@@ -128,6 +134,75 @@ def _all_logs() -> Iterator[tuple[str, str, list[dict]]]:
         return
     for path in sorted(root.glob("*/*.jsonl")):
         yield path.parent.name, path.stem, read_events(path.parent.name, path.stem)
+
+
+def _load_cache() -> dict[str, dict]:
+    try:
+        data = json.loads((topics_dir() / CACHE_NAME).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(data, dict) or data.get("version") != CACHE_VERSION or not isinstance(data.get("logs"), dict):
+        return {}
+    return {
+        key: hit for key, hit in data["logs"].items()
+        if isinstance(hit, dict) and isinstance(hit.get("sig"), list) and isinstance(hit.get("events"), list)
+        and all(isinstance(e, dict) for e in hit["events"])
+    }
+
+
+def _save_cache(logs: dict[str, dict]) -> None:
+    """Replace the cache atomically. A failure is ignored: the cache only saves work."""
+    root = topics_dir()
+    try:  # a crash between mkstemp and replace leaves a stray temp file
+        for stray in root.glob(".parsed.*.tmp"):
+            if stray.stat().st_mtime < time.time() - 3600:
+                stray.unlink()
+    except OSError:
+        pass
+    try:
+        fd, tmp = tempfile.mkstemp(dir=root, prefix=".parsed.", suffix=".tmp")
+    except OSError:
+        return
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump({"version": CACHE_VERSION, "logs": logs}, f)
+        os.replace(tmp, root / CACHE_NAME)
+    except OSError:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+
+
+def cached_logs() -> list[tuple[str, str, list[dict]]]:
+    """Every log's events, like _all_logs, but a log whose modification time and size match the
+    cache isn't read again. Each CLI call is a new process, so the cache is a file. Each log is
+    stat'ed before it's read, so one that changes mid-read is read again next time."""
+    root = topics_dir()
+    if not root.exists():
+        return []
+    cache = _load_cache()
+    fresh: dict[str, dict] = {}
+    out: list[tuple[str, str, list[dict]]] = []
+    changed = False
+    for path in sorted(root.glob("*/*.jsonl")):
+        key = f"{path.parent.name}/{path.name}"
+        try:
+            st = path.stat()
+        except FileNotFoundError:
+            continue
+        sig = [st.st_mtime_ns, st.st_size]
+        hit = cache.get(key)
+        if hit and hit["sig"] == sig:
+            events = hit["events"]
+        else:
+            events = read_events(path.parent.name, path.stem)
+            changed = True
+        fresh[key] = {"sig": sig, "events": events}
+        out.append((path.parent.name, path.stem, events))
+    if changed or fresh.keys() != cache.keys():
+        _save_cache(fresh)
+    return out
 
 
 def _mint() -> str:
@@ -379,12 +454,22 @@ def open_topics() -> list[dict]:
     return rows
 
 
-def tree() -> list[dict]:
-    """Every topic across sessions as nested nodes. A topic's status is its latest event's."""
+def tree(*, events: bool = False, logs: list[tuple[str, str, list[dict]]] | None = None) -> list[dict]:
+    """Every topic across sessions as nested nodes. A topic's status is its latest event's.
+
+    events adds each node's `events`: every log's events for that topic, oldest first, each
+    without its `topic` and with the agent_type and session_id of the log it came from. logs
+    stands in for reading every log; `topics --tree` passes cached_logs()."""
     nodes: dict[str, dict] = {}
     latest: dict[str, str] = {}
-    for agent_type, session_id, events in _all_logs():
-        st = _replay(events)
+    history: dict[str, list[dict]] = {}
+    for agent_type, session_id, log in (_all_logs() if logs is None else logs):
+        st = _replay(log)
+        if events:
+            for ev in log:
+                history.setdefault(ev["topic"]["id"], []).append(
+                    {**{k: v for k, v in ev.items() if k != "topic"}, "agent_type": agent_type, "session_id": session_id}
+                )
         for t in st["topics"]:
             node = nodes.setdefault(t["id"], {
                 "id": t["id"], "title": t["title"], "parent": None, "status": t["status"],
@@ -406,6 +491,8 @@ def tree() -> list[dict]:
     roots = []
     for node in nodes.values():
         node["notes"].sort(key=lambda n: (n.get("at") is None, n.get("at") or ""))
+        if events:
+            node["events"] = sorted(history.get(node["id"], []), key=lambda e: (e.get("at") is None, e.get("at") or ""))
         parent = nodes.get(node["parent"]) if node["parent"] else None
         (parent["children"] if parent else roots).append(node)
     return roots

@@ -159,3 +159,24 @@ def test_done_lists_the_questions_still_open(tmp_registry, capsys):
     assert code == EXIT_OK
     done = json.loads(out)
     assert done["event"] == "done" and done["open_questions"] == ["ib-2"]
+
+
+def test_topics_tree_events_adds_history_and_liveness(tmp_registry, capsys):
+    _run(capsys, "intent", "Ship it", *WHO)
+    _run(capsys, "topic", "Plan", *WHO)
+    code, out, _ = _run(capsys, "topics", "--tree", "--events")
+    assert code == EXIT_OK
+    (root,) = json.loads(out)["tree"]
+    assert [(e["event"], e["session_id"]) for e in root["events"]] == [("intent", "s1")]
+    assert root["sessions"] == [
+        {"agent_type": "claude", "session_id": "s1", "role": "intent", "live": False, "state": "ended", "directory": None},
+    ]
+    assert [e["event"] for e in root["children"][0]["events"]] == ["topic"]
+    code, out, _ = _run(capsys, "topics", "--tree")
+    plain = json.loads(out)["tree"][0]
+    assert "events" not in plain and "live" not in plain["sessions"][0]
+
+
+def test_events_goes_with_tree(tmp_registry, capsys):
+    assert _run(capsys, "topics", "--events", *WHO)[0] == EXIT_USAGE
+    assert _run(capsys, "topics", "--open", "--events")[0] == EXIT_USAGE

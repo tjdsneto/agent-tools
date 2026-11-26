@@ -8,6 +8,7 @@ import signal
 import socket
 import subprocess
 import time
+import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -89,3 +90,33 @@ def box(tmp_path):
             os.kill(int(pid_file.read_text().strip()), signal.SIGTERM)
         except (OSError, ValueError):
             pass
+
+
+@pytest.fixture
+def web(box):
+    """The inbox's web handler alone, on a free port, with the box's registry and database.
+    Not `agt inbox serve`: that also sweeps, which wakes sessions."""
+    port = _free_port()
+    env = dict(box.env, INBOX_HTTP_PORT=str(port), INBOX_ALLOW_INSECURE="1", PYTHONPATH=str(INBOX / "src"))
+    log_path = box.root / "web.log"
+    log = open(log_path, "w")
+    proc = subprocess.Popen(
+        [str(INBOX / ".venv" / "bin" / "python"), "-c", "from agent_inbox.web import make_server; make_server().serve_forever()"],
+        env=env, stdout=log, stderr=subprocess.STDOUT,
+    )
+    base = f"http://127.0.0.1:{port}"
+    deadline = time.monotonic() + 10
+    while True:
+        try:
+            urllib.request.urlopen(base + "/", timeout=2).close()
+            break
+        except OSError:
+            if proc.poll() is not None or time.monotonic() > deadline:
+                proc.kill()
+                log.close()
+                pytest.fail(f"web handler didn't start: {log_path.read_text()}")
+            time.sleep(0.1)
+    yield base
+    proc.terminate()
+    proc.wait(timeout=5)
+    log.close()

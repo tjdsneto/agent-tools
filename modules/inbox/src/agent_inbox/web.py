@@ -3,7 +3,7 @@ from __future__ import annotations
 import html
 import os
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, urlparse
@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 from markdown_it import MarkdownIt
 from psycopg.types.json import Jsonb
 
-from agent_inbox import db, grouping, store
+from agent_inbox import db, grouping, store, topic_graph, topics
 from agent_inbox.constants import FRAME_PORT, HTTP_PORT, NOTIFY_CHANNEL
 from agent_inbox.errors import ConflictError, NotFoundError, StoreError, ValidationError
 
@@ -25,6 +25,7 @@ FRAME_ORIGIN = f"http://127.0.0.1:{FRAME_PORT}"
 GROUP_LABELS = (("none", "None"), ("intent", "Intent"), ("tree", "Topic tree"))
 GROUP_COOKIE = "ib_group"
 GROUP_MAX_AGE = 365 * 24 * 3600
+FINISHED_COOKIE = "ib_finished"
 
 _HEAD = """<!doctype html>
 <html lang="en">
@@ -107,7 +108,7 @@ main {{ max-width: 720px; margin: 0 auto; padding: 20px 16px 48px; }}
 .tabs {{ padding-block: 4px; margin-top: -4px; mask-image: linear-gradient(to left, transparent, #000 16px);
   -webkit-mask-image: linear-gradient(to left, transparent, #000 16px); }}
 .tabs .sm {{ display: none; }}
-@media (max-width: 479px) {{ .tabs {{ gap: 6px; }} .tabs a {{ padding: 0 12px; }} .tabs .lg {{ display: none; }} .tabs .sm {{ display: inline; }} }}
+@media (max-width: 479px) {{ .tabs {{ gap: 4px; }} .tabs a {{ padding: 0 10px; }} .tabs .lg {{ display: none; }} .tabs .sm {{ display: inline; }} }}
 @media (max-width: 379px) {{ .tabs a {{ padding: 0 9px; }} }}
 .tools {{ display: flex; align-items: center; gap: 12px; }}
 .step {{ position: relative; display: inline-flex; align-items: center; gap: 2px; height: 36px; padding: 0 10px 0 14px; border-radius: 18px;
@@ -259,6 +260,44 @@ fieldset:disabled .opt, fieldset:disabled legend {{ color: var(--mute); cursor: 
 .ontopic b {{ min-width: 0; font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
 .ontopic .end {{ flex: none; display: flex; align-items: center; gap: 8px; }}
 .ontopic time {{ color: var(--mute); font-size: 13px; font-variant-numeric: tabular-nums; }}
+.tree {{ list-style: none; margin: 0 -16px; padding: 0; }}
+.tree ul, .tree ol {{ list-style: none; margin: 0; padding: 0; }}
+.tree > .node {{ border-bottom: 1px solid var(--line); }}
+.node summary {{ display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; grid-template-areas: "tw title time" ". meta meta" ". chips chips";
+  column-gap: 8px; row-gap: 2px; align-items: center; min-height: 56px; padding: 10px 16px; list-style: none; cursor: pointer; }}
+.node summary::-webkit-details-marker {{ display: none; }}
+.node summary:hover {{ background: var(--surf); }}
+.node .tw {{ grid-area: tw; width: 18px; height: 18px; color: var(--mute); transition: transform 120ms ease-out; }}
+.node details[open] > summary .tw {{ transform: rotate(90deg); }}
+.node summary b {{ grid-area: title; min-width: 0; font-weight: 600; overflow: hidden;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }}
+.node.topic > details > summary {{ min-height: 48px; }}
+.node.topic > details > summary b {{ font-weight: 550; }}
+.node summary time {{ grid-area: time; color: var(--mute); font-size: 13px; font-variant-numeric: tabular-nums; white-space: nowrap; }}
+.node summary small {{ grid-area: meta; min-width: 0; color: var(--mute); font-size: 14px; }}
+.node summary .chips {{ grid-area: chips; display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }}
+.node summary .chips:empty {{ display: none; }}
+.deep {{ margin-right: 6px; color: var(--mute); font-size: 13px; font-weight: 600; }}
+.tree > .node > details > .nbody {{ padding-bottom: 8px; }}
+.tree .kids {{ padding-left: 16px; }}
+.tree .kids.flat {{ padding-left: 0; }}
+.tree .sess {{ margin: 0 16px 8px 44px; }}
+.sess li {{ display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 4px 0; color: var(--mute); font-size: 14px; }}
+.cmd {{ flex: 1 1 100%; min-width: 0; overflow-x: auto; padding: 8px 10px; border-radius: 8px; background: var(--surf); color: var(--ink);
+  font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; white-space: nowrap; -webkit-user-select: all; user-select: all; }}
+.tree .tl {{ margin: 0 16px 8px 44px; border-left: 2px solid var(--line); }}
+.tl li {{ display: flex; align-items: baseline; justify-content: space-between; gap: 12px; min-height: 32px; padding: 6px 0 6px 12px; font-size: 14px; }}
+.tl li.go {{ padding-block: 0; }}
+.tl li > span, .tl a > span {{ min-width: 0; }}
+.tl a {{ flex: 1; display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; color: inherit; text-decoration: none; }}
+.tl a .tx {{ color: var(--link); }}
+.tl a:hover .tx {{ text-decoration: underline; }}
+.tl b {{ font-weight: 600; }}
+.tl .via {{ color: var(--mute); }}
+.tl time {{ flex: none; color: var(--mute); font-size: 13px; font-variant-numeric: tabular-nums; }}
+.more {{ margin: 16px 0 0; }}
+.more .btn {{ color: var(--ink); }}
+@media (min-width: 760px) {{ .tree {{ margin: 0; border-top: 1px solid var(--line); }} }}
 #stale {{ position: fixed; left: 50%; bottom: 20px; z-index: 3; transform: translateX(-50%); margin: 0; padding: 10px 16px;
   border-radius: 20px; background: var(--ink); color: var(--bg); box-shadow: 0 4px 16px rgba(0,0,0,.18); white-space: nowrap; }}
 #stale a {{ color: inherit; font-weight: 650; }}
@@ -291,6 +330,7 @@ fieldset:disabled .opt, fieldset:disabled legend {{ color: var(--mute); cursor: 
 @media (prefers-reduced-motion: reduce) {{
   .btn:active {{ transform: none; }}
   .landed .ticks .t2, .answered.landed {{ animation: none; }}
+  .node .tw {{ transition: none; }}
 }}
 </style>
 </head>
@@ -307,6 +347,9 @@ const es = new EventSource("/events");
 let open = false, dirty = false, leaving = false;
 document.documentElement.classList.add("js");
 document.addEventListener("input", () => { dirty = true; });
+// Opening or closing a branch of the Topics tree counts as touching the page: a reload would fold it back.
+// A click, not the toggle event: the browser fires toggle for every open branch on load. Enter and Space click too.
+document.addEventListener("click", (e) => { if (e.target.closest(".tree summary")) dirty = true; });
 // Filters apply as soon as one changes; the panel closes on Escape or a click outside it.
 document.querySelectorAll(".filt select").forEach((el) => el.addEventListener("change", () => el.form.requestSubmit()));
 const filt = document.querySelector(".filt");
@@ -435,6 +478,15 @@ def _dismissed(row: dict) -> bool:
     return flag is True or flag == "true"
 
 
+def _cookie(header: str | None, name: str) -> str | None:
+    """One cookie's value, by hand: http.cookies gives up on every cookie after one that holds a space or JSON."""
+    for part in (header or "").split(";"):
+        key, _, value = part.strip().partition("=")
+        if key == name:
+            return value
+    return None
+
+
 def _group_choice(qs: dict, cookie_header: str | None) -> tuple[str, str | None]:
     """The Group by mode and, when this request picked one, the Set-Cookie that remembers it.
 
@@ -442,12 +494,16 @@ def _group_choice(qs: dict, cookie_header: str | None) -> tuple[str, str | None]
     asked = _query_value(qs, "group")
     if asked in grouping.GROUPS:
         return asked, f"{GROUP_COOKIE}={asked}; Path=/; Max-Age={GROUP_MAX_AGE}; SameSite=Lax"
-    # By hand: http.cookies gives up on every cookie after one that holds a space or JSON.
-    for part in (cookie_header or "").split(";"):
-        name, _, value = part.strip().partition("=")
-        if name == GROUP_COOKIE:
-            return (value if value in grouping.GROUPS else "none"), None
-    return "none", None
+    value = _cookie(cookie_header, GROUP_COOKIE)
+    return (value if value in grouping.GROUPS else "none"), None
+
+
+def _finished_choice(qs: dict, cookie_header: str | None) -> tuple[bool, str | None]:
+    """Whether the Topics page shows finished intents and, when this request set it, the Set-Cookie that remembers it."""
+    asked = _query_value(qs, "finished")
+    if asked in ("0", "1"):
+        return asked == "1", f"{FINISHED_COOKIE}={asked}; Path=/; Max-Age={GROUP_MAX_AGE}; SameSite=Lax"
+    return _cookie(cookie_header, FINISHED_COOKIE) == "1", None
 
 
 def load_feed(conn, qs: dict) -> list[dict]:
@@ -495,7 +551,8 @@ def _local(value) -> datetime | None:
         when = value if isinstance(value, datetime) else datetime.fromisoformat(str(value))
     except ValueError:
         return None
-    return when.astimezone(LOCAL) if when.tzinfo else when
+    # A timestamp with no zone is read as UTC, the registry's own clock; keeping it naive would break any subtraction.
+    return when.astimezone(LOCAL) if when.tzinfo else when.replace(tzinfo=timezone.utc).astimezone(LOCAL)
 
 
 def _clock(value) -> str:
@@ -678,7 +735,7 @@ def _card(row: dict, *, pick: bool = True, current: bool = False, by_day: bool =
 
 
 TABS = (("Active", "/", {}), ('<span class="lg">Needs answer</span><span class="sm">To answer</span>', "/?kind=ask&state=open", {"kind": "ask", "state": "open"}),
-        ("Info", "/?kind=post", {"kind": "post"}), ("History", "/?history=1", {"history": "1"}))
+        ("Info", "/?kind=post", {"kind": "post"}), ("History", "/?history=1", {"history": "1"}), ("Topics", "/topics", {}))
 
 
 def _tab(current: dict) -> tuple[str, dict]:
@@ -694,6 +751,13 @@ def _tab(current: dict) -> tuple[str, dict]:
     return TABS[pick][1], TABS[pick][2]
 
 
+def _tabs(home: str) -> str:
+    """The view tabs, with the one at home marked current."""
+    mark = ' aria-current="page"'
+    tabs = "".join(f'<a href="{href}"{mark if href == home else ""}>{label}</a>' for label, href, _ in TABS)
+    return f'<nav class="tabs" aria-label="Views">{tabs}</nav>'
+
+
 def _group_select(group: str) -> str:
     opts = "".join(
         f'<option value="{value}"{" selected" if value == group else ""}>{label}</option>' for value, label in GROUP_LABELS
@@ -707,8 +771,6 @@ def _nav(
     """The view tabs, and the filter button and panel that sit in the header bar."""
     current = {key: _query_value(qs, key) for key in ("kind", "state", "history") if _query_value(qs, key)}
     home, want = _tab(current)
-    mark = ' aria-current="page"'
-    tabs = "".join(f'<a href="{href}"{mark if href == home else ""}>{label}</a>' for label, href, _ in TABS)
     # The filter panel narrows the current tab: it keeps the tab's history, and counts
     # only what differs from the tab. Group by is a view, so it is never counted.
     hidden = '<input type="hidden" name="history" value="1">' if current.get("history") else ""
@@ -745,7 +807,7 @@ def _nav(
         + f'<div class="pair">{clear}<button class="btn go" type="submit">Apply</button></div>'
         "</form></details>"
     )
-    return f'<nav class="tabs" aria-label="Views">{tabs}</nav>', filters
+    return _tabs(home), filters
 
 
 def _waiting(rows: list[dict]) -> int:
@@ -1005,6 +1067,135 @@ def _entry_page(
     return "".join(parts)
 
 
+TOPIC_CHIP = {"open": ("Open", "blue"), "done": ("Done", "grey"), "parked": ("Parked", "grey"), "forked": ("Not picked up", "amber")}
+SESSION_CHIP = {"live": ("Live", "green"), "idle": ("Idle", "grey"), "ended": ("Ended", "grey"), "unknown": ("Unknown", "grey")}
+LINE_LABEL = {
+    "intent": "Intent set", "adopt": "Picked up", "topic": "Opened", "forked": "Forked off", "fork": "Forked",
+    "asked": "Asked", "posted": "Posted", "answered": "Answered", "closed": "Closed", "done": "Done", "parked": "Parked",
+}
+_TWISTY = (
+    '<svg class="tw" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" '
+    'stroke-linejoin="round" aria-hidden="true"><path d="M7.5 4.5 13 10l-5.5 5.5"/></svg>'
+)
+
+
+def _pill(label: str, tone: str) -> str:
+    """A chip in one tone. Green, amber and red report a state, so they carry the dot."""
+    dot = "<i></i>" if tone in ("green", "amber", "red") else ""
+    return f'<span class="chip {tone}">{dot}{_esc(label)}</span>'
+
+
+def _many(n: int, word: str) -> str:
+    return f"{n} {word}{'' if n == 1 else 's'}"
+
+
+def _counts(view: topic_graph.View) -> str:
+    """What's open under an intent, e.g. "2 open topics · 1 question waiting"."""
+    bits = []
+    if view.open_topics():
+        bits.append(_many(view.open_topics(), "open topic"))
+    if view.questions():
+        bits.append(_many(view.questions(), "question") + " waiting")
+    if view.stray_forks():
+        bits.append(_many(view.stray_forks(), "fork") + " not picked up")
+    if view.parked():
+        bits.append(f"{view.parked()} parked")
+    return " · ".join(bits)
+
+
+def _owners(view: topic_graph.View) -> str:
+    """The sessions that hold this intent: engine, short id, state, and how to resume one that isn't live."""
+    items = []
+    for session in view.owners:
+        command = None if session["live"] else topic_graph.resume_command(session)
+        code = f'<code class="cmd">{_esc(command)}</code>' if command else ""
+        items.append(
+            f'<li><span>{_esc(session["agent_type"])} · <span class="id" title="{_esc(session["session_id"])}">'
+            f'{_esc(session["session_id"][:8])}</span></span>{_pill(*SESSION_CHIP[session["state"]])}{code}</li>'
+        )
+    return f'<ul class="sess" aria-label="Sessions">{"".join(items)}</ul>' if items else ""
+
+
+def _timeline(view: topic_graph.View) -> str:
+    """The node's events in order. A line about an inbox entry links to its page."""
+    items = []
+    for line in view.lines:
+        label = _esc(LINE_LABEL.get(line.event, line.event.capitalize()))
+        text = f' <span class="tx">{_esc(line.text)}</span>' if line.text else ""
+        via = f' <span class="via">via {_esc(VIA.get(line.via, line.via))}</span>' if line.via else ""
+        inner = f"<span><b>{label}</b>{text}{via}</span><time>{_esc(_clock(line.at))}</time>"
+        if line.entry:
+            items.append(f'<li class="go"><a href="/e/{_esc(quote(line.entry, safe=""))}">{inner}</a></li>')
+        else:
+            items.append(f"<li>{inner}</li>")
+    return f'<ol class="tl" aria-label="Timeline">{"".join(items)}</ol>' if items else ""
+
+
+def _tree_node(view: topic_graph.View) -> str:
+    """One intent or topic: a summary row that opens to its sessions, its timeline and the nodes under it."""
+    intent = view.kind == "intent"
+    deep = (
+        f'<span class="deep" title="Level {view.depth}">↳ {view.depth}</span>'
+        if view.depth > topic_graph.MAX_INDENT else ""
+    )
+    if intent:
+        owner = view.owners[0] if view.owners else None
+        if view.status == "forked":
+            chips = _pill(*TOPIC_CHIP["forked"])
+        else:
+            chips = _pill(*SESSION_CHIP[owner["state"]]) if owner else ""
+        project = Path(owner["directory"]).name if owner and owner["directory"] else ""
+        bits = [project, owner["agent_type"] if owner else "", _counts(view)]
+        waiting = view.questions()
+        opened = not view.finished()
+    else:
+        chips = _pill(*TOPIC_CHIP[view.status])
+        bits = []
+        waiting = len(view.waiting)
+        opened = view.needs_you()
+    if waiting:
+        chips += _pill(f"{waiting} to answer", "blue")
+    meta = " · ".join(_esc(bit) for bit in bits if bit)
+    summary = (
+        f"<summary>{_TWISTY}<b>{deep}{_esc(view.title)}</b><time>{_esc(_ago(view.opened_at))}</time>"
+        + (f"<small>{meta}</small>" if meta else "")
+        + f'<span class="chips">{chips}</span></summary>'
+    )
+    inside = (_owners(view) if intent else "") + _timeline(view)
+    if view.children:
+        flat = " flat" if view.depth + 1 > topic_graph.MAX_INDENT else ""
+        inside += f'<ul class="kids{flat}">' + "".join(_tree_node(child) for child in view.children) + "</ul>"
+    return (
+        f'<li class="node {view.kind}" data-topic="{_esc(view.id)}" data-depth="{view.depth}">'
+        f'<details{" open" if opened else ""}>{summary}<div class="nbody">{inside}</div></details></li>'
+    )
+
+
+def _topics_page(views: list[topic_graph.View] | None, finished: bool, waiting: int | None = None) -> str:
+    """The Topics tab: every intent and what's under it, as an outline. views is None when the registry didn't answer."""
+    if views is None:
+        body = '<p class="notice warn">The agent registry didn\'t answer, so the topics can\'t be shown. Reload to try again.</p>'
+    else:
+        shown, done = topic_graph.order(views)
+        listed = shown + done if finished else shown
+        body = ('<ul class="tree">' + "".join(_tree_node(view) for view in listed) + "</ul>") if listed else ""
+        if done:
+            href, label = ("/topics?finished=0", "Hide finished") if finished else ("/topics?finished=1", f"Show finished ({len(done)})")
+            body += f'<p class="more"><a class="btn" href="{href}">{label}</a></p>'
+        if not listed:
+            empty = "Nothing in flight</b>Every intent here is finished." if done else "No topics yet</b>Sessions that set an intent show up here."
+            body = f'<p class="empty"><b>{empty}</p>' + body
+    return (
+        _HEAD.format(title="Topics", body="")
+        + _bar("<h1>Inbox</h1>", waiting)
+        + "<main>"
+        + _tabs("/topics")
+        + body
+        + "</main>"
+        + _SCRIPT
+    )
+
+
 def open_count(conn) -> int:
     row = conn.execute("SELECT count(*) AS n FROM entries WHERE kind = 'ask' AND state = 'open'").fetchone()
     return row["n"]
@@ -1073,6 +1264,16 @@ class InboxHandler(BaseHTTPRequestHandler):
                     grouping.only_intent(rows, _query_value(qs, "intent")), qs, banner=urgent_counts(conn),
                     waiting=open_count(conn), projects=store.list_projects(conn), intents=intents, group=group,
                 ), cookie=cookie)
+            return
+        if method == "GET" and path == "/topics":
+            finished, cookie = _finished_choice(qs, self.headers.get("Cookie"))
+            # The registry call runs before the store connection opens, so a slow registry never holds one.
+            tree = topics.graph()
+            with db.connect() as conn:
+                views = None
+                if tree is not None:
+                    views = topic_graph.build(tree, store.entry_states(conn, topic_graph.asked_entries(tree)))
+                self._html(200, _topics_page(views, finished, waiting=open_count(conn)), cookie=cookie)
             return
         match = re.fullmatch(r"/e/([^/]+)", path)
         if method == "GET" and match:

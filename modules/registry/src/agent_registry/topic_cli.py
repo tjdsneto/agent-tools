@@ -7,7 +7,7 @@ import os
 import sys
 from pathlib import Path
 
-from agent_registry import forking, topics
+from agent_registry import forking, liveness, topics
 from agent_registry.constants import (
     EXIT_CONFLICT,
     EXIT_IO,
@@ -43,6 +43,7 @@ def add_parsers(sub) -> None:
     which.add_argument("--session", default=None)
     which.add_argument("--open", action="store_true")
     which.add_argument("--tree", action="store_true")
+    p.add_argument("--events", action="store_true")
     _add_who(p)
 
     p = sub.add_parser("fork")
@@ -105,10 +106,13 @@ def _brief(args: argparse.Namespace) -> str:
 def _dispatch(args: argparse.Namespace):
     cmd = args.cmd
     if cmd == "topics":
+        if args.events and not args.tree:
+            raise topics.TopicUsageError("--events goes with --tree")
         if args.open:
             return {"topics": topics.open_topics()}
         if args.tree:
-            return {"tree": topics.tree()}
+            roots = topics.tree(events=args.events, logs=topics.cached_logs())
+            return {"tree": liveness.annotate(roots) if args.events else roots}
         if args.session:
             agent_type = args.agent_type or topics.session_type(args.session)
             if not agent_type:

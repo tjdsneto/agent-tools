@@ -1,7 +1,8 @@
 """The inbox's one door into the agent registry's topic log.
 
 Every call runs `agt registry …` with a short timeout. A missing, slow or failing registry
-never blocks an ask, a post or an answer: the entry or the topic history just lacks the link."""
+never blocks an ask, a post or an answer: the entry or the topic history just lacks the link,
+and the Topics page shows a notice."""
 from __future__ import annotations
 
 import json
@@ -10,6 +11,7 @@ import subprocess
 import sys
 from typing import Any
 
+from agent_inbox import topic_graph
 from agent_inbox.errors import ValidationError
 
 TIMEOUT_SEC = 2.0
@@ -98,3 +100,10 @@ def note(
     if engine and session_id:
         args += [f"--type={engine}", f"--session-id={session_id}"]
     registry(*args)
+
+
+def graph() -> list[dict] | None:
+    """Every intent and topic for the Topics page: each node with its events and its sessions'
+    liveness, checked by topic_graph.clean. None when the registry fails or answers with
+    something else."""
+    return topic_graph.clean(registry("topics", "--tree", "--events"))
