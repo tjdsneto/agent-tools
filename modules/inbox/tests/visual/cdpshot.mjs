@@ -94,11 +94,15 @@ await send("Page.navigate", { url });
 await loaded;
 await sleep(500);
 
+// The probe runs first, so a page it opens up is measured and checked at its opened size.
+if (process.env.PROBE) {
+	console.log("PROBE", JSON.stringify(await evaluate(process.env.PROBE)));
+	await sleep(200);
+}
 const info = JSON.parse(await evaluate(
 	"JSON.stringify({w: innerWidth, sw: document.documentElement.scrollWidth, h: document.documentElement.scrollHeight,"
 	+ " dark: matchMedia('(prefers-color-scheme: dark)').matches})",
 ));
-if (process.env.PROBE) console.log("PROBE", JSON.stringify(await evaluate(process.env.PROBE)));
 
 const problems = [];
 if (info.w !== width) problems.push(`viewport is ${info.w}px, not ${width}px`);
