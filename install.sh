@@ -52,8 +52,23 @@ link_skill() {
 
 for sk in session-waker agent-say agent-read glue-miner session-awareness session-locate \
           check-usage visual-ask fresh-continuation closing-session-sweep \
-          maestro-patient-waiting maestro-conduct tool-registry chatgpt-handoff; do
+          tool-registry chatgpt-handoff; do
   link_skill "$sk"
+done
+# maestro is Justin Sternberg's plugin (maestro@jtsternberg). Claude gets it as a plugin;
+# Cursor links its skills straight from the marketplace clone, so there is no copy to drift.
+MAESTRO="$HOME/.claude/plugins/marketplaces/jtsternberg/plugins/maestro/skills"
+for pair in conduct:maestro-conduct patient-waiting:maestro-patient-waiting; do
+  up="${pair%%:*}"; name="${pair##*:}"
+  rm -rf "$HOME/.claude/skills/$name"   # the plugin provides it in Claude now
+  if [ -f "$MAESTRO/$up/SKILL.md" ]; then
+    mkdir -p "$HOME/.cursor/skills/$name"
+    ln -sfn "$MAESTRO/$up/SKILL.md" "$HOME/.cursor/skills/$name/SKILL.md"
+    [ -e "$MAESTRO/$up/references" ] && ln -sfn "$MAESTRO/$up/references" "$HOME/.cursor/skills/$name/references"
+    echo "skill $name -> $HOME/.cursor/skills/$name (upstream maestro)"
+  else
+    echo "maestro marketplace clone missing; run: claude plugin install maestro@jtsternberg"
+  fi
 done
 # Claude-only: they read Claude Code transcripts.
 for sk in session-review claude-session-mngr end-session recover-pasted-files; do

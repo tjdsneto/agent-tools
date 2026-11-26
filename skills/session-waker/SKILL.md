@@ -20,7 +20,7 @@ only truly session-independent local trigger. Full design + locked decisions liv
 `~/projects/agent-tools/modules/waker/docs/session-waker-design.md`.
 
 **Waits inside a live session** (CI, a file flag, a review, a human) are not this tool's job:
-follow `maestro-patient-waiting`, which owns the zero-token waiting discipline. Register with the
+follow `maestro:patient-waiting` (Justin's maestro plugin; `maestro-patient-waiting` in Cursor), which owns the zero-token waiting discipline. Register with the
 waker only when the wait will outlive the session.
 
 ## If you are a session about to run a long unattended task — register yourself
