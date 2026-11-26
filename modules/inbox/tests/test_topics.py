@@ -104,3 +104,16 @@ def test_non_utf8_output_from_agt_is_none_and_never_raises(tmp_path, monkeypatch
     assert "continuing without the topic link" in capsys.readouterr().err
     fake_agt(tmp_path, monkeypatch, r"printf '\377\376'")
     assert real_registry("topic-path") is None
+
+
+def test_graph_asks_for_the_tree_with_events_and_cleans_it(fake_registry):
+    good = {"id": "tp-a", "title": "A", "status": "open", "sessions": [], "events": [], "children": []}
+    fake_registry.replies["topics"] = {"tree": [good, "junk"]}
+    assert topics.graph() == [good]
+    assert fake_registry.calls == [["topics", "--tree", "--events"]]
+
+
+def test_graph_is_none_when_the_registry_fails(fake_registry):
+    assert topics.graph() is None  # an unset command answers None, like a registry that is down
+    fake_registry.replies["topics"] = topics.NOT_FOUND
+    assert topics.graph() is None

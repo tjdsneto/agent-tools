@@ -111,3 +111,11 @@ def test_no_path_means_no_notes(conn, fake_registry):
     store.answer(conn, ask(conn)["id"], "a", via="chat")
     store.withdraw(conn, ask(conn)["id"])
     assert fake_registry.notes() == []
+
+
+def test_entry_states_reads_each_known_entry(conn):
+    a = ask(conn)
+    b = ask(conn)
+    store.answer(conn, b["id"], "a", via="web")
+    assert store.entry_states(conn, [a["id"], b["id"], "ib-gone"]) == {a["id"]: "open", b["id"]: "answered"}
+    assert store.entry_states(conn, []) == {}

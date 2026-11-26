@@ -218,6 +218,14 @@ def same_topic(conn: psycopg.Connection, entry: dict, limit: int = 10) -> list[d
     return [{k: v for k, v in _shape(r).items() if k not in LIST_HIDDEN} for r in rows]
 
 
+def entry_states(conn: psycopg.Connection, ids: list[str]) -> dict[str, str]:
+    """The current state of each entry the inbox still has, by id. Unknown ids are left out."""
+    if not ids:
+        return {}
+    rows = conn.execute("SELECT id, state FROM entries WHERE id = ANY(%s)", (list(ids),)).fetchall()
+    return {row["id"]: row["state"] for row in rows}
+
+
 def _check_via(via: str) -> None:
     if via not in VIAS:
         raise ValidationError(f"via must be one of {', '.join(VIAS)}")
