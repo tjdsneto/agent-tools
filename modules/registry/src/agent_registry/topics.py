@@ -447,12 +447,22 @@ def open_topics() -> list[dict]:
     return rows
 
 
-def tree() -> list[dict]:
-    """Every topic across sessions as nested nodes. A topic's status is its latest event's."""
+def tree(*, events: bool = False, logs: list[tuple[str, str, list[dict]]] | None = None) -> list[dict]:
+    """Every topic across sessions as nested nodes. A topic's status is its latest event's.
+
+    events adds each node's `events`: every log's events for that topic, oldest first, each
+    without its `topic` and with the agent_type and session_id of the log it came from. logs
+    stands in for reading every log; `topics --tree` passes cached_logs()."""
     nodes: dict[str, dict] = {}
     latest: dict[str, str] = {}
-    for agent_type, session_id, events in _all_logs():
-        st = _replay(events)
+    history: dict[str, list[dict]] = {}
+    for agent_type, session_id, log in (_all_logs() if logs is None else logs):
+        st = _replay(log)
+        if events:
+            for ev in log:
+                history.setdefault(ev["topic"]["id"], []).append(
+                    {**{k: v for k, v in ev.items() if k != "topic"}, "agent_type": agent_type, "session_id": session_id}
+                )
         for t in st["topics"]:
             node = nodes.setdefault(t["id"], {
                 "id": t["id"], "title": t["title"], "parent": None, "status": t["status"],
@@ -474,6 +484,8 @@ def tree() -> list[dict]:
     roots = []
     for node in nodes.values():
         node["notes"].sort(key=lambda n: (n.get("at") is None, n.get("at") or ""))
+        if events:
+            node["events"] = sorted(history.get(node["id"], []), key=lambda e: (e.get("at") is None, e.get("at") or ""))
         parent = nodes.get(node["parent"]) if node["parent"] else None
         (parent["children"] if parent else roots).append(node)
     return roots
