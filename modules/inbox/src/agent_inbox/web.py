@@ -3,7 +3,7 @@ from __future__ import annotations
 import html
 import os
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, urlparse
@@ -551,7 +551,8 @@ def _local(value) -> datetime | None:
         when = value if isinstance(value, datetime) else datetime.fromisoformat(str(value))
     except ValueError:
         return None
-    return when.astimezone(LOCAL) if when.tzinfo else when
+    # A timestamp with no zone is read as UTC, the registry's own clock; keeping it naive would break any subtraction.
+    return when.astimezone(LOCAL) if when.tzinfo else when.replace(tzinfo=timezone.utc).astimezone(LOCAL)
 
 
 def _clock(value) -> str:

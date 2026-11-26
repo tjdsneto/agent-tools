@@ -166,3 +166,10 @@ def test_opening_a_branch_offers_the_reload_instead_of_folding_it_back(conn, htt
     _, _, page = get(http, "/topics")
     assert 'document.addEventListener("click", (e) => { if (e.target.closest(".tree summary")) dirty = true; });' in page
     assert '"toggle"' not in page  # browsers fire toggle for every open branch on load
+
+
+def test_a_timestamp_without_a_timezone_is_read_as_utc(conn, http, fake_registry):
+    naive = ev("intent", 60) | {"at": "2026-11-20T10:00:00"}
+    serve(fake_registry, node("tp-r", "Root", sessions=[sess("s-1", state="live")], events=[naive]))
+    status, _, page = get(http, "/topics")
+    assert status == 200 and 'data-topic="tp-r"' in page and " d ago" in page
