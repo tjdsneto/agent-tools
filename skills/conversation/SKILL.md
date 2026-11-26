@@ -86,6 +86,12 @@ agt registry topics --tree    # the topic tree across sessions, forks included
 
 Tiago reads the same tree on the inbox's Topics tab, with each topic's questions and each session's state, so a short, specific intent and topic title is what he scans there.
 
+## Density in detail
+
+The density rules in `CORE.md` came from replies that followed every structural rule and were still status reports: a body of six "here's what I did" bullets, 20 bare issue numbers, field names in code formatting, and a card with a nested list, repeated unchanged from the reply before. `tests/fixtures/` keeps two of those replies and the same reply rewritten to the rules.
+
+To measure a draft, or a reply from another session, run `scripts/check-density < reply.md` (add `--previous last.md` to catch a repeated card). It counts list items, words and code spans above the ending, distinct ids, and lines under cards, and exits 1 when one is over its limit. The limits are rough: a pass means none of those habits showed up, not that the reply reads well.
+
 ## Forking and parking
 
 Do what he chose:
