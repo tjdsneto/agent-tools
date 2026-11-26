@@ -64,3 +64,19 @@ def test_annotate_marks_every_session_in_the_tree(tmp_registry):
     assert [(s["session_id"], s["role"], s["state"], s["directory"]) for s in sessions] == [
         ("p", "intent", "ended", None), ("c", "intent", "live", "/p/side"), ("p", "forked", "ended", None),
     ]
+
+
+def test_an_undecodable_registry_leaves_sessions_unknown(tmp_registry):
+    tmp_registry.write_bytes(b"\xff\xfe\x00bad")
+    assert liveness.lookup({("claude", "x")}, now=NOW) == {
+        ("claude", "x"): {"live": False, "state": "unknown", "directory": None},
+    }
+
+
+def test_an_undecodable_archive_leaves_no_directories(tmp_registry):
+    _registry(tmp_registry, _row("claude", "on", "/p/a", 5))
+    tmp_registry.with_name("archive.jsonl").write_bytes(b"\xff\xfe\x00bad")
+    assert liveness.lookup({("claude", "on"), ("codex", "gone")}, now=NOW) == {
+        ("claude", "on"): {"live": True, "state": "live", "directory": "/p/a"},
+        ("codex", "gone"): {"live": False, "state": "ended", "directory": None},
+    }

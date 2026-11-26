@@ -70,3 +70,13 @@ def test_the_per_row_readers_never_touch_the_cache(tmp_registry):
     topics.state("claude", "a")
     topics.tree()
     assert not (topics.topics_dir() / topics.CACHE_NAME).exists()
+
+
+def test_stray_temp_files_older_than_an_hour_are_removed_on_write(tmp_registry):
+    import os, time
+    topics.set_intent("claude", "a", "A")
+    old, new = (topics.topics_dir() / n for n in (".parsed.old.tmp", ".parsed.new.tmp"))
+    old.write_text("x"); new.write_text("x")
+    os.utime(old, (time.time() - 7200,) * 2)
+    topics.cached_logs()
+    assert not old.exists() and new.exists()

@@ -18,7 +18,7 @@ def lookup(keys: set[tuple[str, str]], *, now: datetime | None = None) -> dict[t
         return {}
     try:
         rows = store.load().sessions
-    except (store.CorruptRegistryError, OSError):
+    except (store.CorruptRegistryError, OSError, ValueError):
         return {key: dict(UNKNOWN) for key in keys}
     found: dict[tuple[str, str], dict] = {}
     for session in rows:
@@ -33,7 +33,11 @@ def lookup(keys: set[tuple[str, str]], *, now: datetime | None = None) -> dict[t
     missing = keys - found.keys()
     if missing:
         ended: dict[tuple[str, str], str] = {}
-        for event in archive.read_events():
+        try:
+            archived = list(archive.read_events())
+        except (OSError, ValueError):
+            archived = []
+        for event in archived:
             row = event.get("session")
             if not isinstance(row, dict):
                 continue

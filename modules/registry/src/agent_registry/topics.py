@@ -6,6 +6,7 @@ import json
 import os
 import secrets
 import tempfile
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -152,6 +153,12 @@ def _load_cache() -> dict[str, dict]:
 def _save_cache(logs: dict[str, dict]) -> None:
     """Replace the cache atomically. A failure is ignored: the cache only saves work."""
     root = topics_dir()
+    try:  # a crash between mkstemp and replace leaves a stray temp file
+        for stray in root.glob(".parsed.*.tmp"):
+            if stray.stat().st_mtime < time.time() - 3600:
+                stray.unlink()
+    except OSError:
+        pass
     try:
         fd, tmp = tempfile.mkstemp(dir=root, prefix=".parsed.", suffix=".tmp")
     except OSError:
