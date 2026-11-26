@@ -12,7 +12,7 @@ Every inbox question and report carries the discussion it belongs to: the asking
 |---|---|
 | Feed presentation | A context line on every row, plus "Group by" options (none, intent, topic tree), remembered per viewer. |
 | Direction | Two-way. Entries carry their topic path, and the topic log records `asked`, `posted` and `answered`. |
-| Freshness | The path is a snapshot taken when the entry is created. The inbox never reads the registry to render a page. |
+| Freshness | The path is a snapshot taken when the entry is created. The feed and entry pages never read the registry to render. The Topics tab (spec 3) is the one page that does. |
 | Failure | A failed registry lookup or write never blocks an ask, a post or an answer. The entry or the history just lacks that link. |
 
 ## Out of scope
