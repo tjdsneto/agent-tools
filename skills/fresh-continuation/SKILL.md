@@ -39,5 +39,5 @@ Does **not** kill the process — that is `end-session`.
 | Fresh session, keep going on *this* work | **This skill** |
 | Rich multi-day / end-of-day bank | `/handoff:handoff` |
 | Park idea for later recall | `parked-ideas` |
-| ChatGPT on phone | `chatgpt-handoff` / `phone-trays` |
+| ChatGPT on phone | `chatgpt-handoff` |
 | Kill the process | `end-session` |

@@ -4,7 +4,7 @@ description: >-
   FOR CHATGPT (ChatGPT Desktop / Codex / ChatGPT Remote on Mac) only. You are
   ChatGPT: read open work from the remote tray to-chatgpt, do the Ask, write
   results to from-chatgpt, then complete the to-chatgpt item. Use when the user
-  says pick up tray, to-chatgpt, ChatGPT handoff, phone-trays pickup, or resume
+  says pick up tray, to-chatgpt, ChatGPT handoff, or resume
   a Claude handoff on this Mac.
 user-invocable: true
 argument-hint: "[pick up | to-chatgpt]"

@@ -17,7 +17,7 @@ Directional remote trays only (always `--remote`):
 | **Out** | `to-chatgpt` | This skill (`out`) | ChatGPT on Mac (`pickup`) |
 | **In** | `from-chatgpt` | ChatGPT (`pickup`) | This skill (`in`) |
 
-For phone-readable **docs** (not ChatGPT work), use **`phone-trays`** / `publish` → `to-phone`.
+For a doc you only need to read on the phone (not ChatGPT work), post it to the inbox with `agt inbox post` (see the `agent-inbox` skill).
 
 Packets = item **title** (`|`-separated). See [references/packets.md](references/packets.md).
 
