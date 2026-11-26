@@ -9,7 +9,7 @@ The inbox is where agents leave Tiago questions and reports. He answers on its w
 
 ## When to use it
 
-- Every question that needs Tiago's decision goes through the inbox, whether or not he is watching this chat. He may answer from his phone instead.
+- Every question that needs Tiago's decision goes through the inbox, whether or not he is watching this chat. He may answer from his phone instead. The one exception is the `conversation` skill's drift ask (fork / park / keep here), which stays a plain chat line.
 - Use a post for a result he should read later: a run summary, what you found, what is blocked.
 - Do not ask about something you can decide yourself or look up.
 
