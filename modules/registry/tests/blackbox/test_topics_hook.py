@@ -135,3 +135,28 @@ def test_codex_session_start_carries_the_core(box):
     out = json.loads(r.stdout)["hookSpecificOutput"]
     assert out["hookEventName"] == "SessionStart"
     assert MARKER in out["additionalContext"]
+
+
+def _failing_ensure_bin(box):
+    # A registry whose ensure fails (say the daemon won't start) while its file-only commands still work.
+    real = box.env["AGENT_REGISTRY_BIN"]
+    fake = box.root / "agent-registry-ensure-fails"
+    fake.write_text(f'#!/bin/bash\n[[ "$1" == "ensure" ]] && exit 1\nexec "{real}" "$@"\n')
+    fake.chmod(0o755)
+    return dict(box.env, AGENT_REGISTRY_BIN=str(fake))
+
+
+def test_core_is_injected_when_registration_fails(box, tmp_path):
+    core = tmp_path / "core.md"
+    core.write_text("CORE MARKER 7f3a")
+    env = dict(_failing_ensure_bin(box), AGENT_REGISTRY_CONVERSATION_CORE=str(core))
+    claude = box.hook("claude", "ensure", {"session_id": "s9", "hook_event_name": "SessionStart", "cwd": str(box.root)}, env=env)
+    ctx = json.loads(claude.stdout)["hookSpecificOutput"]["additionalContext"]
+    assert "registration failed" in ctx and "CORE MARKER 7f3a" in ctx
+    codex = box.hook("codex", "ensure", {"session_id": "t9", "hook_event_name": "SessionStart", "cwd": str(box.root)}, env=env)
+    assert "CORE MARKER 7f3a" in json.loads(codex.stdout)["hookSpecificOutput"]["additionalContext"]
+    cursor = box.hook("cursor", "ensure", {
+        "conversation_id": "c9", "hook_event_name": "sessionStart", "cursor_version": "3",
+        "workspace_roots": [str(box.root)],
+    }, env=env)
+    assert "CORE MARKER 7f3a" in json.loads(cursor.stdout)["additional_context"]

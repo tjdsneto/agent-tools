@@ -197,19 +197,22 @@ case "$EVENT" in
     [[ -n "$MODEL" ]] && ENSURE_ARGS+=(--model "$MODEL")
     [[ -n "$TITLE" ]] && ENSURE_ARGS+=(--title "$TITLE")
     ENSURE_ARGS+=(${ADDRESS_ARGS[@]+"${ADDRESS_ARGS[@]}"})
+    REGISTERED=yes
     if ! "$BIN" "${ENSURE_ARGS[@]}" >/dev/null 2>&1; then
-      if [[ "$HOST" == "claude" ]]; then
-        echo "registry-hook: ensure failed for session_id=$SESSION_ID" >&2
-        emit_ensure_context "(registry unavailable)" \
-          "agent-registry: registration failed (type=claude)."
-      fi
-      exit 0
+      REGISTERED=no
+      [[ "$HOST" == "claude" ]] && echo "registry-hook: ensure failed for session_id=$SESSION_ID" >&2
     fi
+    # session-context only reads files, so the core is injected even when registration failed.
     if [[ "$HOST" == "claude" ]]; then
-      LIST=$("$BIN" list 2>/dev/null | head -n 25 || true)
-      [[ -z "$LIST" ]] && LIST="(none)"
-      emit_ensure_context "$LIST" \
-        "agent-registry: session registered (type=claude)." "$(session_context)"
+      if [[ "$REGISTERED" == "yes" ]]; then
+        LIST=$("$BIN" list 2>/dev/null | head -n 25 || true)
+        [[ -z "$LIST" ]] && LIST="(none)"
+        STATUS="agent-registry: session registered (type=claude)."
+      else
+        LIST="(registry unavailable)"
+        STATUS="agent-registry: registration failed (type=claude)."
+      fi
+      emit_ensure_context "$LIST" "$STATUS" "$(session_context)"
     elif [[ "$HOST" == "cursor" ]]; then
       # A subagent inherits the parent's context; it gets no second copy of the core.
       [[ "$HOOK_EVENT" != "subagentStart" ]] && CURSOR_CONTEXT=$(session_context)
