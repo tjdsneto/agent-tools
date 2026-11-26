@@ -278,7 +278,7 @@ fieldset:disabled .opt, fieldset:disabled legend {{ color: var(--mute); cursor: 
 .node summary .chips {{ grid-area: chips; display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }}
 .node summary .chips:empty {{ display: none; }}
 .deep {{ margin-right: 6px; color: var(--mute); font-size: 13px; font-weight: 600; }}
-.nbody {{ padding-bottom: 8px; }}
+.tree > .node > details > .nbody {{ padding-bottom: 8px; }}
 .tree .kids {{ padding-left: 16px; }}
 .tree .kids.flat {{ padding-left: 0; }}
 .tree .sess {{ margin: 0 16px 8px 44px; }}
