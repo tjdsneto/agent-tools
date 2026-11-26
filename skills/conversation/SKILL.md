@@ -108,7 +108,7 @@ Do what he chose:
 
 ## Asking through the inbox
 
-Every decision you ask Tiago is an inbox question (the `agent-inbox` skill has the commands), plus a card in chat. The inbox files it under your session's intent and topic by itself.
+Every decision you ask Tiago, except the drift ask, is an inbox question (the `agent-inbox` skill has the commands), plus a card in chat. The inbox files it under your session's intent and topic by itself.
 
 The inbox entry is the card's long form, written for someone who has never seen the repo and is reading on a phone hours later:
 

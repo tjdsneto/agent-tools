@@ -43,9 +43,9 @@ def _assert_cards(box, reply):
     # Each card is also an inbox question; anything beyond two is asked there only.
     asked = box.agt_json("inbox", "list", "--json", "--kind", "ask")
     rows = asked if isinstance(asked, list) else asked.get("entries", [])
-    assert len(rows) >= len(cards), (rows, reply)
-    if len(rows) > 2:
-        assert "more waiting" in group, reply
+    # Three independent decisions: two cards, and the third waits in the inbox behind the count.
+    assert len(rows) >= 3, (rows, reply)
+    assert "more waiting" in group, reply
 
 
 @pytest.mark.skipif(not shutil.which("claude"), reason="claude is not on PATH")
