@@ -31,15 +31,12 @@ for s in agent-registry session-waker claude-budget session-report active-sessio
   link_bin "$s" "$ROOT/shims/$s"
 done
 
-# Skills → Claude + Cursor shared skill dirs (match tjdsneto-setup install conventions).
-# link_skill <name> [dest roots...]; default roots are Claude and Cursor.
+# link_skill <name> <dest roots...>
 link_skill() {
   local name="$1"; shift
   local src="$ROOT/skills/$name"
   [ -d "$src" ] || return 0
-  local roots=("$@")
-  [ ${#roots[@]} -gt 0 ] || roots=("$HOME/.claude/skills" "$HOME/.cursor/skills")
-  for dest_root in "${roots[@]}"; do
+  for dest_root in "$@"; do
     mkdir -p "$dest_root/$name"
     ln -sfn "$src/SKILL.md" "$dest_root/$name/SKILL.md"
     # Bundle refs/scripts if present
@@ -50,11 +47,11 @@ link_skill() {
   done
 }
 
-for sk in session-waker agent-say agent-read glue-miner session-awareness session-locate \
-          check-usage visual-ask fresh-continuation closing-session-sweep \
-          tool-registry chatgpt-handoff; do
-  link_skill "$sk"
-done
+# Skills: manifest.toml says which engines' skill dirs get each one (Hermes only when installed).
+skill_lines="$("$ROOT/scripts/manifest" skills)"
+while IFS=$'\t' read -r -a fields; do
+  link_skill "${fields[@]}"
+done <<< "$skill_lines"
 # maestro is Justin Sternberg's plugin (maestro@jtsternberg). Claude gets it as a plugin;
 # Cursor links its skills straight from the marketplace clone, so there is no copy to drift.
 MAESTRO="$HOME/.claude/plugins/marketplaces/jtsternberg/plugins/maestro/skills"
@@ -77,12 +74,6 @@ case $maestro_rc in
   1) echo "warning: maestro's conduct changed the parts conversation overrides; run skills/conversation/scripts/check-maestro" ;;
   2) echo "warning: maestro's conduct not found; conversation's override has nothing to check" ;;
 esac
-# Claude-only: they read Claude Code transcripts.
-for sk in session-review claude-session-mngr end-session recover-pasted-files; do
-  link_skill "$sk" "$HOME/.claude/skills"
-done
-# Any agent can ask Tiago through the inbox, so Codex gets this one too.
-link_skill agent-inbox "$HOME/.claude/skills" "$HOME/.cursor/skills" "$HOME/.codex/skills"
 # conversation replaced topic-awareness; drop the old links, but only ones that point into this repo.
 for root in "$HOME/.claude/skills" "$HOME/.cursor/skills" "$HOME/.codex/skills"; do
   link="$root/topic-awareness/SKILL.md"
@@ -92,21 +83,14 @@ for root in "$HOME/.claude/skills" "$HOME/.cursor/skills" "$HOME/.codex/skills";
     echo "removed $root/topic-awareness (replaced by conversation)"
   fi
 done
-# Every engine follows how to talk to Tiago, so Codex gets this one too.
-link_skill conversation "$HOME/.claude/skills" "$HOME/.cursor/skills" "$HOME/.codex/skills"
-# ChatGPT on the Mac runs this one through Codex.
-link_skill chatgpt-pickup "$HOME/.claude/skills" "$HOME/.cursor/skills" "$HOME/.codex/skills"
 
 if [ -d "$HOME/.hermes/skills" ]; then
-  mkdir -p "$HOME/.hermes/skills/inbox"
-  ln -sfn "$ROOT/skills/inbox/SKILL.md" "$HOME/.hermes/skills/inbox/SKILL.md"
-  echo "skill inbox -> $HOME/.hermes/skills/inbox"
   # Linked, not enabled: `hermes plugins enable inbox-buttons` writes Hermes config, which Cockpit owns.
   mkdir -p "$HOME/.hermes/plugins"
   ln -sfn "$ROOT/modules/inbox/hermes-plugin/inbox-buttons" "$HOME/.hermes/plugins/inbox-buttons"
   echo "plugin inbox-buttons -> $HOME/.hermes/plugins/inbox-buttons"
 else
-  echo "hermes skills dir missing; inbox skill is $ROOT/skills/inbox"
+  echo "hermes skills dir missing; skipped the inbox skill and plugin"
 fi
 
 # Ensure module venvs exist (idempotent).
