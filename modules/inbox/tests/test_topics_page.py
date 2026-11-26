@@ -157,7 +157,7 @@ def test_resume_shows_only_for_sessions_that_are_not_live(conn, http, fake_regis
     serve(fake_registry, node("tp-r", "Root", sessions=[sess("live-1", state="live"), sess("idle-1", state="idle")],
                               events=[ev("intent", 60)]))
     _, _, page = get(http, "/topics")
-    assert '<code class="cmd">cd /x/agent-tools &amp;&amp; claude --resume idle-1</code>' in page
+    assert '<code class="cmd">cd -- /x/agent-tools &amp;&amp; claude --resume idle-1</code>' in page
     assert "--resume live-1" not in page
 
 

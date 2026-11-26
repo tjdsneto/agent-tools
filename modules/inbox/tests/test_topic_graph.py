@@ -102,11 +102,10 @@ def test_live_or_parked_is_not_finished_and_an_empty_ended_intent_is():
 
 
 def test_resume_command_per_engine_with_every_part_quoted():
-    assert topic_graph.resume_command(sess("abc", directory="/x/my project")) == "cd '/x/my project' && claude --resume abc"
+    assert topic_graph.resume_command(sess("abc", directory="/x/my project")) == "cd -- '/x/my project' && claude --resume abc"
     assert topic_graph.resume_command(sess("t-1", agent="codex", directory=None)) == "codex resume t-1"
-    assert topic_graph.resume_command(sess("c-1", agent="cursor", directory="/x/a")) == "cd /x/a && cursor-agent --resume c-1"
+    assert topic_graph.resume_command(sess("c-1", agent="cursor", directory="/x/a")) == "cd -- /x/a && cursor-agent --resume c-1"
     assert topic_graph.resume_command(sess("x", agent="gemini")) is None
-    assert topic_graph.resume_command(sess("$(rm -rf ~)", directory=None)) == "claude --resume '$(rm -rf ~)'"
 
 
 def test_asked_entries_lists_each_once_across_the_tree():
@@ -115,3 +114,12 @@ def test_asked_entries_lists_each_once_across_the_tree():
         ev("asked", 9, entry="ib-1", title="Q"), ev("posted", 8, entry="ib-9", title="P"),
     ])
     assert sorted(topic_graph.asked_entries(topic_graph.clean({"tree": [root]}))) == ["ib-1", "ib-2"]
+
+
+@pytest.mark.parametrize("session_id", ["--dangerously-skip-permissions", "-x", "a b", "a;b", "$(x)", "", "a/b"])
+def test_resume_refuses_a_session_id_that_isnt_an_id(session_id):
+    assert topic_graph.resume_command(sess(session_id)) is None
+
+
+def test_resume_ends_options_before_the_directory():
+    assert topic_graph.resume_command(sess("abc-123", directory="-P")) == "cd -- -P && claude --resume abc-123"

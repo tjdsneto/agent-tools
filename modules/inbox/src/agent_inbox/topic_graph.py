@@ -3,6 +3,7 @@ and their timelines, and ordered. No I/O. The outline page renders it; a drawn g
 render the same views."""
 from __future__ import annotations
 
+import re
 import shlex
 from collections.abc import Iterator
 from dataclasses import dataclass, field
@@ -16,6 +17,9 @@ NOTE_EVENTS = ("asked", "posted", "answered", "closed")
 TEXT_OF = {"asked": "title", "posted": "title", "answered": "value", "closed": "state", "parked": "ref"}
 # The page indents this many levels; deeper nodes keep this indent and show their depth.
 MAX_INDENT = 3
+# A session id the resume command may name: letters, digits and dashes, never a leading dash
+# (which a CLI would read as an option).
+SESSION_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9-]*")
 RESUME = {
     "claude": "claude --resume {sid}",
     "codex": "codex resume {sid}",
@@ -203,10 +207,10 @@ def order(views: list[View]) -> tuple[list[View], list[View]]:
 
 
 def resume_command(session: dict) -> str | None:
-    """The shell line that resumes this session where it ran, or None for an engine without one."""
+    """The shell line that resumes this session where it ran, or None for an engine without one or an id that isn't a plain id."""
     template = RESUME.get(session["agent_type"])
-    if not template:
+    if not template or not SESSION_ID.fullmatch(session["session_id"]):
         return None
     command = template.format(sid=shlex.quote(session["session_id"]))
     directory = session.get("directory")
-    return f"cd {shlex.quote(directory)} && {command}" if directory else command
+    return f"cd -- {shlex.quote(directory)} && {command}" if directory else command
