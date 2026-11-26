@@ -348,7 +348,8 @@ let open = false, dirty = false, leaving = false;
 document.documentElement.classList.add("js");
 document.addEventListener("input", () => { dirty = true; });
 // Opening or closing a branch of the Topics tree counts as touching the page: a reload would fold it back.
-document.addEventListener("toggle", (e) => { if (e.target.closest(".tree")) dirty = true; }, true);
+// A click, not the toggle event: the browser fires toggle for every open branch on load. Enter and Space click too.
+document.addEventListener("click", (e) => { if (e.target.closest(".tree summary")) dirty = true; });
 // Filters apply as soon as one changes; the panel closes on Escape or a click outside it.
 document.querySelectorAll(".filt select").forEach((el) => el.addEventListener("change", () => el.form.requestSubmit()));
 const filt = document.querySelector(".filt");

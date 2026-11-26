@@ -164,4 +164,5 @@ def test_resume_shows_only_for_sessions_that_are_not_live(conn, http, fake_regis
 def test_opening_a_branch_offers_the_reload_instead_of_folding_it_back(conn, http, fake_registry):
     serve(fake_registry)
     _, _, page = get(http, "/topics")
-    assert 'document.addEventListener("toggle", (e) => { if (e.target.closest(".tree")) dirty = true; }, true);' in page
+    assert 'document.addEventListener("click", (e) => { if (e.target.closest(".tree summary")) dirty = true; });' in page
+    assert '"toggle"' not in page  # browsers fire toggle for every open branch on load
