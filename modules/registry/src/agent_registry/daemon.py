@@ -6,6 +6,7 @@ import json
 import os
 import shutil
 import signal
+import socket
 import subprocess
 import threading
 import traceback
@@ -19,6 +20,7 @@ from urllib.parse import urlparse
 from agent_registry import archive, doctor, lifecycle, ops, store, summarize, transport, usage
 from agent_registry.constants import (
     DAEMON_SERVICE,
+    EVICT_SECONDS,
     EXIT_IO,
     EXIT_NOT_FOUND,
     EXIT_OK,
@@ -519,10 +521,46 @@ def attach_interrupt_reasons(views: dict[str, list]) -> None:
 
 class DaemonHandler(DashboardHandler):
     def do_GET(self) -> None:
-        if urlparse(self.path).path == "/api/health":
+        path = urlparse(self.path).path
+        if path == "/api/health":
             self._json({"ok": True, "service": DAEMON_SERVICE})
             return
+        if path == "/api/events":
+            self._serve_events()
+            return
         super().do_GET()
+
+    def _serve_events(self) -> None:
+        """Tell the board when registry.json changes. Same rev again is a heartbeat."""
+        self.close_connection = False
+        try:
+            self.connection.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        except OSError:
+            pass
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Connection", "keep-alive")
+        self.end_headers()
+        with _feed_condition:
+            rev = _feed_revision
+        try:
+            self._write_event(rev)
+            while not _stop_background.is_set():
+                nxt = wait_revision(rev, 15)
+                if _stop_background.is_set():
+                    return
+                if nxt is None:
+                    self._write_event(rev)
+                    continue
+                rev = nxt
+                self._write_event(rev)
+        except (BrokenPipeError, ConnectionResetError, TimeoutError, OSError):
+            return
+
+    def _write_event(self, rev: int) -> None:
+        self.wfile.write(b"data: " + json.dumps({"rev": rev}).encode("utf-8") + b"\n\n")
+        self.wfile.flush()
 
     def _serve_live(self) -> None:
         try:
@@ -772,6 +810,108 @@ class DaemonHandler(DashboardHandler):
         self._json({"exit_code": exit_code, "data": data, "error": error})
 
 
+_stop_background = threading.Event()
+_background_threads: list[threading.Thread] = []
+_background_started = False
+_feed_condition = threading.Condition()
+_feed_revision = 0
+_feed_signature: tuple[int, int] | None = None
+_WATCH_SECONDS = 0.2
+
+
+def _evict_seconds() -> float:
+    raw = os.environ.get("AGENT_REGISTRY_EVICT_SECONDS")
+    if raw:
+        try:
+            return max(0.05, float(raw))
+        except ValueError:
+            pass
+    return float(EVICT_SECONDS)
+
+
+def _registry_signature() -> tuple[int, int] | None:
+    try:
+        stat = registry_path().stat()
+    except OSError:
+        return None
+    return (stat.st_mtime_ns, stat.st_size)
+
+
+def wait_revision(since: int, timeout: float) -> int | None:
+    """The revision after `since`, or None when it did not change before timeout."""
+    with _feed_condition:
+        if _feed_revision != since:
+            return _feed_revision
+        _feed_condition.wait(timeout)
+        if _feed_revision != since:
+            return _feed_revision
+        return None
+
+
+def _bump_revision(signature: tuple[int, int] | None) -> None:
+    global _feed_revision, _feed_signature
+    with _feed_condition:
+        if signature == _feed_signature:
+            return
+        _feed_signature = signature
+        _feed_revision += 1
+        _feed_condition.notify_all()
+
+
+def _watch_registry() -> None:
+    while not _stop_background.is_set():
+        signature = _registry_signature()
+        if signature != _feed_signature:
+            _bump_revision(signature)
+        if _stop_background.wait(_WATCH_SECONDS):
+            return
+
+
+def _evict_loop() -> None:
+    while not _stop_background.is_set():
+        try:
+            ops.evict_stale()
+        except Exception:
+            traceback.print_exc()
+        if _stop_background.wait(_evict_seconds()):
+            return
+
+
+def start_background() -> None:
+    """Watch the registry file and archive hour-old rows. One pair per process."""
+    global _background_started, _feed_signature
+    with _feed_condition:
+        if _background_started:
+            return
+        _stop_background.clear()
+        _feed_signature = _registry_signature()
+        _background_started = True
+    for target in (_watch_registry, _evict_loop):
+        thread = threading.Thread(target=target, name=target.__name__, daemon=True)
+        thread.start()
+        _background_threads.append(thread)
+
+
+def stop_background() -> None:
+    """Stop the watch and evict threads. Raises if one is still running."""
+    global _background_started, _feed_revision, _feed_signature
+    _stop_background.set()
+    with _feed_condition:
+        _feed_condition.notify_all()
+    alive = []
+    for thread in list(_background_threads):
+        thread.join(timeout=5)
+        if thread.is_alive():
+            alive.append(thread.name)
+    _background_threads.clear()
+    with _feed_condition:
+        _background_started = False
+        _feed_revision = 0
+        _feed_signature = None
+    if alive:
+        raise RuntimeError("registry background still running: " + ", ".join(alive))
+
+
 def make_daemon(host: str, port: int) -> ThreadingHTTPServer:
     if host not in _LOOPBACK_HOSTS:
         raise OSError(f"daemon refuses non-loopback host {host}")
@@ -781,11 +921,13 @@ def make_daemon(host: str, port: int) -> ThreadingHTTPServer:
 def serve_in_thread(host: str, port: int) -> ThreadingHTTPServer:
     httpd = make_daemon(host, port)
     _write_identity(httpd.server_address[1])
+    start_background()
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     return httpd
 
 
 def stop_server(httpd: ThreadingHTTPServer) -> None:
+    stop_background()
     httpd.shutdown()
     httpd.server_close()
     _clear_identity()
@@ -820,9 +962,11 @@ def run_foreground(host: str = "127.0.0.1", port: int = 8765) -> int:
             return EXIT_OK
         return EXIT_IO
     _write_identity(httpd.server_address[1])
+    start_background()
     try:
         httpd.serve_forever()
     finally:
+        stop_background()
         httpd.server_close()
         _clear_identity()
     return EXIT_OK

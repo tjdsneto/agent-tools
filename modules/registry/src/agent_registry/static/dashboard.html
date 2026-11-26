@@ -756,7 +756,7 @@
   </div>
   <script>
 (function () {
-  const POLL_MS = 1500;
+  const POLL_MS = 30000;
   const APP_VERSION = "0.2.0";
   const LS_TAB = "agent-registry.tab";
   const LS_PROJECT = "agent-registry.project";
@@ -784,6 +784,10 @@
   let tickTimer = null;
   let lastOkAt = 0;
   let pollOk = true;
+  let polling = false;
+  let pollAgain = false;
+  let events = null;
+  let seenRev = null;
 
   const banner = document.getElementById("banner");
   const panelOpen = document.getElementById("panel-open");
@@ -1780,35 +1784,65 @@
     // menu-bar reopen can report document.hidden briefly and would otherwise
     // leave the board stuck on Loading forever.
     if (document.hidden && revealed) return;
+    if (polling) { pollAgain = true; return; }
+    polling = true;
     try {
-      const [live, arch] = await Promise.all([
-        fetchJson("/api/live"),
-        fetchJson("/api/archive?limit=100"),
-      ]);
-      liveData = live;
-      archiveData = arch;
-      lastOkAt = Date.now();
-      pollOk = true;
-      const msgs = [];
-      if (live.corrupt) msgs.push("Live registry is corrupt — showing empty lists.");
-      if (arch.corrupt) msgs.push("Archive file is corrupt — showing empty archive.");
-      if (msgs.length) showError(msgs.join(" "), "");
-      else clearError();
-      renderProjects();
-      renderOpen();
-      renderClosed();
-      renderArchive();
-      updateFresh();
-    } catch (err) {
-      pollOk = false;
-      showError(
-        "Fetch failed — showing last good data.",
-        err && err.message ? String(err.message) : String(err)
-      );
-      renderProjects();
-      updateFresh();
+      try {
+        const [live, arch] = await Promise.all([
+          fetchJson("/api/live"),
+          fetchJson("/api/archive?limit=100"),
+        ]);
+        liveData = live;
+        archiveData = arch;
+        lastOkAt = Date.now();
+        pollOk = true;
+        const msgs = [];
+        if (live.corrupt) msgs.push("Live registry is corrupt — showing empty lists.");
+        if (arch.corrupt) msgs.push("Archive file is corrupt — showing empty archive.");
+        if (msgs.length) showError(msgs.join(" "), "");
+        else clearError();
+        renderProjects();
+        renderOpen();
+        renderClosed();
+        renderArchive();
+        updateFresh();
+      } catch (err) {
+        pollOk = false;
+        showError(
+          "Fetch failed — showing last good data.",
+          err && err.message ? String(err.message) : String(err)
+        );
+        renderProjects();
+        updateFresh();
+      }
+      reveal();
+    } finally {
+      polling = false;
+      if (pollAgain) {
+        pollAgain = false;
+        poll();
+      }
     }
-    reveal();
+  }
+
+  function onRegistryEvent(raw) {
+    let msg;
+    try { msg = JSON.parse(raw); } catch (e) { return; }
+    if (!msg || msg.rev == null) return;
+    if (msg.rev !== seenRev) {
+      seenRev = msg.rev;
+      poll();
+      return;
+    }
+    lastOkAt = Date.now();
+    pollOk = true;
+    updateFresh();
+  }
+
+  function startEvents() {
+    if (events) events.close();
+    events = new EventSource("/api/events");
+    events.onmessage = function (ev) { onRegistryEvent(ev.data); };
   }
 
   let revealed = false;
@@ -1825,11 +1859,13 @@
     poll();
     timer = setInterval(poll, POLL_MS);
     tickTimer = setInterval(updateFresh, 1000);
+    startEvents();
   }
 
   function stopPoll() {
     if (timer) { clearInterval(timer); timer = null; }
     if (tickTimer) { clearInterval(tickTimer); tickTimer = null; }
+    if (events) { events.close(); events = null; }
   }
 
   document.querySelectorAll(".app-version").forEach(function (el) {

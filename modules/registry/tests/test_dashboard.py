@@ -7,6 +7,23 @@ from agent_registry import ops
 from agent_registry.dashboard import _warn_if_non_loopback, make_server
 
 
+def test_board_listens_for_writes_and_polls_slowly():
+    from pathlib import Path
+
+    html = (
+        Path(__file__).resolve().parents[1]
+        / "src"
+        / "agent_registry"
+        / "static"
+        / "dashboard.html"
+    ).read_text(encoding="utf-8")
+    assert "new EventSource" in html
+    assert '"/api/events"' in html or "'/api/events'" in html
+    assert "const POLL_MS = 30000" in html
+    assert "seenRev" in html
+    assert "if (polling)" in html
+
+
 def test_api_live_and_archive(tmp_registry):
     s = ops.register(agent_type="cursor", session_id="a", directory="/Users/x/projects/lindris")
     ops.update(s.registry_id, status="blocked", summary="need input")

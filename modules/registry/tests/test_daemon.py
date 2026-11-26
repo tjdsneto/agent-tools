@@ -512,6 +512,76 @@ def test_send_session_wakes_and_rejects_empty(tmp_registry, monkeypatch):
         stop_server(httpd)
 
 
+def test_daemon_archives_hour_old_sessions(tmp_registry, monkeypatch):
+    import time
+
+    from agent_registry import archive, ops, store
+
+    monkeypatch.setenv("AGENT_REGISTRY_SUMMARY_PROVIDER", "off")
+    monkeypatch.setenv("AGENT_REGISTRY_EVICT_SECONDS", "0.2")
+    ops.register(agent_type="cursor", session_id="old", directory="/a")
+    ops.register(agent_type="cursor", session_id="fresh", directory="/b")
+    reg = store.load()
+    for session in reg.sessions:
+        if session.session_id == "old":
+            session.last_ping = "2020-01-01T00:00:00+00:00"
+    store.save(reg)
+    httpd = serve_in_thread("127.0.0.1", 0)
+    try:
+        deadline = time.time() + 5
+        ids = []
+        while time.time() < deadline:
+            ids = [session.session_id for session in store.load().sessions]
+            if "old" not in ids and "fresh" in ids:
+                break
+            time.sleep(0.1)
+        else:
+            raise AssertionError(ids)
+        pruned = [
+            event["session"]["session_id"]
+            for event in archive.list_events(reason="prune", limit=20)
+        ]
+        assert "old" in pruned
+        assert "fresh" not in pruned
+    finally:
+        stop_server(httpd)
+
+
+def test_events_follow_a_registry_write(tmp_registry):
+    import http.client
+
+    from agent_registry import ops
+
+    httpd = serve_in_thread("127.0.0.1", 0)
+    port = httpd.server_address[1]
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+    try:
+        conn.request("GET", "/api/events")
+        resp = conn.getresponse()
+        assert resp.status == 200
+        first = _read_sse_json(resp)
+        ops.register(agent_type="cursor", session_id="n1", directory="/n")
+        second = _read_sse_json(resp)
+        assert second["rev"] > first["rev"]
+    finally:
+        conn.close()
+        stop_server(httpd)
+
+
+def _read_sse_json(resp) -> dict:
+    """Next SSE data payload. Heartbeat comments are skipped."""
+    data = ""
+    while True:
+        line = resp.fp.readline()
+        if not line:
+            raise AssertionError("event stream closed")
+        text = line.decode("utf-8")
+        if text.startswith("data:"):
+            data = text[len("data:"):].strip()
+        if text.strip() == "" and data:
+            return json.loads(data)
+
+
 def test_open_workspace_opens_session_directory(tmp_registry, tmp_path, monkeypatch):
     from agent_registry import ops
 

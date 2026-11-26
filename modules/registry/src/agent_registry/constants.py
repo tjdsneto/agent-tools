@@ -1,4 +1,5 @@
 STALE_SECONDS = 3600
+EVICT_SECONDS = 60  # how often the daemon archives hour-old rows; override via AGENT_REGISTRY_EVICT_SECONDS
 HEARTBEAT_SECONDS = 60  # min seconds between registry writes; override via AGENT_REGISTRY_HEARTBEAT_SECONDS
 ACTIVE_GAP_SECONDS = 300  # max gap still counted as active continuation; override via AGENT_REGISTRY_ACTIVE_GAP_SECONDS
 STATUSES = frozenset({"idle", "working", "reviewing", "blocked"})

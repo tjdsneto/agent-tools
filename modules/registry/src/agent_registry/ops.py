@@ -349,6 +349,14 @@ def live_views(*, now: datetime | None = None) -> dict[str, list[dict]]:
     return {"active": active, "stale": stale, "attention": attention}
 
 
+def evict_stale(*, now: datetime | None = None) -> list[dict]:
+    """Archive hour-old rows. A file with none is left untouched."""
+    reg = store.load()
+    if not any(is_stale(s, now=now) for s in reg.sessions):
+        return []
+    return prune(yes=True, now=now)
+
+
 def prune(*, dry_run: bool = False, yes: bool = False, now: datetime | None = None) -> list[dict]:
     if not dry_run and not yes:
         raise ValidationError("prune requires --yes or --dry-run")
