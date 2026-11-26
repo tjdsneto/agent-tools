@@ -1,6 +1,6 @@
-# Topic graph view: design (draft)
+# Topic graph view: design
 
-Drafted 2026-11-25. This is spec 3 of 3. Tiago said "keep going", so the decisions below were made on his behalf and are marked **[decided for you]**. He can overturn any of them before planning starts. It builds on spec 1 (the topic log, `modules/registry/docs/superpowers/specs/2026-11-25-topic-awareness-design.md`) and spec 2 (inbox activity written into the log, `2026-11-25-topic-aware-inbox-design.md`).
+Drafted 2026-11-25; no longer a draft, because it was built as written on Tiago's "keep going", with the outline-tree shape. This is spec 3 of 3. The decisions below were made on his behalf and are marked **[decided for you]**; he can still overturn any of them. It builds on spec 1 (the topic log, `modules/registry/docs/superpowers/specs/2026-11-25-topic-awareness-design.md`) and spec 2 (inbox activity written into the log, `2026-11-25-topic-aware-inbox-design.md`).
 
 ## Goal
 
@@ -68,3 +68,19 @@ It runs in-process like the other topic commands. To keep the page fast, it cach
 
 - **Load.** Reading all logs on each request costs more as logs grow. The cache in section 2 bounds that. The plan must measure the page with today's real logs.
 - **Clutter.** Hundreds of finished intents could bury the live ones. Collapsing them by default and the "Show finished" toggle handle that. If it isn't enough, add a date cutoff later.
+
+## Plan refinements (2026-11-25)
+
+The plan (`modules/inbox/docs/superpowers/plans/2026-11-25-topic-graph.md`) built this spec as written and settled these open points. All of them can still be overturned.
+
+- **Liveness** is read in the CLI process from `registry.json`, the file the daemon's `list` reads, with no daemon call and none per node. `archive.jsonl` is read only to find an ended session's directory. Each session entry carries `live`, `state` (`live`, `idle`, `ended`, `unknown`) and `directory`. The project shown is the directory's last name, as for an asker.
+- **The cache** is one file, `topics/.parsed.json`, keyed by each log's modification time and size, because each `agt registry` call is a new process. Only `topics --tree` uses it; the daemon's per-row reads are unchanged (tjdsneto/agent-tools#9).
+- **Node events** come from every log, oldest first, each with the session it came from.
+- **Waiting questions** use the inbox's own entry state, in one query per load. The log's notes are the fallback for entries the inbox no longer has.
+- **Finished** means nothing waiting, no open or parked topic, and no live session under the intent. Finished intents aren't rendered until "Show finished"; then they come last and closed.
+- **Newest first** means the most recent event anywhere under the intent. It also orders the first two groups.
+- **Open by default:** unfinished intents, and topics with something waiting under them. Opening or closing a branch turns the live reload into the stale toast.
+- **Resume commands** appear only for sessions that aren't live, with `cd <dir> &&` when the directory is known.
+- **A topic's timeline** also lists each fork opened from it.
+- **Measured:** on a copy of the 7 real logs of 2026-11-25, `topics --tree --events` took 0.10 s warm (median); with 1000 synthetic sessions, 0.22 to 0.24 s warm and 0.44 s cold; the page's warm median load was 0.130 s.
+- **Known limit:** at 375px the fifth tab (Topics) ends about 4px inside the tab strip's fade and the strip scrolls by about 4px. Not fixed; Tiago hasn't decided whether to accept it.
