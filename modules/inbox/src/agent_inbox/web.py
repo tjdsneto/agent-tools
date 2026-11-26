@@ -357,6 +357,8 @@ try { target = document.getElementById(decodeURIComponent(location.hash.slice(1)
 if (target && target.closest(".tree")) {
   for (let d = target.closest("details"); d; d = d.parentElement.closest("details")) d.open = true;
   target.scrollIntoView({ block: "start" });
+  // Drop the fragment once used, or every live reload would jump back to it.
+  history.replaceState(null, "", location.pathname + location.search);
 }
 // Filters apply as soon as one changes; the panel closes on Escape or a click outside it.
 document.querySelectorAll(".filt select").forEach((el) => el.addEventListener("change", () => el.form.requestSubmit()));

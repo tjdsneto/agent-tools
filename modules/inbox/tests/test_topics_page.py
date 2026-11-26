@@ -183,6 +183,7 @@ def test_a_link_with_a_topic_id_can_open_that_branch(conn, http, fake_registry):
     for tid in ("tp-r", "tp-p", "tp-c"):
         assert page.count(f'id="{tid}"') == 1
     assert "location.hash" in page
+    assert "history.replaceState" in page  # a live reload must not jump back to the anchor
 
 
 def test_a_topic_shown_twice_keeps_its_id_unique(conn, http, fake_registry):
