@@ -351,7 +351,9 @@ document.addEventListener("input", () => { dirty = true; });
 // A click, not the toggle event: the browser fires toggle for every open branch on load. Enter and Space click too.
 document.addEventListener("click", (e) => { if (e.target.closest(".tree summary")) dirty = true; });
 // A /topics#<id> link opens that topic's branch: every fold above it, then scrolls to it. Not a touch, so no dirty.
-const target = document.getElementById(decodeURIComponent(location.hash.slice(1)));
+// A malformed fragment (#%E0) makes decodeURIComponent throw; it must not stop the rest of this script.
+let target = null;
+try { target = document.getElementById(decodeURIComponent(location.hash.slice(1))); } catch (e) {}
 if (target && target.closest(".tree")) {
   for (let d = target.closest("details"); d; d = d.parentElement.closest("details")) d.open = true;
   target.scrollIntoView({ block: "start" });
