@@ -49,7 +49,7 @@ def test_cursor_session_start_carries_line(box):
         "workspace_roots": [str(box.root)],
     })
     assert r.returncode == 0
-    assert json.loads(r.stdout)["additional_context"].startswith("No intent set")
+    assert "No intent set" in json.loads(r.stdout)["additional_context"]
 
 
 def test_claude_session_start_carries_line(box):
@@ -80,3 +80,58 @@ def test_hook_runs_under_macos_bash(box):
     )
     assert r.returncode == 0, r.stderr
     assert "No intent set" in json.loads(r.stdout)["hookSpecificOutput"]["additionalContext"]
+
+
+MARKER = "CORE MARKER 7f3a"
+
+
+def _with_core(box, text=MARKER):
+    core = box.root / "core.md"
+    core.write_text(text, encoding="utf-8")
+    return dict(box.env, AGENT_REGISTRY_CONVERSATION_CORE=str(core))
+
+
+def test_claude_session_start_carries_the_core(box):
+    r = box.hook(
+        "claude", "ensure", {"session_id": "s9", "hook_event_name": "SessionStart", "cwd": str(box.root)},
+        env=_with_core(box),
+    )
+    ctx = json.loads(r.stdout)["hookSpecificOutput"]["additionalContext"]
+    assert MARKER in ctx and "No intent set for this session." in ctx
+
+
+def test_claude_session_start_without_core_file_keeps_the_line(box):
+    env = dict(box.env, AGENT_REGISTRY_CONVERSATION_CORE=str(box.root / "missing.md"))
+    r = box.hook(
+        "claude", "ensure", {"session_id": "s9", "hook_event_name": "SessionStart", "cwd": str(box.root)}, env=env,
+    )
+    ctx = json.loads(r.stdout)["hookSpecificOutput"]["additionalContext"]
+    assert "No intent set" in ctx and MARKER not in ctx
+
+
+def test_cursor_session_start_carries_the_core(box):
+    r = box.hook("cursor", "ensure", {
+        "conversation_id": "c1", "hook_event_name": "sessionStart", "cursor_version": "3",
+        "workspace_roots": [str(box.root)],
+    }, env=_with_core(box))
+    assert MARKER in json.loads(r.stdout)["additional_context"]
+
+
+def test_cursor_subagent_start_prints_nothing_to_add(box):
+    r = box.hook("cursor", "ensure", {
+        "conversation_id": "c2", "hook_event_name": "subagentStart", "cursor_version": "3",
+        "workspace_roots": [str(box.root)],
+    }, env=_with_core(box))
+    assert r.returncode == 0
+    assert r.stdout.strip() == "{}"
+
+
+def test_codex_session_start_carries_the_core(box):
+    r = box.hook(
+        "codex", "ensure", {"session_id": "t9", "hook_event_name": "SessionStart", "cwd": str(box.root)},
+        env=_with_core(box),
+    )
+    assert r.returncode == 0
+    out = json.loads(r.stdout)["hookSpecificOutput"]
+    assert out["hookEventName"] == "SessionStart"
+    assert MARKER in out["additionalContext"]

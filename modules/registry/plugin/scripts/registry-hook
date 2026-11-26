@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # registry-hook <claude|cursor|codex> <ensure|heartbeat|ping|end>
 # Fail open. Cursor prints {"continue":true} on ping and {} or its session-start line otherwise.
-# Claude ensure prints SessionStart context. Claude and Codex prompts print the topic line.
+# Claude and Codex ensure print SessionStart context (the conversation core and the topic line); Cursor's goes in additional_context. Claude and Codex prompts print the topic line.
 set -u
 HOST="${1:-}"
 EVENT="${2:-}"
@@ -87,6 +87,11 @@ print(str(d.get("transcript_path") or "").strip())')
 # This session's intent and topic as one line. Empty when the topic log can't be read.
 topic_line() {
   "$BIN" topic-context --type "$HOST" --session-id "$SESSION_ID" 2>/dev/null || true
+}
+
+# The conversation core plus that line, for session start. Empty when the registry can't be read.
+session_context() {
+  "$BIN" session-context --type "$HOST" --session-id "$SESSION_ID" 2>/dev/null || true
 }
 
 emit_prompt_context() {
@@ -204,9 +209,16 @@ case "$EVENT" in
       LIST=$("$BIN" list 2>/dev/null | head -n 25 || true)
       [[ -z "$LIST" ]] && LIST="(none)"
       emit_ensure_context "$LIST" \
-        "agent-registry: session registered (type=claude)." "$(topic_line)"
+        "agent-registry: session registered (type=claude)." "$(session_context)"
     elif [[ "$HOST" == "cursor" ]]; then
-      CURSOR_CONTEXT=$(topic_line)
+      # A subagent inherits the parent's context; it gets no second copy of the core.
+      [[ "$HOOK_EVENT" != "subagentStart" ]] && CURSOR_CONTEXT=$(session_context)
+    elif [[ "$HOST" == "codex" ]]; then
+      CODEX_CONTEXT=$(session_context)
+      if [[ -n "$CODEX_CONTEXT" ]]; then
+        CTX="$CODEX_CONTEXT" python3 -c 'import json, os
+print(json.dumps({"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": os.environ["CTX"]}}))' || true
+      fi
     fi
     ;;
   heartbeat)
