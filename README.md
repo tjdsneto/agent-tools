@@ -40,7 +40,7 @@ macOS only. `install.sh` links `agt` and the shims into `~/.local/bin`, links ea
 | Tool | What it does | CLI | Skill | Works in |
 |---|---|---|---|---|
 | waker | Wakes registered long-running sessions when the token window resets; survives sleep and closed terminals. | `agt waker` | `session-waker` | C |
-| budget | Reads the account's 5-hour and weekly usage windows. | `agt budget` | `check-usage` | C Cu |
+| budget | `usage` is the combined JSON read of Claude, Cursor, and Codex account windows. | `agt budget` | `check-usage` | C Cu |
 | fresh-continuation | Banks a slim continuation and prints the command to resume in a fresh session. | — | `fresh-continuation` | C Cu |
 | chatgpt-handoff | Hands work to ChatGPT on the phone through Tray, and picks the answer back up. | — | `chatgpt-handoff`, `chatgpt-pickup` | C Cu (pickup: Cx) |
 
@@ -78,6 +78,13 @@ Architecture: [`docs/superpowers/specs/2026-11-19-agent-tools-design.md`](docs/s
 - Machine setup, dotfiles and personal workflow skills live in a private setup repo.
 - Assistant personas live in a separate repo.
 - Orchestration rules come from the upstream [maestro](https://github.com/jtsternberg/claude-plugins/tree/main/plugins/maestro) plugin. `conversation` overrides only its parts about talking to the person.
+
+`agt budget usage` reads the three providers concurrently, with a 30-second
+limit per reader. It prints one JSON object keyed by `claude`, `cursor`, and
+`codex`; a failed provider has only an `error` (`unread`, `no login`, or
+`http <code>`). Cursor uses its CLI keychain login; Codex uses the app-server
+account API without a generation. Claude uses the existing `/usage` reader.
+`snapshot` remains Claude-only and keeps its key=value output.
 
 ### Model budget availability
 
