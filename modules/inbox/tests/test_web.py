@@ -185,6 +185,14 @@ def test_clarify_buttons_need_a_session_and_stay_available_while_held(conn, http
     assert body.index("</fieldset>") < body.index(">More info</button>")
 
 
+def test_answer_and_followup_buttons_can_show_progress(conn, http):
+    e = store.create_entry(conn, "ask", validate_request({"title": "Q", "control": CHOICE}, "ask"), engine="claude", session_id="s-1")
+    _, body = _get(http, f"/e/{e['id']}")
+    assert ".btn.busy" in body and "Sending…" in body
+    assert "form.dataset.sending" in body
+    assert body.index('type="submit">Send answer') < body.index("Sending…")
+
+
 def test_entry_page_fits_a_phone_and_puts_the_comment_before_submit(conn, http):
     opts = [{"id": "a", "label": "A", "description": "the safe one", "default": True}, {"id": "b", "label": "B"}]
     req = validate_request({"title": "Q", "detail": "x" * 300, "control": {"type": "choice", "options": opts}}, "ask")

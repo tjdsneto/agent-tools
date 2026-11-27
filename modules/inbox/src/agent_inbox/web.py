@@ -143,6 +143,10 @@ select {{ min-height: 44px; padding: 0 12px; border: 1px solid var(--field); bor
 .btn.primary:hover {{ background: var(--accent-press); }}
 .btn.danger {{ color: var(--red-i); }}
 .btn:disabled, fieldset:disabled .btn {{ opacity: .45; cursor: not-allowed; transform: none; }}
+.btn.busy {{ pointer-events: none; }}
+.btn.busy::after {{ content: ""; width: 16px; height: 16px; margin-left: 8px; flex: none; border: 2px solid currentColor;
+  border-right-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; }}
+@keyframes spin {{ to {{ transform: rotate(360deg); }} }}
 .list {{ list-style: none; margin: 0 -16px; padding: 0; }}
 .item {{ display: flex; align-items: center; border-bottom: 1px solid var(--line); }}
 .pick {{ flex: none; display: grid; place-items: center; width: 44px; min-height: 72px; padding-left: 8px; cursor: pointer; }}
@@ -330,6 +334,7 @@ fieldset:disabled .opt, fieldset:disabled legend {{ color: var(--mute); cursor: 
 }}
 @media (prefers-reduced-motion: reduce) {{
   .btn:active {{ transform: none; }}
+  .btn.busy::after {{ animation: none; border-right-color: currentColor; }}
   .landed .ticks .t2, .answered.landed {{ animation: none; }}
   .node .tw {{ transition: none; }}
 }}
@@ -377,6 +382,23 @@ if (filt) {
   });
 }
 addEventListener("beforeunload", () => { leaving = true; es.close(); });
+// Answer and follow-up posts navigate away. Show progress on the clicked button and ignore a second click.
+// Do not disable it: a disabled submitter drops its name and value from the post.
+document.querySelectorAll("form").forEach((form) => {
+  form.addEventListener("submit", (e) => {
+    const btn = e.submitter;
+    const action = (btn && btn.getAttribute("formaction")) || form.getAttribute("action") || "";
+    if (!/\\/e\\/[^/?]+\\/(answer|followup)/.test(action)) return;
+    if (form.dataset.sending) { e.preventDefault(); return; }
+    form.dataset.sending = "1";
+    leaving = true;
+    es.close();
+    if (!btn) return;
+    btn.setAttribute("aria-busy", "true");
+    btn.classList.add("busy");
+    btn.textContent = "Sending…";
+  });
+});
 // A mark that showed "sent" on the last visit and "delivered" now just landed.
 document.querySelectorAll("[data-ticks]").forEach((el) => {
   const key = "ib-ticks:" + el.dataset.ticks, now = el.dataset.state;
