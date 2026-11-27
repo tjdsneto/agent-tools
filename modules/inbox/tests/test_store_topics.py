@@ -119,3 +119,12 @@ def test_entry_states_reads_each_known_entry(conn):
     store.answer(conn, b["id"], "a", via="web")
     assert store.entry_states(conn, [a["id"], b["id"], "ib-gone"]) == {a["id"]: "open", b["id"]: "answered"}
     assert store.entry_states(conn, []) == {}
+
+
+def test_an_other_answer_notes_the_value_and_not_the_comment(conn, fake_registry):
+    fake_registry.replies["topic-path"] = PATH
+    q = ask(conn)
+    store.answer(conn, q["id"], "other", comment="because this", via="web")
+    note = fake_registry.notes()[-1]
+    assert "--value=other" in note
+    assert "because this" not in note

@@ -560,3 +560,16 @@ def test_on_this_topic_stops_at_ten(conn, fake_registry):
     entries = [_with_path(conn, fake_registry, [ROOT, PLAN], title=f"E{i}", kind="post") for i in range(12)]
     assert len(store.same_topic(conn, entries[0])) == 10
     assert store.same_topic(conn, {"id": "ib-none", "topic_path": None}) == []
+
+
+def test_posting_other_with_a_comment_answers_and_a_blank_comment_does_not(conn, http):
+    e = store.create_entry(conn, "ask", validate_request({"title": "Q", "control": CHOICE}, "ask"), engine="claude", session_id="s-1")
+    status, _, page = _post(http, f"/e/{e['id']}/answer", "value=other&comment=%20%20")
+    assert status == 400 and "other needs a comment" in page
+    assert store.get_entry(conn, e["id"])["state"] == "open"
+    status, location, _ = _post(http, f"/e/{e['id']}/answer", "value=other&comment=because+this")
+    assert status == 303 and location == f"/e/{e['id']}"
+    got = store.get_entry(conn, e["id"])
+    assert got["state"] == "answered"
+    assert got["answer"]["value"] == "other" and got["answer"]["comment"] == "because this"
+    assert [o["id"] for o in got["control"]["options"]] == ["a", "b"]
