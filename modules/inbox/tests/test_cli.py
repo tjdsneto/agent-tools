@@ -178,3 +178,15 @@ def test_ask_with_a_script_needs_no_session(inbox_db, monkeypatch, capsys):
     assert main(["ask", "--script", "autopilot"]) == EXIT_OK
     eid = out(capsys)["entry"]
     assert main(["get", eid]) == EXIT_OK and out(capsys)["asker"]["script"] == "autopilot"
+
+
+def test_cli_other_answer_needs_a_comment(inbox_db, monkeypatch, capsys):
+    stdin(monkeypatch, {"title": "Which split?", "control": CHOICE})
+    assert main(["ask", *ASKER]) == EXIT_OK
+    eid = out(capsys)["entry"]
+    assert main(["answer", eid, "--value", "other"]) == EXIT_USAGE
+    assert "other needs a comment" in capsys.readouterr().err
+    assert main(["answer", eid, "--value", "other", "--comment", "because this"]) == EXIT_OK
+    assert out(capsys)["value"] == "other"
+    assert main(["get", eid]) == EXIT_OK
+    assert out(capsys)["answer"]["comment"] == "because this"

@@ -51,7 +51,7 @@ Answer and manage:
 
 `poll` takes the same filters as `list` (`--kind`, `--state`, `--project`, `--engine`, `--session-id`, `--limit`) and always prints JSON: `{"rev", "entries"}`. `rev` is an opaque token for that filtered list. Pass it back as `--rev` so the next call waits for a change instead of returning the same list. `--timeout` is seconds (default 20); when it elapses the current list is printed anyway. `--follow` stays open and prints another line only when that filtered list changes. A notify for an entry outside the filter does not count as a change.
 
-Controls: `choice` (2–6 options), `multi`, `text` (`size`: short|long), `approve` (approve, or revise with a required `--comment`).
+Controls: `choice` (2–6 options; the page adds Other, which needs a `--comment`), `multi`, `text` (`size`: short|long), `approve` (approve, or revise with a required `--comment`). An answer value of `other` means the comment on the entry is the reply. Do not use `other` as an option id. The topic log records the value and not the comment.
 
 ## Exit codes
 

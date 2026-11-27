@@ -109,3 +109,26 @@ def test_topic_is_an_optional_topic_id():
     for bad in ("7k3q", "tp-", "tp-7k 3q", 7, ["tp-7k3q"]):
         with pytest.raises(ValidationError, match="topic must be a topic id"):
             validate_request({"title": "t", "topic": bad}, "post")
+
+
+def test_other_is_a_reserved_option_id():
+    for ctype in ("choice", "multi"):
+        opts = [{"id": "other", "label": "Else"}, {"id": "a", "label": "A"}]
+        with pytest.raises(ValidationError, match="reserved"):
+            validate_control({"type": ctype, "options": opts})
+
+
+def test_an_id_that_only_differs_by_case_is_not_reserved():
+    out = validate_control({"type": "choice", "options": [{"id": "Other", "label": "Else"}, {"id": "a", "label": "A"}]})
+    assert [o["id"] for o in out["options"]] == ["Other", "a"]
+
+
+def test_other_answer_needs_a_comment_and_a_stored_other_does_not():
+    ctl = validate_control(CHOICE)
+    assert validate_answer(ctl, "other", "because this") == "other"
+    for blank in (None, "", "  "):
+        with pytest.raises(ValidationError, match="other needs a comment"):
+            validate_answer(ctl, "other", blank)
+    stored = {"type": "choice", "options": [{"id": "other", "label": "Something else"}, {"id": "a", "label": "A"}]}
+    assert validate_answer(stored, "other", None) == "other"
+    assert validate_answer(ctl, "b", "a note") == "b"

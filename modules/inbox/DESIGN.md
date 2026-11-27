@@ -501,6 +501,7 @@ Softly rounded rectangles for anything you type into or press (10px), slightly s
 ### Option rows
 - **Style:** 52px rows of a 20px radio or checkbox (Action Blue when checked), the label, an optional 14px description under it, and an optional "Recommended" tag right-aligned in Resumable Blue ink at 600. Hairline between rows, none after the last.
 - **Disabled:** when the session is held or unreachable the whole fieldset disables: option text and the legend turn Grey Meta, the cursor says not-allowed, and the primary button drops to 45% opacity. A warn or error notice above the form says why.
+- **Other:** a choice question gets one more radio after the asker's options, inside the same fieldset, label Other, description "None of these. The comment is the reply." It is omitted when an option id is already `other`. The comment placeholder on a page that shows it is "Comment (required for Other)". A comment on one of the asker's options stays optional.
 
 ### Fields
 - **Style:** 48px minimum, 12px 14px padding, 1px field stroke, 10px radius, Paper White fill, Grey Meta placeholder. Long text answers are 112px textareas resizable vertically.

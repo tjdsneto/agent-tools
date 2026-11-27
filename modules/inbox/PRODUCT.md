@@ -22,7 +22,7 @@ It is not a chat and not a task manager. Every entry is either an ask (a typed q
 
 - Entries arrive from `agt inbox ask` and `agt inbox post`. Telegram is for emergencies: only urgent entries push a card (decided 2026-11-24). Urgent choice and approve cards can be answered with Telegram buttons; anything else opens the web page. Agents also ask each question in their own chat, and an answer given there is recorded with `--via chat`.
 - Web pages: the feed (open questions first, then unread posts, then the rest; filters by kind, engine and state; a history view; batch withdraw and dismiss) and the entry page (title, state, summary and detail as Markdown, an optional sandboxed agent HTML frame, the answer form, More info and Simplify buttons that ask the session to fill the same entry in, a follow-up box, and the thread of follow-ups and replies), and the Topics page (every session's intent with its topics, forks, questions and sessions, as a read-only outline read live from the agent registry).
-- Answer controls: choice (one option, one may be recommended), multi (several), text (short or long), approve (approve or revise with a reason).
+- Answer controls: choice (one of the asker's options, one may be recommended; the page adds Other, and a comment is required to send it), multi (several), text (short or long), approve (approve or revise with a reason).
 - Entry states: open, answered, delivered, undelivered, expired, withdrawn, superseded for asks; unread, read, archived for posts.
 - Reachability per open ask: live, resumable, held (with the time it becomes answerable), unreachable. A held or unreachable ask cannot be answered yet.
 - The page reloads itself whenever any entry changes (server-sent events).

@@ -125,3 +125,17 @@ def test_an_ask_needs_a_session_or_a_script(conn):
     req = validate_request({"title": "Q", "control": CHOICE}, "ask")
     with pytest.raises(ValidationError, match="--script"):
         store.create_entry(conn, "ask", req, engine="claude")
+
+
+def test_other_answer_stores_the_stripped_comment_and_a_blank_one_stays_open(conn):
+    e = make_ask(conn)
+    out = store.answer(conn, e["id"], "other", comment="  because this  ", via="web")
+    assert out["value"] == "other"
+    got = store.get_entry(conn, e["id"])
+    assert got["state"] == "answered"
+    assert got["answer"]["value"] == "other"
+    assert got["answer"]["comment"] == "because this"
+    still = make_ask(conn)
+    with pytest.raises(ValidationError, match="other needs a comment"):
+        store.answer(conn, still["id"], "other", comment="  ", via="web")
+    assert store.get_entry(conn, still["id"])["state"] == "open"

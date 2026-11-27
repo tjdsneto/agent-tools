@@ -32,6 +32,8 @@ def _options(ctype: str, options: Any) -> list[dict]:
             raise ValidationError("each option needs an id and a label")
         if oid in seen:
             raise ValidationError(f"duplicate option id {oid!r}")
+        if oid == "other":
+            raise ValidationError("option id 'other' is reserved")
         seen.add(oid)
         item: dict[str, Any] = {"id": oid, "label": label}
         if opt.get("description"):
@@ -67,6 +69,10 @@ def validate_answer(control: dict, value: Any, comment: str | None) -> Any:
     ctype = control["type"]
     ids = [o["id"] for o in control.get("options", [])]
     if ctype == "choice":
+        if value == "other" and "other" not in ids:
+            if not (comment or "").strip():
+                raise ValidationError("other needs a comment")
+            return "other"
         if not isinstance(value, str) or value not in ids:
             raise ValidationError(f"value must be one of {', '.join(ids)}")
         return value
