@@ -53,6 +53,9 @@ _week_reset_from(){ _reset_line "$1" 'current week'; }
 cmd="${1:-}"; [ $# -gt 0 ] && shift
 
 case "$cmd" in
+  usage)
+    exec python3 "$(dirname "$SELF")/budget-usage.py"
+    ;;
   available)
     engine=""; model=""
     while [ $# -gt 0 ]; do
@@ -91,10 +94,12 @@ case "$cmd" in
     raw="$(_usage_raw)"; e="$(_reset_from "$raw")" || true
     [ -n "${e:-}" ] && echo "$e $(date -r "$e" '+%F %H:%M')"
     ;;
-  snapshot)
+  snapshot|_usage-snapshot)
     # One /usage call → both windows as key=val lines (empty value = unreadable). Used by
     # session-waker so it reads /usage once per tick and gates on 5h + weekly together.
-    raw="$(_usage_raw)"
+    raw="$(_usage_raw)"; status=$?
+    # The combined reader needs failure status; keep the legacy snapshot contract.
+    if [ "$cmd" = _usage-snapshot ] && [ "$status" -ne 0 ]; then exit "$status"; fi
     sp="$(_pct_from "$raw")"; sr="$(_reset_from "$raw")" || true
     wp="$(_week_pct_from "$raw")"; wr="$(_week_reset_from "$raw")" || true
     wf="$(_week_family_from "$raw")"
@@ -149,7 +154,7 @@ case "$cmd" in
     echo "claude-budget: wake armed → $LOG ; waits for <${PCT}% then runs: ${args[*]}"
     ;;
   *)
-    echo "usage: claude-budget {available --engine ENGINE --model MODEL | snapshot | check | reset-at | wait [--pct N] | run [--pct N] -- cmd... | wake [--pct N] [--log F] -- cmd...}" >&2
+    echo "usage: claude-budget {usage | available --engine ENGINE --model MODEL | snapshot | check | reset-at | wait [--pct N] | run [--pct N] -- cmd... | wake [--pct N] [--log F] -- cmd...}" >&2
     exit 2
     ;;
 esac
