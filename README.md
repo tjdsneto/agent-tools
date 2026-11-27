@@ -78,3 +78,18 @@ Architecture: [`docs/superpowers/specs/2026-11-19-agent-tools-design.md`](docs/s
 - Machine setup, dotfiles and personal workflow skills live in a private setup repo.
 - Assistant personas live in a separate repo.
 - Orchestration rules come from the upstream [maestro](https://github.com/jtsternberg/claude-plugins/tree/main/plugins/maestro) plugin. `conversation` overrides only its parts about talking to the person.
+
+### Model budget availability
+
+`agt budget available --engine claude --model fable` prints one of `available`,
+`unavailable`, or `unknown` (exit 0). A matching family needs readable session and
+weekly percentages: either at 88% or higher is unavailable; both below 88% are
+available. Family aliases and versioned names such as `claude-fable-4-5` match
+case-insensitively. A different family, unsupported engine (including Codex), or
+failed/unreadable usage returns unknown. Missing arguments exit 2.
+
+Availability calls share a locked 60-second usage cache in
+`~/.cache/agent-tools/budget`; `BUDGET_CACHE_DIR` overrides that directory.
+`CLAUDE_BIN` selects the reader. Existing `snapshot`, `check`, and wait commands
+keep their direct reads. Run the offline fixture checks with
+`python3 tests/test_budget.py`; they use a stub rather than the live Claude CLI.
