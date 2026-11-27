@@ -64,8 +64,18 @@ If the work would still make sense without the rest of the intent, it's a side q
 
 Ask in one line of plain chat text, with fork as the default. Then end your turn. Don't start the new thread, fork, park or open a topic until he answers. If the same prompt also asked for main-line work, do only that part. Do not use a blocking question tool.
 
+Copy the intent title from the hook line. Don't paraphrase it. That title is the fact he checks the call against. Follow it with one clause of why, which is your read and can be wrong. No second sentence.
+
+A side quest:
+
 ```
-Side quest: retry policy for wake. Fork / park / keep here? (fork)
+Side quest: retry policy for wake, under Make inbox entries topic-aware. It can be decided without the rest of that work. Fork / park / keep here? (fork)
+```
+
+Off the intent:
+
+```
+This session is for Make inbox entries topic-aware. A retry policy for wake doesn't serve that: it's a separate outcome. Fork as a new intent / park / keep here? (fork)
 ```
 
 A bare ok or go means the default, fork. If the reply is unclear, ask once more.

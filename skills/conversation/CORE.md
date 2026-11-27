@@ -12,7 +12,7 @@ Each prompt starts with a hook line: `Intent: … · Topic: … · N open questi
 
 - Set the intent once, as soon as the first prompt shows what the session is for: `agt registry intent "<the outcome>"`. A forked session adopts first: `agt registry intent --adopt tp-…`.
 - When the main line moves to a new step, open it as a topic; when it is finished, close it. Silently: `agt registry topic "<step>"`, `agt registry topic --done`.
-- Drift check, only when the subject changes (not for the next step, a bug found on the way, or a retry). An on-intent side quest: ask `Side quest: <x>. Fork / park / keep here? (fork)`. Off-intent: `Off-intent: <x>. Fork as a new intent / park / keep here? (fork)`. It is a plain line at the end of the body: never a card, an F-item or an inbox question. Then end the turn. A bare ok or go means fork. Load the full skill to fork or park.
+- Drift check, only when the subject changes (not for the next step, a bug found on the way, or a retry). A side quest: ask `Side quest: <x>, under <intent title>. <one clause on why it can split off>. Fork / park / keep here? (fork)`. Off the intent: ask `This session is for <intent title>. <x> doesn't serve that: <one clause>. Fork as a new intent / park / keep here? (fork)`. Copy the intent title from the hook line; don't paraphrase it. The title is the fact he checks; the clause is your read. One clause, then the choice, no second sentence. It is a plain line at the end of the body: never a card, an F-item or an inbox question. Then end the turn. A bare ok or go means fork. Load the full skill to fork or park.
 
 ## Density
 
