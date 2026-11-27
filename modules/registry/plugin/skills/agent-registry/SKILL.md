@@ -80,6 +80,34 @@ Treat another **Active** session on the same issue/PR as a coordination signal â
 silently collide unless the human says otherwise. Stale entries (>60m since last ping)
 appear separately; orphans still show their `parent_session_id`.
 
+## Poll (a reader that should stay current)
+
+```bash
+agt registry poll                         # one JSON line, current list, then exit
+agt registry poll --rev 4                 # wait until revision passes 4, or 20s
+agt registry poll --follow                # a line now, and another when the list changes
+```
+
+The line is `{"rev", "active", "stale"}`. Same public rows as `list --json` (no
+`registry_id`). Pass the `rev` you just got as `--rev` on the next call so a loop
+waits for a change instead of spinning. `--timeout` is seconds, default 20; on
+timeout the current list is printed anyway. `--follow` stays open until the pipe
+closes. A repeated revision is a heartbeat and prints nothing.
+
+## Poll (a reader that should stay current)
+
+```bash
+agt registry poll                         # one JSON line, current list, then exit
+agt registry poll --rev 4                 # wait until revision passes 4, or 20s
+agt registry poll --follow                # a line now, and another when the list changes
+```
+
+The line is `{"rev", "active", "stale"}`. Same public rows as `list --json` (no
+`registry_id`). Pass the `rev` you just got as `--rev` on the next call so a loop
+waits for a change instead of spinning. `--timeout` is seconds, default 20; on
+timeout the current list is printed anyway. `--follow` stays open until the pipe
+closes. A repeated revision is a heartbeat and prints nothing.
+
 ## Update (focus change)
 
 Patch work fields; refreshes `last_ping` and `updated_at`.

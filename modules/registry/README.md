@@ -233,6 +233,22 @@ agent-registry list --json
 
 `list` never prints `registry_id` — not in human output, not in `--json`. Only owner-facing commands (`register`, `update`, `ping`, `ensure` session payload, `self`) return it.
 
+### poll
+
+One JSON line of the public list, plus the daemon's revision, for a reader that wants the list again when it changes.
+
+```bash
+agent-registry poll                 # current list, then exit
+agent-registry poll --rev 4         # wait until the revision passes 4, or 20s
+agent-registry poll --follow        # a line now, and another each time the list changes
+```
+
+```json
+{"rev": 4, "active": [], "stale": []}
+```
+
+Pass the `rev` you just received as `--rev` on the next call. That waits for the next change instead of returning the same list immediately. `--timeout` is seconds (default 20); when it elapses the current list is printed anyway. `--follow` stays open and skips a heartbeat that does not change the list. Neither form prints `registry_id`.
+
 ### update
 
 Update one or more fields on a session. Requires at least one field flag.

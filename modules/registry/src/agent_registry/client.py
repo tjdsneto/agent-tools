@@ -6,6 +6,7 @@ import http.client
 import json
 import os
 import signal
+import socket
 import subprocess
 import sys
 import time
@@ -242,6 +243,111 @@ def _wait_until_healthy(port: int, timeout: float) -> bool:
         if kind == "mismatch":
             return False
         time.sleep(min(_POLL_SECONDS, max(0.0, deadline - time.monotonic())))
+
+
+def changed_snapshots(revisions, fetch):
+    """Yield `{rev, active, stale}` when `revisions` moves and the list differs.
+
+    The same revision again is a heartbeat and is not fetched. `fetch` returns
+    the public list, `{"active", "stale"}`, with no `registry_id`.
+    """
+    last_rev = None
+    last_body = None
+    for rev in revisions:
+        if rev == last_rev:
+            continue
+        last_rev = rev
+        body = fetch()
+        if body == last_body:
+            continue
+        last_body = body
+        yield {"rev": rev, "active": body["active"], "stale": body["stale"]}
+
+
+def poll_snapshot(port: int | None, since: int | None, timeout: float) -> dict[str, Any]:
+    """The public list, after `since` moves or `timeout` seconds pass.
+
+    `since` None returns the current list without waiting. The daemon is
+    started when it is down. This does not open the registry file.
+    """
+    chosen = ensure_daemon(port)
+    if isinstance(chosen, dict):
+        raise OSError(chosen.get("error") or "daemon unavailable")
+    conn = http.client.HTTPConnection(
+        "127.0.0.1", chosen, timeout=max(float(timeout), 5.0)
+    )
+    try:
+        conn.request("GET", "/api/events")
+        resp = conn.getresponse()
+        if resp.status != 200:
+            raise OSError(f"event stream status {resp.status}")
+        rev = _read_rev(resp)
+        if since is None or rev > since or timeout <= 0:
+            return _snapshot(chosen, rev)
+        deadline = time.monotonic() + timeout
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return _snapshot(chosen, rev)
+            # HTTP/1.0 marks the response as closing, so the connection drops
+            # its socket and the read socket is the response's.
+            _set_read_timeout(resp, remaining)
+            try:
+                nxt = _read_rev(resp)
+            except (TimeoutError, socket.timeout):
+                return _snapshot(chosen, rev)
+            if nxt > rev:
+                return _snapshot(chosen, nxt)
+    finally:
+        conn.close()
+
+
+def iter_revisions(port: int | None):
+    """Revision numbers from the daemon event stream, including heartbeats."""
+    chosen = ensure_daemon(port)
+    if isinstance(chosen, dict):
+        raise OSError(chosen.get("error") or "daemon unavailable")
+    conn = http.client.HTTPConnection("127.0.0.1", chosen, timeout=30)
+    conn.request("GET", "/api/events")
+    resp = conn.getresponse()
+    if resp.status != 200:
+        conn.close()
+        raise OSError(f"event stream status {resp.status}")
+    try:
+        while True:
+            yield _read_rev(resp)
+    finally:
+        conn.close()
+
+
+def _set_read_timeout(resp: http.client.HTTPResponse, seconds: float) -> None:
+    raw = getattr(resp.fp, "raw", None)
+    sock = getattr(raw, "_sock", None)
+    if sock is not None:
+        sock.settimeout(seconds)
+
+
+def _read_rev(resp: http.client.HTTPResponse) -> int:
+    data = ""
+    while True:
+        line = resp.fp.readline()
+        if not line:
+            raise OSError("event stream closed")
+        text = line.decode("utf-8")
+        if text.startswith("data:"):
+            data = text[len("data:") :].strip()
+        if text.strip() == "" and data:
+            payload = json.loads(data)
+            return int(payload["rev"])
+
+
+def _snapshot(port: int, rev: int) -> dict[str, Any]:
+    result = _post_command(port, "list", {})
+    error = result.get("error")
+    if error or result.get("exit_code"):
+        raise OSError(error or "list failed")
+    data = result.get("data") or {}
+    return {"rev": rev, "active": data.get("active") or [], "stale": data.get("stale") or []}
 
 
 def _post_command(port: int, op: str, params: dict) -> dict[str, Any]:

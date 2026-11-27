@@ -98,6 +98,10 @@ def main(argv: list[str] | None = None) -> int:
     p_un.add_argument("registry_id")
     p_list = sub.add_parser("list")
     p_list.add_argument("--json", action="store_true")
+    p_poll = sub.add_parser("poll")
+    p_poll.add_argument("--rev", type=int, default=None)
+    p_poll.add_argument("--timeout", type=float, default=20)
+    p_poll.add_argument("--follow", action="store_true")
     p_prune = sub.add_parser("prune")
     p_prune.add_argument("--dry-run", action="store_true")
     p_prune.add_argument("--yes", action="store_true")
@@ -182,6 +186,8 @@ def main(argv: list[str] | None = None) -> int:
             return _daemon(args)
         if args.cmd == "dashboard":
             return _dashboard(args)
+        if args.cmd == "poll":
+            return _poll(args)
 
         op, params = _build_command(args)
         result = client.call(op, params)
@@ -337,6 +343,71 @@ def _installed_program() -> str:
     if argv0 and path.is_file():
         return str(path.resolve())
     return argv0 or "agent-registry"
+
+
+def _poll(args: argparse.Namespace) -> int:
+    if args.timeout < 0:
+        return _fail("timeout must be >= 0", EXIT_USAGE)
+    if args.follow and args.rev is not None:
+        return _fail("poll --follow does not take --rev", EXIT_USAGE)
+    chosen = client.ensure_daemon(None)
+    if isinstance(chosen, dict):
+        return _fail(chosen.get("error"), chosen.get("exit_code", EXIT_IO))
+    try:
+        if args.follow:
+            return _poll_follow(chosen)
+        snap = client.poll_snapshot(chosen, args.rev, args.timeout)
+    except BrokenPipeError:
+        _silence_stdout()
+        return EXIT_OK
+    except OSError as e:
+        return _fail(e, EXIT_IO)
+    if not _print_line(snap):
+        return EXIT_OK
+    return EXIT_OK
+
+
+def _print_line(snap: dict) -> bool:
+    try:
+        print(json.dumps(snap), flush=True)
+    except BrokenPipeError:
+        _silence_stdout()
+        return False
+    return True
+
+
+def _silence_stdout() -> None:
+    """Point stdout at /dev/null so Python's exit flush does not raise on a closed pipe."""
+    try:
+        null = os.open(os.devnull, os.O_WRONLY)
+    except OSError:
+        return
+    try:
+        os.dup2(null, sys.stdout.fileno())
+    except (AttributeError, OSError, ValueError):
+        pass
+    finally:
+        os.close(null)
+
+
+def _poll_follow(port: int) -> int:
+    def fetch():
+        result = client.call("list", {})
+        error = result.get("error")
+        if error or result.get("exit_code"):
+            raise OSError(error or "list failed")
+        return result.get("data") or {"active": [], "stale": []}
+
+    try:
+        for snap in client.changed_snapshots(client.iter_revisions(port), fetch):
+            if not _print_line(snap):
+                return EXIT_OK
+    except BrokenPipeError:
+        _silence_stdout()
+        return EXIT_OK
+    except OSError as e:
+        return _fail(e, EXIT_IO)
+    return EXIT_OK
 
 
 def _daemon(args: argparse.Namespace) -> int:

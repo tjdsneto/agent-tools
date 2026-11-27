@@ -12,7 +12,8 @@ Loopback daemon, CLI client, live usage, and board session actions. Each line be
 
 ## CLI path
 
-- Every CLI command except `daemon` and `dashboard` builds an `(op, params)` pair and sends it with `agent_registry.client.call`. The daemon runs it with `agent_registry.daemon.dispatch`. — `agent_registry.cli.main`
+- Every CLI command except `daemon`, `dashboard`, and `poll` builds an `(op, params)` pair and sends it with `agent_registry.client.call`. The daemon runs it with `agent_registry.daemon.dispatch`. — `agent_registry.cli.main`
+- `poll` prints one JSON line, `{rev, active, stale}`, the same public rows as `list` (no `registry_id`). With no `--rev` it returns the current list. With `--rev N` it waits until the revision passes N, or `--timeout` seconds (default 20), then prints the list it sees then. `--follow` prints the current list and another line each time the revision moves and the list differs, until the pipe closes. The same revision again is a heartbeat and prints nothing. `poll` does not open the registry file. — `agent_registry.cli._poll`, `agent_registry.client.poll_snapshot`, `agent_registry.client.changed_snapshots`
 - `client.call` starts a detached `daemon run` when the port refuses the connection, waits for a healthy answer, then POSTs the command. A port that answers but is not this service is exit 3, and a live `daemon.pid` on a different port is exit 1. — `agent_registry.client.ensure_daemon`
 - Port order: the live daemon's `daemon.port`, then the explicit argument, then `AGENT_REGISTRY_DAEMON_PORT`, then 8765. — `agent_registry.client._resolve_port`
 - `dispatch` returns `(exit_code, data, error)`. Params that `_prepare_command` rejects (a missing key, or a non-string where it checks) and an unknown op are exit 1. Not every op type-checks its params. — `agent_registry.daemon.dispatch`
