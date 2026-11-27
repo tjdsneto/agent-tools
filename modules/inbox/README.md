@@ -44,7 +44,11 @@ Answer and manage:
     agt inbox answer ib-7k3q --value b --comment "keep it thin" --via web
     agt inbox followup ib-7k3q --text "why not C?"
     agt inbox list            # table; --json for machines
+    agt inbox poll            # one JSON line of that list, plus a rev
+    agt inbox poll --rev R    # wait until the list changes, or 20s
     agt inbox get ib-7k3q     # full entry, thread and revisions
+
+`poll` takes the same filters as `list` (`--kind`, `--state`, `--project`, `--engine`, `--session-id`, `--limit`) and always prints JSON: `{"rev", "entries"}`. `rev` is an opaque token for that filtered list. Pass it back as `--rev` so the next call waits for a change instead of returning the same list. `--timeout` is seconds (default 20); when it elapses the current list is printed anyway. `--follow` stays open and prints another line only when that filtered list changes. A notify for an entry outside the filter does not count as a change.
 
 Controls: `choice` (2–6 options), `multi`, `text` (`size`: short|long), `approve` (approve, or revise with a required `--comment`).
 

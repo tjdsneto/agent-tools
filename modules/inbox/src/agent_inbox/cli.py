@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from agent_inbox import db, store, waiting
+from agent_inbox import db, poll, store, waiting
 from agent_inbox.constants import (
     ENGINES,
     EXIT_CONFLICT,
@@ -78,6 +78,17 @@ def build_parser() -> argparse.ArgumentParser:
     ls.add_argument("--session-id")
     ls.add_argument("--limit", type=int, default=50)
     ls.add_argument("--json", action="store_true")
+
+    poll = sub.add_parser("poll")
+    poll.add_argument("--kind", choices=KINDS)
+    poll.add_argument("--state", action="append", dest="states")
+    poll.add_argument("--project")
+    poll.add_argument("--engine", choices=ENGINES)
+    poll.add_argument("--session-id")
+    poll.add_argument("--limit", type=int, default=50)
+    poll.add_argument("--rev", default=None)
+    poll.add_argument("--timeout", type=float, default=20)
+    poll.add_argument("--follow", action="store_true")
 
     ans = sub.add_parser("answer")
     ans.add_argument("id")
@@ -199,9 +210,66 @@ def _dispatch(args: argparse.Namespace) -> tuple[Any, int]:
     return _waited(waiting.wait_for(entry["id"], timeout=args.timeout))
 
 
+def _filters(args: argparse.Namespace) -> dict:
+    return {
+        "kind": args.kind,
+        "states": args.states,
+        "project": args.project,
+        "engine": args.engine,
+        "session_id": args.session_id,
+        "limit": args.limit,
+    }
+
+
+def _print_line(snap: dict) -> bool:
+    try:
+        print(json.dumps(snap), flush=True)
+    except BrokenPipeError:
+        _silence_stdout()
+        return False
+    return True
+
+
+def _silence_stdout() -> None:
+    """Point stdout at /dev/null so Python's exit flush does not raise on a closed pipe."""
+    try:
+        null = os.open(os.devnull, os.O_WRONLY)
+    except OSError:
+        return
+    try:
+        os.dup2(null, sys.stdout.fileno())
+    except (AttributeError, OSError, ValueError):
+        pass
+    finally:
+        os.close(null)
+
+
+def _poll(args: argparse.Namespace) -> int:
+    if args.timeout < 0:
+        raise ValidationError("timeout must be >= 0")
+    if args.follow and args.rev is not None:
+        raise ValidationError("poll --follow does not take --rev")
+    filters = _filters(args)
+    try:
+        if args.follow:
+            for snap in poll.follow(**filters):
+                if not _print_line(snap):
+                    return EXIT_OK
+            return EXIT_OK
+        snap = poll.poll_snapshot(since=args.rev, timeout=args.timeout, **filters)
+    except BrokenPipeError:
+        _silence_stdout()
+        return EXIT_OK
+    if not _print_line(snap):
+        return EXIT_OK
+    return EXIT_OK
+
+
 def main(argv: list[str] | None = None) -> int:
     try:
         args = build_parser().parse_args(argv)
+        if args.cmd == "poll":
+            return _poll(args)
         out, code = _dispatch(args)
     except InboxError as e:
         print(f"agent-inbox: {e}", file=sys.stderr)
