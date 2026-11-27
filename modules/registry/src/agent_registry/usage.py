@@ -13,6 +13,7 @@ from typing import Any
 from urllib.parse import unquote, urlparse
 
 _CACHE_TTL_SECONDS = 5.0
+_CLAUDE_PATH_TTL_SECONDS = 30.0
 _CODEX_READ_CHUNK = 65536
 _CLAUDE_TOKEN_KEYS = (
     "input_tokens",
@@ -31,7 +32,7 @@ _CODEX_TOKEN_KEYS = (
 
 _cache: dict[tuple[str, str], tuple[float, dict[str, Any] | None]] = {}
 _cache_lock = threading.Lock()
-_claude_path_cache: dict[tuple[Path, str], tuple[Path, ...]] = {}
+_claude_path_cache: dict[tuple[Path, str], tuple[float, tuple[Path, ...]]] = {}
 _claude_path_lock = threading.Lock()
 
 
@@ -637,14 +638,18 @@ def _claude_files(root: Path, session_id: str) -> list[Path]:
         return []
     # Cache successful discovery separately from the short-lived usage values.
     # Keep every match: callers choose the newest file or sum across projects.
+    # Refresh on the first lookup after 30 seconds so resumed sessions in another
+    # project become visible even while the previously discovered files remain.
     root = root.absolute()
     key = (root, session_id)
     with _claude_path_lock:
         cached = _claude_path_cache.get(key)
         if cached:
+            discovered_at, paths = cached
             try:
-                if all(path.is_file() for path in cached):
-                    return list(cached)
+                if (time.monotonic() - discovered_at < _CLAUDE_PATH_TTL_SECONDS
+                        and all(path.is_file() for path in paths)):
+                    return list(paths)
             except OSError:
                 pass
             del _claude_path_cache[key]
@@ -662,7 +667,7 @@ def _claude_files(root: Path, session_id: str) -> list[Path]:
             except OSError:
                 continue
         if found:
-            _claude_path_cache[key] = tuple(found)
+            _claude_path_cache[key] = (time.monotonic(), tuple(found))
         return found
 
 
