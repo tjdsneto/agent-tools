@@ -71,7 +71,7 @@ It prints `{"entry": "ib-xxxx", "state": "open", "url": "https://…/e/ib-xxxx"}
 
 Controls:
 
-- `{"type": "choice", "options": [...]}`: pick one. 2 to 6 options, each `{"id", "label"}`, optional `"description"`, `"recommended": true`, `"default": true` (one at most). Telegram shows these as buttons.
+- `{"type": "choice", "options": [...]}`: pick one. 2 to 6 options, each `{"id", "label"}`, optional `"description"`, `"recommended": true`, `"default": true` (one at most). Do not use `other` as an option id. The web page adds an Other radio; sending it requires a comment, closes the question, and the answer value is `other`. The comment on the entry is the reply. Read it from the entry (`agt inbox get`), not from the topic log, which records the value only. Telegram shows the asker's options as buttons and does not add Other.
 - `{"type": "multi", "options": [...]}`: pick several. Same options.
 - `{"type": "text", "size": "short"}` or `"long"`: free text.
 - `{"type": "approve"}`: Approve, or Revise with a required reason in the comment. Telegram shows an Approve button.
