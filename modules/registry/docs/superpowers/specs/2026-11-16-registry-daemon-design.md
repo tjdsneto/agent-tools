@@ -154,7 +154,7 @@ Every public session keeps the identity it has today: `session_id`, `agent_type`
 
 The board and the menu-bar panel start each row with a mark for the engine: Claude, Codex, or Cursor. The row also shows the session name (`peer_name`), the title, the session id, and the directory.
 
-`pid` is the harness process id. Claude records one. Codex and Cursor do not, and those rows leave it blank. The link between sessions is `parent_session_id`. The registry does not infer a parent from OS process parentage.
+`pid` is the harness process id. Claude records one. Codex and Cursor do not, and those rows leave it blank. The link between sessions is `parent_session_id`. A Claude `ensure` that names no parent records the nearest registered ancestor process. Heartbeats and the other engines do not, and a session that already names a parent keeps it.
 
 ### CPU, memory, and tokens
 
@@ -170,7 +170,7 @@ The board poll picks up a new snapshot on its existing 5 second cycle. The numbe
 
 ### Parent and child sessions
 
-`parent_session_id` is the parent's public `session_id`. `ensure` and `register` still set it from `--parent-session`.
+`parent_session_id` is the parent's public `session_id`. `register` sets it from `--parent-session`. A Claude `ensure` uses that flag when it was passed, and otherwise the nearest registered ancestor process.
 
 The board and the menu-bar panel keep today's nesting. A child is indented under its parent when that parent is in the same list. A child whose parent is absent stays visible and shows the parent id. CLI `list` keeps its current parent-then-child order.
 

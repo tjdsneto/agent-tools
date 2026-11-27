@@ -452,12 +452,28 @@ def _generate_title_gemini(prompt: str) -> str | None:
         return None
 
 
-def _generate_title_claude_cli(prompt: str) -> str | None:
+def _claude_cli_env(parent_session_id: str | None) -> dict:
+    """Env for the throwaway `claude -p` that invents a title.
+
+    The child registers itself. The title and the spawning session are how the
+    registry lists it under that session instead of as an untitled row.
+    """
+    env = {k: v for k, v in os.environ.items() if k != "CLAUDECODE"}
+    env["AGENT_REGISTRY_TITLE"] = "Renaming a session"
+    if parent_session_id:
+        env["AGENT_REGISTRY_PARENT_SESSION"] = parent_session_id
+    else:
+        env.pop("AGENT_REGISTRY_PARENT_SESSION", None)
+    return env
+
+
+def _generate_title_claude_cli(prompt: str, parent_session_id: str | None = None) -> str | None:
     """Generate a title using claude CLI (slower, uses OAuth)."""
     try:
         result = subprocess.run(
             [
                 "claude", "-p",
+                "--name", "Renaming a session",
                 "--model", CLAUDE_CLI_MODEL,
                 "--no-session-persistence",
                 "--allowedTools", "none",
@@ -466,7 +482,7 @@ def _generate_title_claude_cli(prompt: str) -> str | None:
             capture_output=True,
             text=True,
             timeout=AI_TIMEOUT,
-            env={k: v for k, v in os.environ.items() if k != "CLAUDECODE"},
+            env=_claude_cli_env(parent_session_id),
         )
         if result.returncode == 0 and result.stdout.strip():
             return _sanitize_ai_title(result.stdout)
@@ -475,7 +491,7 @@ def _generate_title_claude_cli(prompt: str) -> str | None:
     return None
 
 
-def generate_ai_title(meta: dict) -> str | None:
+def generate_ai_title(meta: dict, parent_session_id: str | None = None) -> str | None:
     """Generate a title using AI. Tries Gemini API first, falls back to Claude CLI."""
     if not AI_TITLE_ENABLED:
         return None
@@ -491,14 +507,14 @@ def generate_ai_title(meta: dict) -> str | None:
             return title
 
     # Fall back to Claude CLI
-    title = _generate_title_claude_cli(prompt)
+    title = _generate_title_claude_cli(prompt, parent_session_id)
     if title:
         return title
 
     return None
 
 
-def resolve_title(meta: dict, repo_cache: dict, title_cache: dict, pr_cache: dict) -> str | None:
+def resolve_title(meta: dict, repo_cache: dict, title_cache: dict, pr_cache: dict, parent_session_id: str | None = None) -> str | None:
     """Try all strategies to find a meaningful title for a session."""
     branch = meta.get("branch")
     cwd = meta.get("cwd")
@@ -523,7 +539,7 @@ def resolve_title(meta: dict, repo_cache: dict, title_cache: dict, pr_cache: dic
     if skip_branch:
         log(f"    (monorepo root — skipping branch-based strategies)", verbose_only=True)
         # Still try AI-generated title
-        ai_title = generate_ai_title(meta)
+        ai_title = generate_ai_title(meta, parent_session_id)
         if ai_title:
             return ai_title
         return None
@@ -565,7 +581,7 @@ def resolve_title(meta: dict, repo_cache: dict, title_cache: dict, pr_cache: dic
             return f"PR {pr_num}: {pr_title}"
 
     # Strategy 4: AI-generated title from first messages
-    ai_title = generate_ai_title(meta)
+    ai_title = generate_ai_title(meta, parent_session_id)
     if ai_title:
         return ai_title
 
@@ -618,7 +634,7 @@ def run_current_only():
     title_cache: dict = {}
     pr_cache: dict = {}
 
-    new_title = resolve_title(meta, repo_cache, title_cache, pr_cache)
+    new_title = resolve_title(meta, repo_cache, title_cache, pr_cache, session_id)
 
     if not new_title:
         log(f"No match for session {session_id}", verbose_only=True)

@@ -10,7 +10,7 @@ from pathlib import Path
 # directory on sys.path[0], so the import needs `src/`, which contains the package.
 if __name__ == "__main__" and __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from agent_registry import archive, client, doctor, topic_cli
+from agent_registry import archive, client, doctor, process_parent, topic_cli
 from agent_registry.constants import (
     DASHBOARD_DEFAULT_PORT,
     EXIT_IO,
@@ -202,6 +202,26 @@ def main(argv: list[str] | None = None) -> int:
         return _fail(e, EXIT_IO)
 
 
+def _parent_from_process(agent_type: str, session_id: str, own_pid: int | None) -> str | None:
+    """Nearest registered ancestor, when this ensure did not name a parent.
+
+    Only Claude, and not a session wake: the wake process is not the spawner
+    the board should nest under. A list failure leaves the parent unset.
+    """
+    if agent_type != "claude" or os.environ.get(WAKE_ENV) == "1":
+        return None
+    try:
+        pids = process_parent.ancestor_pids(os.getpid())
+        result = client.call("list", {})
+    except Exception:
+        return None
+    if result.get("error") or result.get("exit_code"):
+        return None
+    data = result.get("data") or {}
+    rows = list(data.get("active") or []) + list(data.get("stale") or [])
+    return process_parent.match_parent(pids, rows, session_id, own_pid)
+
+
 def _build_command(args: argparse.Namespace) -> tuple[str, dict]:
     cmd = args.cmd
     if cmd == "register":
@@ -251,11 +271,14 @@ def _build_command(args: argparse.Namespace) -> tuple[str, dict]:
     if cmd == "prune":
         return "prune", {"dry_run": args.dry_run or not args.yes, "yes": args.yes}
     if cmd == "ensure":
+        parent = args.parent_session or _parent_from_process(
+            args.agent_type, args.session_id, getattr(args, "pid", None)
+        )
         return "ensure", {
             "agent_type": args.agent_type,
             "session_id": args.session_id,
             "directory": args.directory,
-            "parent_session": args.parent_session,
+            "parent_session": parent,
             "model": args.model,
             "title": args.title,
             "no_replace": args.no_replace,

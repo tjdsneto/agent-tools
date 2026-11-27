@@ -81,6 +81,16 @@ TITLE=$(read_field 'import sys,json
 d=json.load(sys.stdin)
 t=d.get("session_title") or d.get("title") or d.get("conversation_title") or d.get("name") or ""
 print(str(t).strip())')
+# A headless `claude -p` started by another session carries no parent and no
+# session_title. The spawner puts them in the environment; a payload value wins.
+if [[ "$HOST" == "claude" ]]; then
+  if [[ -z "$PARENT" && -n "${AGENT_REGISTRY_PARENT_SESSION:-}" ]]; then
+    PARENT="$AGENT_REGISTRY_PARENT_SESSION"
+  fi
+  if [[ -z "$TITLE" && -n "${AGENT_REGISTRY_TITLE:-}" ]]; then
+    TITLE="$AGENT_REGISTRY_TITLE"
+  fi
+fi
 TRANSCRIPT=$(read_field 'import sys,json
 d=json.load(sys.stdin)
 print(str(d.get("transcript_path") or "").strip())')
