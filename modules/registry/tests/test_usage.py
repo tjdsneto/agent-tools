@@ -652,3 +652,53 @@ def test_live_updates_cursor_title_when_composer_renamed(tmp_registry, monkeypat
         assert sess.title == "Renamed in Cursor"
     finally:
         stop_server(httpd)
+
+
+def test_claude_files_remembers_paths_and_rescans_after_deletion(tmp_path, monkeypatch):
+    from pathlib import Path
+    from agent_registry.usage import _claude_files
+
+    root = tmp_path / "projects"
+    project = root / "demo"
+    project.mkdir(parents=True)
+    transcript = project / "session.jsonl"
+    transcript.touch()
+    listings = []
+    original_iterdir = Path.iterdir
+
+    def counted_iterdir(path):
+        assert path == root  # Never enumerate the real Claude projects directory.
+        listings.append(path)
+        return original_iterdir(path)
+
+    monkeypatch.setattr(Path, "iterdir", counted_iterdir)
+    first = _claude_files(root, "session")
+    assert first == [transcript]
+    assert len(listings) == 1
+    first.clear()  # Callers may sort or otherwise mutate the returned list.
+    assert _claude_files(root, "session") == [transcript]
+    assert len(listings) == 1
+
+    transcript.unlink()
+    assert _claude_files(root, "session") == []
+    assert len(listings) == 2
+    transcript.touch()  # A miss must not hide a newly created transcript.
+    assert _claude_files(root, "session") == [transcript]
+    assert len(listings) == 3
+
+
+def test_claude_files_keeps_roots_separate_and_preserves_multiple_matches(tmp_path):
+    from agent_registry.usage import _claude_files
+
+    root = tmp_path / "projects"
+    other_root = tmp_path / "other-projects"
+    paths = [root / "one" / "session.jsonl", root / "two" / "session.jsonl"]
+    other = other_root / "one" / "session.jsonl"
+    for path in [*paths, other]:
+        path.parent.mkdir(parents=True)
+        path.touch()
+    assert set(_claude_files(root, "session")) == set(paths)
+    assert set(_claude_files(root, "session")) == set(paths)
+    assert _claude_files(other_root, "session") == [other]
+    paths[0].unlink()
+    assert _claude_files(root, "session") == [paths[1]]

@@ -31,6 +31,8 @@ _CODEX_TOKEN_KEYS = (
 
 _cache: dict[tuple[str, str], tuple[float, dict[str, Any] | None]] = {}
 _cache_lock = threading.Lock()
+_claude_path_cache: dict[tuple[Path, str], tuple[Path, ...]] = {}
+_claude_path_lock = threading.Lock()
 
 
 def _ps(pid: int) -> str | None:
@@ -633,20 +635,35 @@ def _safe_session_id(session_id: str) -> bool:
 def _claude_files(root: Path, session_id: str) -> list[Path]:
     if not _safe_session_id(session_id):
         return []
-    filename = f"{session_id}.jsonl"
-    try:
-        children = list(root.iterdir())
-    except OSError:
-        return []
-    found: list[Path] = []
-    for child in children:
-        candidate = child / filename
+    # Cache successful discovery separately from the short-lived usage values.
+    # Keep every match: callers choose the newest file or sum across projects.
+    root = root.absolute()
+    key = (root, session_id)
+    with _claude_path_lock:
+        cached = _claude_path_cache.get(key)
+        if cached:
+            try:
+                if all(path.is_file() for path in cached):
+                    return list(cached)
+            except OSError:
+                pass
+            del _claude_path_cache[key]
+        filename = f"{session_id}.jsonl"
         try:
-            if child.is_dir() and candidate.is_file():
-                found.append(candidate)
+            children = list(root.iterdir())
         except OSError:
-            continue
-    return found
+            return []
+        found: list[Path] = []
+        for child in children:
+            candidate = child / filename
+            try:
+                if child.is_dir() and candidate.is_file():
+                    found.append(candidate)
+            except OSError:
+                continue
+        if found:
+            _claude_path_cache[key] = tuple(found)
+        return found
 
 
 def _sum_claude(session_id: str, root: Path) -> dict[str, int] | None:
