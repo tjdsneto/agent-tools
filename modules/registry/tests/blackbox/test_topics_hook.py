@@ -43,6 +43,17 @@ def test_cursor_prompt_only_continues(box):
     assert r.stdout.strip() == '{"continue":true}'
 
 
+def test_cursor_prompt_records_a_session_whose_start_was_missed(box):
+    r = box.hook("cursor", "ping", {
+        "conversation_id": "c-missed", "hook_event_name": "beforeSubmitPrompt", "cursor_version": "3",
+        "workspace_roots": [str(box.root)],
+    })
+    assert r.returncode == 0
+    assert r.stdout.strip() == '{"continue":true}'
+    ids = [row["session_id"] for row in box.agt_json("registry", "list", "--json")["active"]]
+    assert ids == ["c-missed"]
+
+
 def test_cursor_session_start_carries_line(box):
     r = box.hook("cursor", "ensure", {
         "conversation_id": "c1", "hook_event_name": "sessionStart", "cursor_version": "3",

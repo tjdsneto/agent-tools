@@ -140,6 +140,34 @@ print(json.dumps({
 PY
 }
 
+# A missed sessionStart leaves no row. The next prompt or stop still carries the
+# workspace, so record the session there instead of refreshing one that is absent.
+beat() {
+  local status="$1"
+  [[ -z "$SESSION_ID" ]] && return 0
+  address_args_for "$SESSION_ID"
+  local -a HB_ARGS=(heartbeat --type "$HOST" --session-id "$SESSION_ID" --status "$status")
+  [[ -n "$MODEL" ]] && HB_ARGS+=(--model "$MODEL")
+  [[ -n "$TITLE" ]] && HB_ARGS+=(--title "$TITLE")
+  HB_ARGS+=(${ADDRESS_ARGS[@]+"${ADDRESS_ARGS[@]}"})
+  local out
+  out=$("$BIN" "${HB_ARGS[@]}" 2>/dev/null || true)
+  if [[ -n "$CWD" ]] && printf '%s' "$out" | python3 -c 'import json,sys
+try:
+    data=json.load(sys.stdin)
+except Exception:
+    raise SystemExit(1)
+raise SystemExit(0 if data.get("skipped") and data.get("reason") in ("no_sidecar", "no_registry_id") else 1)
+'; then
+    local -a ENSURE_ARGS=(ensure --type "$HOST" --session-id "$SESSION_ID" --directory "$CWD")
+    [[ -n "$PARENT" ]] && ENSURE_ARGS+=(--parent-session "$PARENT")
+    [[ -n "$MODEL" ]] && ENSURE_ARGS+=(--model "$MODEL")
+    [[ -n "$TITLE" ]] && ENSURE_ARGS+=(--title "$TITLE")
+    ENSURE_ARGS+=(${ADDRESS_ARGS[@]+"${ADDRESS_ARGS[@]}"})
+    "$BIN" "${ENSURE_ARGS[@]}" >/dev/null 2>&1 || true
+  fi
+}
+
 address_args_for() {
   local sid="$1"
   ADDRESS_ARGS=()
@@ -177,16 +205,11 @@ PY
 
 if [[ "$EVENT" == "ping" ]]; then
   [[ -z "$SESSION_ID" ]] && exit 0
-  address_args_for "$SESSION_ID"
-  HB_ARGS=(heartbeat --type "$HOST" --session-id "$SESSION_ID" --status working)
-  [[ -n "$MODEL" ]] && HB_ARGS+=(--model "$MODEL")
-  [[ -n "$TITLE" ]] && HB_ARGS+=(--title "$TITLE")
-  HB_ARGS+=(${ADDRESS_ARGS[@]+"${ADDRESS_ARGS[@]}"})
   # Print the reminder first: Claude's hook timeout can cut off a heartbeat that waits on a cold daemon.
   if [[ "$HOST" != "cursor" && "$HOOK_EVENT" == "UserPromptSubmit" ]]; then
     emit_prompt_context
   fi
-  "$BIN" "${HB_ARGS[@]}" >/dev/null 2>&1 || true
+  beat working
   exit 0
 fi
 
@@ -236,12 +259,7 @@ print(json.dumps({"hookSpecificOutput": {"hookEventName": "SessionStart", "addit
     ;;
   heartbeat)
     [[ -z "$SESSION_ID" ]] && exit 0
-    address_args_for "$SESSION_ID"
-    HB_ARGS=(heartbeat --type "$HOST" --session-id "$SESSION_ID" --status idle)
-    [[ -n "$MODEL" ]] && HB_ARGS+=(--model "$MODEL")
-    [[ -n "$TITLE" ]] && HB_ARGS+=(--title "$TITLE")
-    HB_ARGS+=(${ADDRESS_ARGS[@]+"${ADDRESS_ARGS[@]}"})
-    "$BIN" "${HB_ARGS[@]}" >/dev/null 2>&1 || true
+    beat idle
     SUM_ARGS=(summarize --type "$HOST" --session-id "$SESSION_ID")
     [[ -n "$TRANSCRIPT" ]] && SUM_ARGS+=(--transcript "$TRANSCRIPT")
     ("$BIN" "${SUM_ARGS[@]}" >/dev/null 2>&1 &) || true
