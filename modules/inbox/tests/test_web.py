@@ -573,3 +573,69 @@ def test_posting_other_with_a_comment_answers_and_a_blank_comment_does_not(conn,
     assert got["state"] == "answered"
     assert got["answer"]["value"] == "other" and got["answer"]["comment"] == "because this"
     assert [o["id"] for o in got["control"]["options"]] == ["a", "b"]
+
+
+def test_a_choice_page_offers_other_and_a_stored_other_is_not_duplicated(conn, http):
+    e = store.create_entry(conn, "ask", validate_request({"title": "Q", "control": CHOICE}, "ask"), engine="claude", session_id="s-1")
+    _, body = _get(http, f"/e/{e['id']}")
+    assert 'value="other"' in body
+    assert "None of these. The comment is the reply." in body
+    assert 'placeholder="Comment (required for Other)"' in body
+    assert body.index('value="b"') < body.index('value="other"')
+    assert body.index('value="other"') < body.index("</fieldset>")
+    conn.execute(
+        """UPDATE entries SET control = '{"type":"choice","options":[{"id":"other","label":"Something else"},{"id":"a","label":"A"}]}'::jsonb WHERE id = %s""",
+        (e["id"],),
+    )
+    _, body = _get(http, f"/e/{e['id']}")
+    assert body.count('value="other"') == 1
+    assert "Something else" in body
+    assert "None of these. The comment is the reply." not in body
+    assert 'placeholder="Comment (optional)"' in body
+
+
+def test_an_id_that_only_differs_by_case_still_gets_the_reserved_radio(conn, http):
+    opts = [{"id": "Other", "label": "Else"}, {"id": "a", "label": "A"}]
+    e = store.create_entry(
+        conn, "ask", validate_request({"title": "Q", "control": {"type": "choice", "options": opts}}, "ask"),
+        engine="claude", session_id="s-1",
+    )
+    _, body = _get(http, f"/e/{e['id']}")
+    assert 'value="Other"' in body and 'value="other"' in body
+
+
+def test_other_controls_do_not_gain_the_radio(conn, http):
+    multi = {"type": "multi", "options": [{"id": "x", "label": "X"}, {"id": "y", "label": "Y"}]}
+    text = {"type": "text", "size": "short"}
+    approve = {"type": "approve"}
+    for control in (multi, text, approve):
+        e = store.create_entry(conn, "ask", validate_request({"title": "Q", "control": control}, "ask"), script="cron")
+        _, body = _get(http, f"/e/{e['id']}")
+        assert 'value="other"' not in body
+        assert "Comment (required for Other)" not in body
+
+
+def test_the_receipt_says_other_and_shows_the_comment(conn, http):
+    e = store.create_entry(conn, "ask", validate_request({"title": "Q", "control": CHOICE}, "ask"), script="cron")
+    store.answer(conn, e["id"], "other", comment="because this", via="web")
+    _, body = _get(http, f"/e/{e['id']}")
+    assert "<b>Other</b>" in body and "because this" in body
+    stored = store.create_entry(conn, "ask", validate_request({"title": "Q2", "control": CHOICE}, "ask"), script="cron")
+    conn.execute(
+        """UPDATE entries SET control = '{"type":"choice","options":[{"id":"other","label":"Something else"},{"id":"a","label":"A"}]}'::jsonb WHERE id = %s""",
+        (stored["id"],),
+    )
+    store.answer(conn, stored["id"], "other", via="web")
+    _, body = _get(http, f"/e/{stored['id']}")
+    assert "<b>Something else</b>" in body
+
+
+def test_a_held_choice_disables_other_with_the_other_radios(conn, http):
+    e = store.create_entry(conn, "ask", validate_request({"title": "Q", "control": CHOICE}, "ask"), engine="claude", session_id="s-1")
+    conn.execute(
+        """UPDATE entries SET delivery = delivery || '{"reachability": "held", "reachable_at": "2026-11-24T02:10:00"}' WHERE id = %s""",
+        (e["id"],),
+    )
+    _, body = _get(http, f"/e/{e['id']}")
+    assert "<fieldset disabled>" in body
+    assert body.index('value="other"') < body.index("</fieldset>")

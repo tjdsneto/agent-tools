@@ -901,6 +901,11 @@ def _control_fields(control: dict) -> str:
                 f'<label class="opt"><input type="{kind}" name="value" value="{_esc(opt["id"])}"{checked}>'
                 f'<span>{_esc(opt["label"])}{desc}</span>{rec}</label>'
             )
+        if ctype == "choice" and not any(opt.get("id") == "other" for opt in control.get("options") or []):
+            fields.append(
+                '<label class="opt"><input type="radio" name="value" value="other">'
+                "<span>Other<small>None of these. The comment is the reply.</small></span></label>"
+            )
         return "".join(fields)
     if ctype == "text":
         if control.get("size") == "long":
@@ -931,6 +936,8 @@ def _closed_notice(delivery: dict) -> str:
 
 def _shown(entry: dict, value) -> str:
     labels = {opt["id"]: opt["label"] for opt in (entry.get("control") or {}).get("options") or []}
+    if "other" not in labels:
+        labels["other"] = "Other"
     values = value if isinstance(value, list) else [value]
     return ", ".join(labels.get(item, str(item)) for item in values)
 
@@ -1077,7 +1084,13 @@ def _entry_page(
         # The store refuses these answers anyway; the fieldset says so before a submit.
         closed = " disabled" if delivery.get("reachability") in CLOSED_REACH else ""
         control = entry.get("control") or {}
-        hint = "Comment (a reason is required to revise)" if control.get("type") == "approve" else "Comment (optional)"
+        ids = [opt.get("id") for opt in control.get("options") or []]
+        if control.get("type") == "approve":
+            hint = "Comment (a reason is required to revise)"
+        elif control.get("type") == "choice" and "other" not in ids:
+            hint = "Comment (required for Other)"
+        else:
+            hint = "Comment (optional)"
         # Outside the fieldset, so a held session can still be asked for the missing text.
         clarify = ""
         if (entry.get("asker") or {}).get("session_id"):
