@@ -17,7 +17,7 @@ A choice question on the web page always offers one more radio, Other, so a comm
 | Other controls | Multi, text, and approve are unchanged. Approve already requires a comment to revise. |
 | Reserved id | A new ask cannot use `other` as an option id. No stored question uses that id today (checked 2026-11-27). If one already has it, the page does not add a second radio, and that id keeps the asker's meaning: the comment stays optional. |
 | Where the comment lives | On the entry's answer. The topic log records the value `other` and not the comment. An asker reads the comment from the entry. |
-| Autopilot | Out of scope. The inbox delivers `other` and the comment the same way it delivers any other answer. Teaching the autopilot to read the comment is a later change. |
+| Autopilot | The inbox delivers `other` and the comment the same way it delivers any other answer. The next autopilot run is told, in ana's preamble, that a value of `other` means the comment is the decision. |
 
 ## 1. The page
 
@@ -74,6 +74,6 @@ Delivery is the path every answer already takes. A session asker is woken with v
 ## Out of scope
 
 - Telegram buttons and the numbered reply list.
-- Teaching the autopilot, or any other asker, what to do when it reads `other`.
+- Any asker other than the autopilot. The autopilot's preamble now says a value of `other` means the comment is the decision.
 - A follow-up that leaves the question open. Other closes it.
 - More info and Simplify. They stay for questions that have a session to wake.
