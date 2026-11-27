@@ -85,7 +85,7 @@ Optional fields:
 - `expires_at`: an ISO time with an offset, after which the question closes.
 - `topic`: a topic id (`tp-xxxx`, from `agt registry topics`). You rarely need it: with `--engine` and `--session-id` the inbox records your session's intent and topic by itself, and shows them on the entry. Any asker can pass it to file the question under that discussion, and it wins over your session's own topic. An unknown id is exit 1.
 
-Write for a phone: the title is the question itself, the summary is two or three sentences, and every option label stands on its own. Together, the summary and detail are the card's long form (what happened, why it matters, the options, the recommendation, what happens next either way), as the `conversation` skill describes.
+Write for a phone, and for a page that is all he has. The title is the question. The summary is two or three sentences on what happened and why it matters. The thing he is judging — the prompt, the diff, the wording, the list — goes in `detail`, in full. A file path, a backup, an issue number, or a one-line note about a changelog is not that thing: he cannot open them from the inbox. Spell an id out so he knows what it is, and still include the part the decision turns on. Every option label stands on its own. Together, the summary and detail are the card's long form (what happened, why it matters, the material, the options, the recommendation, what happens next either way), as the `conversation` skill describes.
 
 ## After asking
 
@@ -104,7 +104,9 @@ If you exited, the inbox resumes you with that message (Claude Code comes back w
 
 ## Follow-ups
 
-Tiago can add a follow-up to an open question. It arrives the same way, as `"event": "followup"` with its `text` and `seq`. Answer it:
+Tiago can add a follow-up to an open question. It arrives the same way, as `"event": "followup"` with its `text` and `seq`. Answer an ordinary follow-up with a reply.
+
+A follow-up that says he cannot answer from the page, or that asks for the missing material or a simpler version, means the entry failed. Update this same entry (below). Put the missing material in `detail`, and rewrite `summary` when he asked for a simpler version. Do not point at a file, and do not open a second question. `revise` only changes the choices. A thread reply does not change the page he is looking at.
 
 ```bash
 agt inbox reply ib-xxxx --text "Yes, CI ran on the merge commit."
@@ -117,10 +119,22 @@ An unattended agent runs with no chat and must never be woken by the inbox: for 
 
 - Ask with `--script <name>` (ana uses `--script autopilot`) and pass neither `--engine` nor `--session-id`. The inbox wakes any ask that carries a session id, even with `--script`.
 - Skip "Ask in both places": there is no chat to ask in, so ask only in the inbox.
-- **The task cannot go on without the answer:** add `--wait`. Exit 0 with `"event": "answer"` is the answer. Exit 0 with `"event": "followup"` is a follow-up: `agt inbox reply`, then `agt inbox wait <id> --after <seq>`. Exit 4 means the question closed (expired, withdrawn or superseded). Exit 5 is the timeout: the question stays open. Write the entry id in your report and end; whoever launched you resumes you once `agt inbox get <id>` shows `answered`.
+- **The task cannot go on without the answer:** add `--wait`. Exit 0 with `"event": "answer"` is the answer. Exit 0 with `"event": "followup"` is a follow-up: if it asks for the missing material or a simpler version, `agt inbox update` (see "Update a question"), otherwise `agt inbox reply`, then `agt inbox wait <id> --after <seq>`. Exit 4 means the question closed (expired, withdrawn or superseded). Exit 5 is the timeout: the question stays open. Write the entry id in your report and end; whoever launched you resumes you once `agt inbox get <id>` shows `answered`.
 - **The task can go on without it:** ask without `--wait`, write the entry id in your report and carry on. A later run reads the answer, and any follow-up left in the thread, with `agt inbox get <id>`.
 
-A good question is the same either way: one decision per question, the options with their ids, your recommendation marked `recommended`, and the reason in the summary (see "Write for a phone" above).
+A good question is the same either way: one decision per question, the thing being judged in the entry (see "Write for a phone" above), the options with their ids, your recommendation marked `recommended`, and the reason in the summary.
+
+## Update a question
+
+More info and Simplify on the question page send a follow-up and leave the question open. The page he is reading changes only when you update the entry. Send the new text as JSON on stdin. A field you omit stays as it is. Title, summary, and detail must be text; title is one line. Html is the sandboxed attachment, from the JSON or from `--html-file`.
+
+```bash
+cat <<'JSON' | agt inbox update ib-xxxx
+{"detail": "the text he is judging, in full", "summary": "the short version, rewritten"}
+JSON
+```
+
+It prints `{"entry", "event": "update", "fields"}`. The question stays open. A closed question is a conflict: the page he would have read is already gone.
 
 ## Change or cancel a question
 

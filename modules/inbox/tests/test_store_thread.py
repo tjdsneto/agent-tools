@@ -48,6 +48,29 @@ def test_post_followup_needs_a_session_and_marks_read(conn):
     assert store.get_entry(conn, agent_post["id"])["state"] == "read"
 
 
+def test_update_replaces_only_the_fields_you_send(conn):
+    req = validate_request({"title": "Which split?", "summary": "the short version", "control": CHOICE}, "ask")
+    e = store.create_entry(conn, "ask", req, engine="claude", session_id="s-1")
+    result = store.update_entry(conn, e["id"], {"detail": "the eight prompts, in full"})
+    assert result["fields"] == ["detail"]
+    got = store.get_entry(conn, e["id"])
+    assert got["detail"] == "the eight prompts, in full"
+    assert got["summary"] == "the short version" and got["title"] == "Which split?"
+    assert got["state"] == "open"
+
+
+def test_update_rejects_a_blank_field_a_post_and_a_closed_question(conn):
+    e = make_ask(conn)
+    with pytest.raises(ValidationError, match="detail must be text"):
+        store.update_entry(conn, e["id"], {"detail": "  "})
+    post = store.create_entry(conn, "post", validate_request({"title": "note"}, "post"), script="cron")
+    with pytest.raises(ValidationError, match="not a question"):
+        store.update_entry(conn, post["id"], {"summary": "more"})
+    store.answer(conn, e["id"], "a", via="web")
+    with pytest.raises(ConflictError):
+        store.update_entry(conn, e["id"], {"summary": "too late"})
+
+
 def test_revise_replaces_control_and_logs(conn):
     e = make_ask(conn)
     new = {"type": "choice", "options": [{"id": "a", "label": "A"}, {"id": "b", "label": "B"}, {"id": "c", "label": "C"}]}

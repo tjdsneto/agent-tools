@@ -153,6 +153,38 @@ def test_the_form_cannot_choose_its_surface(conn, http):
     assert store.get_entry(conn, e["id"])["answer"]["via"] == "web"
 
 
+def test_more_info_and_simplify_ask_the_session_to_update_the_entry(conn, http):
+    e = store.create_entry(conn, "ask", validate_request({"title": "Q", "control": CHOICE}, "ask"), engine="claude", session_id="s-1")
+    _, body = _get(http, f"/e/{e['id']}")
+    assert f'formaction="/e/{e["id"]}/followup"' in body
+    assert ">More info</button>" in body and ">Simplify</button>" in body
+    status, _, _ = _post(http, f"/e/{e['id']}/followup", "clarify=more")
+    assert status == 303
+    text = store.get_entry(conn, e["id"])["thread"][0]["text"]
+    assert store.get_entry(conn, e["id"])["state"] == "open"
+    assert e["id"] in text and "agt inbox update" in text and "missing material" in text
+    status, _, _ = _post(http, f"/e/{e['id']}/followup", "clarify=simpler")
+    assert status == 303
+    simpler = store.get_entry(conn, e["id"])["thread"][1]["text"]
+    assert "one read" in simpler and "agt inbox update" in simpler
+    status, _, page = _post(http, f"/e/{e['id']}/followup", "clarify=nope")
+    assert status == 400 and "clarify must be more or simpler" in page
+
+
+def test_clarify_buttons_need_a_session_and_stay_available_while_held(conn, http):
+    scripted = store.create_entry(conn, "ask", validate_request({"title": "Q", "control": CHOICE}, "ask"), script="cron")
+    _, body = _get(http, f"/e/{scripted['id']}")
+    assert "More info" not in body
+    held = store.create_entry(conn, "ask", validate_request({"title": "Held", "control": CHOICE}, "ask"), engine="claude", session_id="s-1")
+    conn.execute(
+        """UPDATE entries SET delivery = delivery || '{"reachability": "held", "reachable_at": "2026-11-24T02:10:00"}' WHERE id = %s""",
+        (held["id"],),
+    )
+    _, body = _get(http, f"/e/{held['id']}")
+    assert "<fieldset disabled>" in body and ">More info</button>" in body
+    assert body.index("</fieldset>") < body.index(">More info</button>")
+
+
 def test_entry_page_fits_a_phone_and_puts_the_comment_before_submit(conn, http):
     opts = [{"id": "a", "label": "A", "description": "the safe one", "default": True}, {"id": "b", "label": "B"}]
     req = validate_request({"title": "Q", "detail": "x" * 300, "control": {"type": "choice", "options": opts}}, "ask")

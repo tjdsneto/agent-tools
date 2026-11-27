@@ -99,6 +99,36 @@ def _expires(raw: Any) -> datetime | None:
     return when
 
 
+UPDATE_FIELDS = ("title", "summary", "detail", "html")
+
+
+def validate_update(raw: Any) -> dict:
+    """Fields to replace on an open question. Omitted fields stay as they are."""
+    if not isinstance(raw, dict):
+        raise ValidationError("request must be a JSON object")
+    extra = set(raw) - set(UPDATE_FIELDS)
+    if extra:
+        raise ValidationError(f"update takes only {', '.join(UPDATE_FIELDS)}")
+    if not any(key in raw for key in UPDATE_FIELDS):
+        raise ValidationError("update needs title, summary, detail, or html")
+    out: dict[str, str] = {}
+    if "title" in raw:
+        title = raw["title"]
+        if not isinstance(title, str) or not title.strip() or "\n" in title:
+            raise ValidationError("title must be one non-empty line")
+        out["title"] = title.strip()
+    for key in ("summary", "detail", "html"):
+        if key not in raw:
+            continue
+        value = raw[key]
+        if not isinstance(value, str) or not value.strip():
+            raise ValidationError(f"{key} must be text")
+        if key == "html" and len(value.encode()) > HTML_MAX_BYTES:
+            raise ValidationError("html exceeds 2 MB")
+        out[key] = value
+    return out
+
+
 def validate_request(raw: Any, kind: str) -> dict:
     if not isinstance(raw, dict):
         raise ValidationError("request must be a JSON object")

@@ -20,7 +20,7 @@ from agent_inbox.constants import (
 )
 from agent_inbox.errors import InboxError, ValidationError
 from agent_inbox.links import entry_url
-from agent_inbox.validate import validate_request
+from agent_inbox.validate import validate_request, validate_update
 
 WAIT_EXIT = {"answer": EXIT_OK, "followup": EXIT_OK, "timeout": EXIT_TIMEOUT}
 
@@ -105,6 +105,10 @@ def build_parser() -> argparse.ArgumentParser:
     rep.add_argument("id")
     rep.add_argument("--text", required=True)
     rep.add_argument("--html-file")
+
+    upd = sub.add_parser("update")
+    upd.add_argument("id")
+    _add_request_args(upd)
 
     rev = sub.add_parser("revise")
     rev.add_argument("id")
@@ -194,6 +198,8 @@ def _dispatch(args: argparse.Namespace) -> tuple[Any, int]:
         elif cmd == "reply":
             html = Path(args.html_file).read_text() if args.html_file else None
             return store.add_reply(conn, args.id, args.text, html=html), EXIT_OK
+        elif cmd == "update":
+            return store.update_entry(conn, args.id, validate_update(_read_request(args))), EXIT_OK
         elif cmd == "revise":
             raw = args.control if args.control is not None else Path(args.control_file).read_text()
             return store.revise(conn, args.id, json.loads(raw)), EXIT_OK

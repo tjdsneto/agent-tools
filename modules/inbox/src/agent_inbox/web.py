@@ -219,6 +219,7 @@ textarea.field {{ min-height: 112px; resize: vertical; }}
 fieldset:disabled .field {{ background: var(--surf); color: var(--mute); cursor: not-allowed; }}
 fieldset:disabled .opt, fieldset:disabled legend {{ color: var(--mute); cursor: not-allowed; }}
 .pair {{ display: flex; gap: 8px; }} .pair .btn {{ flex: 1; min-height: 50px; }}
+.clarify {{ margin-top: 8px; }}
 .answered {{ margin: 0 0 20px; padding: 14px 16px; border-radius: 12px; background: var(--surf); }}
 .answered h2 {{ margin: 0 0 2px; color: var(--grey-i); font-size: 14px; font-weight: 600; }}
 .answered b {{ display: block; font-size: 17px; }}
@@ -868,6 +869,25 @@ def _feed_page(
     )
 
 
+def clarify_text(kind: str, entry_id: str) -> str:
+    """What More info and Simplify send to the session. The same words land in the thread."""
+    command = (
+        f"Run `agt inbox update {entry_id}` with JSON on stdin "
+        '(any of "summary", "detail", "html", "title"; omit a field to leave it). '
+        "Do not point me at a file, and do not open a second question."
+    )
+    if kind == "more":
+        return (
+            f"I can't answer {entry_id} from the page. Update this entry with the missing material, "
+            f"the text the decision turns on, in detail. {command}"
+        )
+    if kind == "simpler":
+        return (
+            f"Rewrite {entry_id} so I can answer it in one read. Keep every fact the decision turns on. {command}"
+        )
+    raise ValidationError("clarify must be more or simpler")
+
+
 def _control_fields(control: dict) -> str:
     ctype = control.get("type")
     if ctype in ("choice", "multi"):
@@ -1058,11 +1078,20 @@ def _entry_page(
         closed = " disabled" if delivery.get("reachability") in CLOSED_REACH else ""
         control = entry.get("control") or {}
         hint = "Comment (a reason is required to revise)" if control.get("type") == "approve" else "Comment (optional)"
+        # Outside the fieldset, so a held session can still be asked for the missing text.
+        clarify = ""
+        if (entry.get("asker") or {}).get("session_id"):
+            clarify = (
+                f'<div class="pair clarify">'
+                f'<button class="btn" type="submit" formaction="/e/{eid}/followup{then}" name="clarify" value="more">More info</button>'
+                f'<button class="btn" type="submit" formaction="/e/{eid}/followup{then}" name="clarify" value="simpler">Simplify</button>'
+                f'</div>'
+            )
         parts.append(
             f'<form method="post" action="/e/{eid}/answer{then}"><fieldset{closed}><legend>Your answer</legend>'
             f"{_control_fields(control)}"
             f'<input class="field" name="comment" placeholder="{hint}" aria-label="Comment">'
-            f"{_control_buttons(control)}</fieldset></form>"
+            f"{_control_buttons(control)}</fieldset>{clarify}</form>"
         )
     parts.append(_thread(entry))
     if (entry.get("asker") or {}).get("session_id"):
@@ -1335,10 +1364,9 @@ class InboxHandler(BaseHTTPRequestHandler):
                         via="web",
                     )
                 else:
-                    store.add_followup(
-                        conn, entry_id, (form.get("text") or [""])[0],
-                        via="web",
-                    )
+                    kind = (form.get("clarify") or [""])[0]
+                    text = clarify_text(kind, entry_id) if kind else (form.get("text") or [""])[0]
+                    store.add_followup(conn, entry_id, text, via="web")
         except ConflictError as exc:
             self._show(entry_id, 409, str(exc), after)
             return

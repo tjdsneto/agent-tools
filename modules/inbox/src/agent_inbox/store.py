@@ -12,7 +12,7 @@ from agent_inbox import topics
 from agent_inbox.constants import ASK_LIVE_STATES, CLOSED_STATES, HTML_MAX_BYTES, VIAS
 from agent_inbox.errors import ConflictError, NotFoundError, StoreError, ValidationError
 from agent_inbox.ids import new_id
-from agent_inbox.validate import validate_answer, validate_control
+from agent_inbox.validate import validate_answer, validate_control, validate_update
 
 ID_ATTEMPTS = 10
 LIST_HIDDEN = ("html", "summary", "detail")
@@ -330,6 +330,24 @@ def add_reply(conn: psycopg.Connection, entry_id: str, text: str, *, html: str |
             body["html"] = html
         seq = _event(conn, entry_id, "reply", "agent", body)
     return {"entry": entry_id, "event": "reply", "seq": seq}
+
+
+def update_entry(conn: psycopg.Connection, entry_id: str, raw: Any) -> dict:
+    """Replace the text of an open question. Omitted fields stay as they are."""
+    fields = validate_update(raw)
+    with conn.transaction():
+        row = _row(conn, entry_id, lock=True)
+        if row["kind"] != "ask":
+            raise ValidationError(f"{entry_id} is not a question")
+        if row["state"] != "open":
+            raise ConflictError(_closed_message(row))
+        assignments = ", ".join(f"{key} = %s" for key in fields)
+        conn.execute(
+            f"UPDATE entries SET {assignments}, updated_at = now() WHERE id = %s",
+            (*fields.values(), entry_id),
+        )
+        seq = _event(conn, entry_id, "update", "agent", {"fields": sorted(fields)})
+    return {"entry": entry_id, "event": "update", "seq": seq, "fields": sorted(fields)}
 
 
 def revise(conn: psycopg.Connection, entry_id: str, control: Any) -> dict:

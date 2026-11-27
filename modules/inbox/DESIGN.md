@@ -510,6 +510,7 @@ Softly rounded rectangles for anything you type into or press (10px), slightly s
 ### Buttons
 - **Shape:** gently rounded (10px).
 - **Primary:** full-width, 50px, Action Blue with white 600 text, no border; Pressed Blue on hover. "Send answer", or "Approve" beside a secondary "Revise" in a two-up pair.
+- **Ask the agent:** under those buttons, a second pair, "More info" and "Simplify", same secondary shape. Each sends a follow-up and leaves the question open. Shown only when the question has a session to wake, and still tappable when the answer fieldset is disabled.
 - **Secondary:** 44px, Paper White with the field stroke, 600 ink text, Cool Surface on hover.
 - **Danger:** the secondary button with Unreachable Red ink (Withdraw).
 - **Press:** every button nudges down 1px while pressed, except under reduced motion.

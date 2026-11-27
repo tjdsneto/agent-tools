@@ -123,6 +123,10 @@ The inbox entry is the card's long form, written for someone who has never seen 
 - `detail`: the options as the exact tokens he can type, each with its one-letter alias and what it does and costs; your recommendation with one sentence of why; what you do next either way.
 - `control`: a `choice` whose option ids are the card's tokens, with your recommendation marked `recommended`.
 
+He answers from the entry alone, on a phone, with no repo and no other file. If the decision is about a text, a prompt, a diff, or a wording, that material is in `detail`. A file path, a backup, an issue number, or a one-line note about a changelog does not count. Spell an id out so he knows what it is, and still include the part he has to judge. The summary stays short and does not replace the material. The chat card stays one paragraph and points at the entry; the material lives in the entry, not in the chat.
+
+If he follows up that he cannot answer from the page, or that he wants it simpler, update this same entry with `agt inbox update` (the `agent-inbox` skill has the command). Put the missing material in `detail`, and rewrite `summary` when the short version is what's wrong. Do not send him to a file, and do not open a second question. `revise` only changes the choices.
+
 Then:
 
 - **Two or fewer decisions:** both go in the reply's `**Next for you:**` group as cards, each with its inbox link.

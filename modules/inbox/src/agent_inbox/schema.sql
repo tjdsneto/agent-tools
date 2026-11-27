@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS events (
     seq      bigserial PRIMARY KEY,
     entry_id text NOT NULL REFERENCES entries (id) ON DELETE CASCADE,
     at       timestamptz NOT NULL DEFAULT now(),
-    type     text NOT NULL CHECK (type IN ('answer', 'followup', 'reply', 'revise', 'state')),
+    type     text NOT NULL CHECK (type IN ('answer', 'followup', 'reply', 'revise', 'state', 'update')),
     via      text,
     body     jsonb NOT NULL
 );

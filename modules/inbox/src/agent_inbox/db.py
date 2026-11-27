@@ -29,6 +29,26 @@ MIGRATIONS = (
         "CREATE INDEX IF NOT EXISTS entries_topic ON entries ((topic_path->-1->>'id'))",
         "SELECT 1 FROM pg_indexes WHERE schemaname = current_schema() AND indexname = 'entries_topic'",
     ),
+    # An update of the question text is its own event. The check was created with the table,
+    # so an existing store still has the old list until this widens it.
+    (
+        """
+        DO $$
+        BEGIN
+          IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint
+            WHERE conrelid = 'events'::regclass AND contype = 'c'
+              AND pg_get_constraintdef(oid) LIKE '%update%'
+          ) THEN
+            ALTER TABLE events DROP CONSTRAINT IF EXISTS events_type_check;
+            ALTER TABLE events ADD CONSTRAINT events_type_check
+              CHECK (type IN ('answer', 'followup', 'reply', 'revise', 'state', 'update'));
+          END IF;
+        END $$;
+        """,
+        "SELECT 1 FROM pg_constraint WHERE conrelid = 'events'::regclass AND contype = 'c' "
+        "AND pg_get_constraintdef(oid) LIKE '%update%'",
+    ),
 )
 OPS = """
 CREATE TABLE IF NOT EXISTS ops (

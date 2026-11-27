@@ -43,6 +43,7 @@ Answer and manage:
 
     agt inbox answer ib-7k3q --value b --comment "keep it thin" --via web
     agt inbox followup ib-7k3q --text "why not C?"
+    printf '%s' '{"detail":"the text he is judging","summary":"the short version"}' | agt inbox update ib-7k3q
     agt inbox list            # table; --json for machines
     agt inbox poll            # one JSON line of that list, plus a rev
     agt inbox poll --rev R    # wait until the list changes, or 20s

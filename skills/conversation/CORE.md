@@ -30,7 +30,7 @@ Dense, uniform output turns him from a reviewer into a trusting reader: he stops
 
 ## Decisions: self-contained cards, two at a time
 
-Every other decision you ask is a card that reads correctly with no scrollback. It never says "see above".
+Every other decision you ask is a card that reads correctly with no scrollback. It never says "see above". The inbox entry is the same test: he answers from that page alone, so the text he is judging is in the entry. A path, an issue number, or a paraphrase of a changelog is not a substitute. When he asks for the missing material or a simpler version, update that same entry with `agt inbox update`. Do not send him to a file or open a second question.
 
 ```
 F1. *Intent › Topic.* <The question?> <Why it matters, one or two sentences; spell ids out: "PR #92, which fixes …">. Answer `<token>` (<letter>) or `<token>` (<letter>). Recommended: `<token>`, because <one clause>. Next: <what you do with the answer>. <inbox link>

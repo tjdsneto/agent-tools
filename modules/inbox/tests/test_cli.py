@@ -92,6 +92,22 @@ def test_thread_commands(inbox_db, monkeypatch, capsys, tmp_path):
     assert len(got["control"]["options"]) == 3
 
 
+def test_update_writes_the_question_text(inbox_db, monkeypatch, capsys):
+    stdin(monkeypatch, {"title": "Which split?", "summary": "old", "control": CHOICE})
+    main(["ask", *ASKER])
+    eid = out(capsys)["entry"]
+    stdin(monkeypatch, {"detail": "the prompts", "summary": "shorter"})
+    assert main(["update", eid]) == EXIT_OK
+    assert out(capsys)["fields"] == ["detail", "summary"]
+    assert main(["get", eid]) == EXIT_OK
+    got = out(capsys)
+    assert got["detail"] == "the prompts" and got["summary"] == "shorter" and got["title"] == "Which split?"
+    assert main(["answer", eid, "--value", "a"]) == EXIT_OK
+    capsys.readouterr()
+    stdin(monkeypatch, {"summary": "too late"})
+    assert main(["update", eid]) == EXIT_CONFLICT
+
+
 def test_withdraw_and_supersede(inbox_db, monkeypatch, capsys):
     ids = []
     for _ in range(3):
